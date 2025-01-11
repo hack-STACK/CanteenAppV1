@@ -1,28 +1,26 @@
 import 'package:flutter/material.dart';
 
 // Custom Colors for Light Mode
-const Color primaryColor = Color(0xFFFF542D); // Orange
-const Color inversePrimaryLight = Color(0xFFFF8A65); // Peach
-const Color secondaryColor = Color(0xFFFED7C7); // Soft Orange
+const Color primaryColorLight = Color(0xFFFF542D); // Bright Red-Orange
+const Color secondaryColorLight = Color(0xFFB0BEC5); // Light Greyish Blue
 const Color backgroundColorLight = Color(0xFFFFFFFF); // White
-const Color surfaceColorLight = Color(0xFFFAFAFA); // Light Grey
+const Color surfaceColorLight = Color(0xFFF5F5F5); // Light Grey
 const Color textColorLight = Color(0xFF000000); // Black
-
+const Color hintColorLight = Color(0xFFB0BEC5); // Light Grey
 // Light Theme
 ThemeData light = ThemeData(
   colorScheme: ColorScheme.light(
-    primary: primaryColor,
-    secondary: secondaryColor,
+    primary: primaryColorLight,
+    secondary: secondaryColorLight,
     surface: surfaceColorLight,
-    background: backgroundColorLight,
     onPrimary: textColorLight,
     onSecondary: textColorLight,
     onSurface: textColorLight,
-    inversePrimary: inversePrimaryLight, // Warna peach
+    inversePrimary: primaryColorLight,
   ),
   scaffoldBackgroundColor: backgroundColorLight,
   appBarTheme: AppBarTheme(
-    backgroundColor: primaryColor,
+    backgroundColor: primaryColorLight,
     foregroundColor: textColorLight,
     elevation: 4,
     titleTextStyle: TextStyle(
@@ -36,7 +34,7 @@ ThemeData light = ThemeData(
     bodyMedium: TextStyle(color: textColorLight, fontSize: 14),
   ),
   buttonTheme: ButtonThemeData(
-    buttonColor: primaryColor,
+    buttonColor: primaryColorLight,
     textTheme: ButtonTextTheme.primary,
   ),
 );

@@ -1,24 +1,25 @@
 import 'package:flutter/material.dart';
 
+import 'package:flutter/material.dart';
+
 // Custom Colors for Dark Mode
-const Color primaryColor = Color(0xFFFF542D); // Orange
-const Color inversePrimaryDark = Color(0xFFD84315); // Deep Orange
-const Color secondaryColor = Color(0xFFFF7043); // Orangish Red
-const Color backgroundColorDark = Color(0xFF121212); // Black-ish
+const Color primaryColorDark = Color(0xFFFF542D); // Bright Red-Orange
+const Color secondaryColorDark = Color(0xFFB0BEC5); // Light Greyish Blue
+const Color backgroundColorDark = Color(0xFF121212); // Black
 const Color surfaceColorDark = Color(0xFF1E1E1E); // Dark Grey
 const Color textColorDark = Color(0xFFFFFFFF); // White
+const Color hintColorDark = Color(0xFFB0BEC5);
 
 // Dark Theme
 ThemeData dark = ThemeData(
   colorScheme: ColorScheme.dark(
-    primary: primaryColor,
-    secondary: secondaryColor,
+    primary: primaryColorDark,
+    secondary: secondaryColorDark,
     surface: surfaceColorDark,
-    background: backgroundColorDark,
     onPrimary: textColorDark,
     onSecondary: textColorDark,
     onSurface: textColorDark,
-    inversePrimary: inversePrimaryDark, // Warna deep orange
+    inversePrimary: primaryColorDark,
   ),
   scaffoldBackgroundColor: backgroundColorDark,
   appBarTheme: AppBarTheme(
@@ -36,7 +37,7 @@ ThemeData dark = ThemeData(
     bodyMedium: TextStyle(color: textColorDark, fontSize: 14),
   ),
   buttonTheme: ButtonThemeData(
-    buttonColor: primaryColor,
+    buttonColor: primaryColorDark,
     textTheme: ButtonTextTheme.primary,
   ),
 );

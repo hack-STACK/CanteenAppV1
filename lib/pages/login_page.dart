@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:kantin/Component/my_button.dart';
 import 'package:kantin/Component/my_textfield.dart';
-import 'package:kantin/Themes/light_mode.dart';
+import 'package:kantin/pages/homepage.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key, this.ontap});
-  final void Function() ? ontap;
+  final void Function()? ontap;
   @override
   _LoginPageState createState() => _LoginPageState();
 }
@@ -16,23 +16,34 @@ class _LoginPageState extends State<LoginPage> {
   final FocusNode emailFocusNode = FocusNode();
   final FocusNode passwordFocusNode = FocusNode();
   Color emailHintColor = Colors.grey; // Default hint color for email
-  Color passwordHintColor = Colors.grey; // Default hint color for password
+  Color passwordHintColor = Colors.grey;
+  // Default hint color for password
+  void login() {
+    Navigator.push(
+        context, MaterialPageRoute(builder: (context) => Homepage()));
+  }
 
   @override
   void initState() {
     super.initState();
 
-    // Listen for focus changes on the email field 
+    // Listen for focus changes on the email field
     emailFocusNode.addListener(() {
       setState(() {
-        emailHintColor = emailFocusNode.hasFocus ? Colors.blue : Theme.of(context).colorScheme.inversePrimary; // Change color based on focus
+        emailHintColor = emailFocusNode.hasFocus
+            ? Colors.blue
+            : Theme.of(context)
+                .colorScheme
+                .inversePrimary; // Change color based on focus
       });
     });
 
     // Listen for focus changes on the password field
     passwordFocusNode.addListener(() {
       setState(() {
-        passwordHintColor = passwordFocusNode.hasFocus ? Colors.blue : Colors.grey; // Change color based on focus
+        passwordHintColor = passwordFocusNode.hasFocus
+            ? Colors.blue
+            : Colors.grey; // Change color based on focus
       });
     });
   }
@@ -81,22 +92,32 @@ class _LoginPageState extends State<LoginPage> {
               obscureText: true,
               hintColor: passwordHintColor, // Use dynamic hint color
             ),
-            const SizedBox(height: 25,),
-            MyButton(text: "Sign in", onTap: () {}),
-            const SizedBox(height: 25,),
-            
+            const SizedBox(
+              height: 25,
+            ),
+            MyButton(text: "Sign in", onTap: login),
+            const SizedBox(
+              height: 25,
+            ),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-              
-              Text('Not a member? ',
-              style: TextStyle(color: Theme.of(context).colorScheme.onPrimary),),
-              GestureDetector(
-                onTap: widget.ontap,
-                child: Text("Register now", 
-                style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold),),
-              )
-            ],)
+                Text(
+                  'Not a member? ',
+                  style:
+                      TextStyle(color: Theme.of(context).colorScheme.onPrimary),
+                ),
+                GestureDetector(
+                  onTap: widget.ontap,
+                  child: Text(
+                    "Register now",
+                    style: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
+                        fontWeight: FontWeight.bold),
+                  ),
+                )
+              ],
+            )
           ],
         ),
       ),

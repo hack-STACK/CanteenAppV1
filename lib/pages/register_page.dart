@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:kantin/Component/my_button.dart';
 import 'package:kantin/Component/my_textfield.dart';
-import 'package:kantin/Themes/light_mode.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key, this.ontap});

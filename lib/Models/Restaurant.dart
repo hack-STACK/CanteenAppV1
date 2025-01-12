@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:kantin/Models/Food.dart';
+import 'package:kantin/Models/cartItem.dart';
+import 'package:collection/collection.dart';
 
 class Restaurant extends ChangeNotifier {
   final List<Food> _menu = [
@@ -197,4 +199,22 @@ class Restaurant extends ChangeNotifier {
     ),
   ];
   List<Food> get menu => _menu;
+
+  final List<CartItem> _cart = [];
+
+  void addToCart(Food food, List<foodAddOn> selectedAddOns) {
+    CartItem? existingCart = _cart.firstWhereOrNull((item) {
+      bool isSameFood = item.food == food;
+      bool isSameAddOns =
+          ListEquality().equals(item.selectedAddOns, selectedAddOns);
+      return isSameFood && isSameAddOns;
+    });
+
+    if (existingCart != null) {
+      existingCart.quantity++;
+    } else {
+      _cart.add(CartItem(food: food, selectedAddOns: selectedAddOns));
+    }
+    notifyListeners();
+  }
 }

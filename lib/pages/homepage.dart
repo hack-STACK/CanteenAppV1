@@ -8,6 +8,7 @@ import 'package:kantin/Component/my_drawer.dart';
 import 'package:kantin/Component/my_food_tile.dart';
 import 'package:kantin/Models/Food.dart';
 import 'package:kantin/Models/Restaurant.dart';
+import 'package:kantin/pages/food_page.dart';
 import 'package:provider/provider.dart';
 
 class Homepage extends StatefulWidget {
@@ -47,7 +48,12 @@ class _HomepageState extends State<Homepage>
         padding: EdgeInsets.zero,
         itemBuilder: (BuildContext context, int index) {
           final food = categoryMenu[index];
-          return MyFoodTile(onTap: () {}, food: food);
+          return MyFoodTile(
+              onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (context) => FoodPage(food: food))),
+              food: food);
         },
       );
     }).toList();

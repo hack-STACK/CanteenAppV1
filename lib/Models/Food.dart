@@ -38,4 +38,8 @@ class foodAddOn {
     required this.name,
     required this.price,
   });
+  String formatPrice() {
+    final formatter = NumberFormat('#,##0', 'id_ID'); // Indonesian locale
+    return 'Rp. ${formatter.format(price)}'; // Format the price
+  }
 }

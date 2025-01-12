@@ -4,7 +4,7 @@ import 'package:kantin/Themes/theme_providers.dart';
 import 'package:provider/provider.dart';
 
 class SettingPage extends StatefulWidget {
-  const SettingPage({Key? key}) : super(key: key);
+  const SettingPage({super.key});
 
   @override
   _SettingPageState createState() => _SettingPageState();
@@ -20,7 +20,7 @@ class _SettingPageState extends State<SettingPage> {
             Theme.of(context).colorScheme.primary, // Use primary color
       ),
       backgroundColor:
-          Theme.of(context).colorScheme.background, // Use background color
+          Theme.of(context).colorScheme.surface, // Use background color
       body: Column(
         children: [
           Container(

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 class MyDescriptionBox extends StatelessWidget {
-  const MyDescriptionBox({Key? key}) : super(key: key);
+  const MyDescriptionBox({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -36,7 +36,7 @@ class MyDescriptionBox extends StatelessWidget {
                 CrossAxisAlignment.start, // Align text to the start
             children: [
               Text(
-                '\Rp.15.000',
+                'Rp.15.000',
                 style: myPrimaryTextStyle,
               ),
               Text(

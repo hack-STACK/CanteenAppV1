@@ -1,3 +1,5 @@
+import 'package:intl/intl.dart';
+
 class Food {
   final String name;
   final String description;
@@ -15,6 +17,10 @@ class Food {
     required this.category,
     required this.addOns,
   });
+  String formatPrice() {
+    final formatter = NumberFormat('#,##0', 'id_ID'); // Indonesian locale
+    return 'Rp. ${formatter.format(price)}'; // Format the price
+  }
 }
 
 enum foodCategory {

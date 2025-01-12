@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 
-import 'package:flutter/material.dart';
-
 // Custom Colors for Dark Mode
 const Color primaryColorDark = Color(0xFFFF542D); // Bright Red-Orange
 const Color secondaryColorDark = Color(0xFFB0BEC5); // Light Greyish Blue

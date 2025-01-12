@@ -1,12 +1,13 @@
+import 'package:flutter/material.dart';
 import 'package:kantin/Models/Food.dart';
 
-class Restaurant {
+class Restaurant extends ChangeNotifier {
   final List<Food> _menu = [
     Food(
       name: "Nasi Goreng",
       description: "Nasi yang digoreng dengan bumbu spesial dan sayuran.",
       imagePath:
-          "https://example.com/nasi_goreng.jpg", // Ganti dengan URL yang valid
+          "https://th.bing.com/th/id/OIP.NzSXtxNWD57kCe_7JuxC4wHaE8?rs=1&pid=ImgDetMain", // Ganti dengan URL yang valid
       price: 15000,
       category: foodCategory.mainCourse,
       addOns: [
@@ -18,7 +19,7 @@ class Restaurant {
       name: "Mie Goreng",
       description: "Mie yang digoreng dengan sayuran dan bumbu khas.",
       imagePath:
-          "https://example.com/mie_goreng.jpg", // Ganti dengan URL yang valid
+          "https://allofresh.id/blog/wp-content/uploads/2023/09/cara-membuat-mie-goreng-4-1-scaled.jpg", // Ganti dengan URL yang valid
       price: 12000,
       category: foodCategory.mainCourse,
       addOns: [
@@ -29,7 +30,7 @@ class Restaurant {
       name: "Soto Ayam",
       description: "Sup ayam dengan rempah-rempah dan sayuran.",
       imagePath:
-          "https://example.com/soto_ayam.jpg", // Ganti dengan URL yang valid
+          "https://icone-inc.org/wp-content/uploads/2018/11/Soto-Ayam-2-micita.jpeg", // Ganti dengan URL yang valid
       price: 20000,
       category: foodCategory.mainCourse,
       addOns: [],
@@ -38,7 +39,7 @@ class Restaurant {
       name: "Gado-Gado",
       description: "Salad sayuran dengan saus kacang.",
       imagePath:
-          "https://example.com/gado_gado.jpg", // Ganti dengan URL yang valid
+          "https://www.wandercooks.com/wp-content/uploads/2020/11/gado-gado-salad-with-peanut-sauce-ft-1.jpg", // Ganti dengan URL yang valid
       price: 15000,
       category: foodCategory.healthy,
       addOns: [],
@@ -46,7 +47,8 @@ class Restaurant {
     Food(
       name: "Bakso",
       description: "Bakso daging sapi dalam kuah kaldu.",
-      imagePath: "https://example.com/bakso.jpg", // Ganti dengan URL yang valid
+      imagePath:
+          "https://cdn.tasteatlas.com/images/dishrestaurants/35a1edd0bee948e1bcf590b13f9f76c3.jpg", // Ganti dengan URL yang valid
       price: 18000,
       category: foodCategory.mainCourse,
       addOns: [
@@ -58,7 +60,7 @@ class Restaurant {
       name: "Pisang Goreng",
       description: "Pisang yang digoreng hingga crispy.",
       imagePath:
-          "https://example.com/pisang_goreng.jpg", // Ganti dengan URL yang valid
+          "https://cdn.kuali.com/wp-content/uploads/2021/09/02213920/crispy-pisang-goreng.jpg", // Ganti dengan URL yang valid
       price: 8000,
       category: foodCategory.snacks,
       addOns: [],
@@ -67,7 +69,7 @@ class Restaurant {
       name: "Kue Cubir",
       description: "Kue mini yang lembut dan manis.",
       imagePath:
-          "https://example.com/kue_cubir.jpg", // Ganti dengan URL yang valid
+          "https://i0.wp.com/resepkoki.id/wp-content/uploads/2019/08/Resep-Kue-Cubit-Original.jpg?fit=1040%2C1300&ssl=1", // Ganti dengan URL yang valid
       price: 6000,
       category: foodCategory.desserts,
       addOns: [],
@@ -76,7 +78,7 @@ class Restaurant {
       name: "Roti Bakar",
       description: "Roti panggang dengan berbagai isian.",
       imagePath:
-          "https://example.com/roti_bakar.jpg", // Ganti dengan URL yang valid
+          "https://th.bing.com/th/id/OIP.MUNsj5cc_HEdqiff8f7m5wHaFA?rs=1&pid=ImgDetMain", // Ganti dengan URL yang valid
       price: 10000,
       category: foodCategory.snacks,
       addOns: [
@@ -88,7 +90,7 @@ class Restaurant {
       name: "Es Teh Manis",
       description: "Teh manis yang disajikan dingin.",
       imagePath:
-          "https://example.com/es_teh.jpg", // Ganti dengan URL yang valid
+          "https://i.pinimg.com/originals/5d/31/ef/5d31ef90cd6c389e07bc48a08e583122.jpg", // Ganti dengan URL yang valid
       price: 5000,
       category: foodCategory.beverages,
       addOns: [],
@@ -97,7 +99,7 @@ class Restaurant {
       name: "Kerupuk",
       description: "Kerupuk renyah sebagai camilan.",
       imagePath:
-          "https://example.com/kerupuk.jpg", // Ganti dengan URL yang valid
+          "https://s1.bukalapak.com/bukalapak-kontenz-production/content_attachments/55446/original/Kerupuk_Putih.jpg", // Ganti dengan URL yang valid
       price: 3000,
       category: foodCategory.snacks,
       addOns: [],
@@ -106,7 +108,7 @@ class Restaurant {
       name: "Nasi Campur",
       description: "Nasi dengan berbagai lauk pauk.",
       imagePath:
-          "https://example.com/nasi_campur.jpg", // Ganti dengan URL yang valid
+          "https://i.pinimg.com/originals/e3/20/77/e32077057baa98e4fffa4c5abe048379.jpg", // Ganti dengan URL yang valid
       price: 18000,
       category: foodCategory.mainCourse,
       addOns: [
@@ -117,7 +119,7 @@ class Restaurant {
       name: "Tahu Tempe",
       description: "Tahu dan tempe goreng yang renyah.",
       imagePath:
-          "https://example.com/tahu_tempe.jpg", // Ganti dengan URL yang valid
+          "https://img-global.cpcdn.com/recipes/c4f877da53e71f2e/751x532cq70/tahu-tempe-goreng-praktis-foto-resep-utama.jpg", // Ganti dengan URL yang valid
       price: 10000,
       category: foodCategory.healthy,
       addOns: [],
@@ -126,7 +128,7 @@ class Restaurant {
       name: "Ayam Penyet",
       description: "Ayam yang digoreng dan disajikan dengan sambal.",
       imagePath:
-          "https://example.com/ayam_penyet.jpg", // Ganti dengan URL yang valid
+          "https://th.bing.com/th/id/OIP.tX8cSRN65uqrta6l5wWFZAHaHa?rs=1&pid=ImgDetMain", // Ganti dengan URL yang valid
       price: 22000,
       category: foodCategory.mainCourse,
       addOns: [
@@ -138,7 +140,7 @@ class Restaurant {
       name: "Cendol",
       description: "Minuman manis dengan cendol dan santan.",
       imagePath:
-          "https://example.com/cendol.jpg", // Ganti dengan URL yang valid
+          "https://th.bing.com/th/id/OIP.f1mlxPZ88G29bFR0EyiDrgHaE8?rs=1&pid=ImgDetMain", // Ganti dengan URL yang valid
       price: 7000,
       category: foodCategory.desserts,
       addOns: [],
@@ -147,7 +149,7 @@ class Restaurant {
       name: "Kwetiau Goreng",
       description: "Kwetiau yang digoreng dengan sayuran dan daging.",
       imagePath:
-          "https://example.com/kwetiau_goreng.jpg", // Ganti dengan URL yang valid
+          "https://2.bp.blogspot.com/-Uwhu7PAikNQ/WImP41aNzmI/AAAAAAAAAZY/rH0GCe6w2oAECx0XLU6gAC2zKU21oYMMgCLcB/s1600/kwetiau.jpg", // Ganti dengan URL yang valid
       price: 15000,
       category: foodCategory.mainCourse,
       addOns: [
@@ -158,7 +160,7 @@ class Restaurant {
       name: "Sate Ayam",
       description: "Sate ayam dengan bumbu kacang.",
       imagePath:
-          "https://example.com/sate_ayam.jpg", // Ganti dengan URL yang valid
+          "https://th.bing.com/th/id/R.5834de0a24edc422553bb9a9015a5f39?rik=k5zGUWKEL1dE%2fQ&riu=http%3a%2f%2fwww.rumahmesin.com%2fwp-content%2fuploads%2f2017%2f03%2fresep-sate-ayam-madura-mencicipi-makanan-asli-indonesia-yang-mendunia.jpg&ehk=n42w6xcn41RbMbPvg19nltCAKInNNohJv9ZpDIUWphc%3d&risl=&pid=ImgRaw&r=0", // Ganti dengan URL yang valid
       price: 20000,
       category: foodCategory.mainCourse,
       addOns: [],
@@ -167,7 +169,7 @@ class Restaurant {
       name: "Es Jeruk",
       description: "Minuman jeruk segar yang disajikan dingin.",
       imagePath:
-          "https://example.com/es_jeruk.jpg", // Ganti dengan URL yang valid
+          "https://dcostseafood.id/wp-content/uploads/2021/12/ES-JERUK-murni.jpg", // Ganti dengan URL yang valid
       price: 6000,
       category: foodCategory.beverages,
       addOns: [],
@@ -176,7 +178,7 @@ class Restaurant {
       name: "Martabak Manis",
       description: "Kue martabak manis dengan berbagai isian.",
       imagePath:
-          "https://example.com/martabak_manis.jpg", // Ganti dengan URL yang valid
+          "https://th.bing.com/th/id/R.a3000f3aa654eedddc085f2873891344?rik=PMVn%2fT95nFBE1g&riu=http%3a%2f%2findonesiaexpat.biz%2fwp-content%2fuploads%2f2018%2f11%2fmartabak-manis.jpg&ehk=KbOqv%2bWoX1IMseI5cLxARqf4Oobsp55tqwUYTYFNnSY%3d&risl=&pid=ImgRaw&r=0", // Ganti dengan URL yang valid
       price: 15000,
       category: foodCategory.desserts,
       addOns: [
@@ -188,10 +190,11 @@ class Restaurant {
       name: "Nasi Uduk",
       description: "Nasi yang dimasak dengan santan dan rempah.",
       imagePath:
-          "https://example.com/nasi_uduk.jpg", // Ganti dengan URL yang valid
+          "https://img.freepik.com/fotos-premium/nasi-uduk-betawi-plato-arroz-al-vapor-sabor-coco-betawi-yakarta-sirve-varios-platos_431906-4501.jpg?w=2000", // Ganti dengan URL yang valid
       price: 16000,
       category: foodCategory.mainCourse,
       addOns: [],
     ),
   ];
+  List<Food> get menu => _menu;
 }

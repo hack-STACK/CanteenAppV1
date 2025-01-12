@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 
 class MyDrawerTile extends StatelessWidget {
-  MyDrawerTile(
-      {Key? key, required this.text, required this.icon, required this.onTap})
-      : super(key: key);
+  const MyDrawerTile(
+      {super.key, required this.text, required this.icon, required this.onTap});
   final String text;
   final IconData? icon;
   final void Function()? onTap;

@@ -3,7 +3,7 @@ import 'package:kantin/Component/my_drawer_tile.dart';
 import 'package:kantin/pages/Setting_Page.dart';
 
 class MyDrawer extends StatelessWidget {
-  const MyDrawer({Key? key}) : super(key: key);
+  const MyDrawer({super.key});
 
   @override
   Widget build(BuildContext context) {

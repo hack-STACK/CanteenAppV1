@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 class MyCurrentLocation extends StatelessWidget {
-  const MyCurrentLocation({Key? key}) : super(key: key);
+  const MyCurrentLocation({super.key});
 
   void openLocationSearchBox(BuildContext context) {
     showDialog(

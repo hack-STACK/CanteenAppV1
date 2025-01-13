@@ -199,6 +199,7 @@ class Restaurant extends ChangeNotifier {
     ),
   ];
   List<Food> get menu => _menu;
+  List<CartItem> get cart => _cart;
 
   final List<CartItem> _cart = [];
 
@@ -215,6 +216,45 @@ class Restaurant extends ChangeNotifier {
     } else {
       _cart.add(CartItem(food: food, selectedAddOns: selectedAddOns));
     }
+    notifyListeners();
+  }
+
+void removeFromCart(CartItem cartItem) {
+  int cartIndex = _cart.indexOf(cartItem);
+  if (cartIndex != -1) { // Check if the item exists in the cart
+    if (_cart[cartIndex].quantity > 1) {
+      _cart[cartIndex].quantity--; // Decrement quantity
+    } else {
+      _cart.removeAt(cartIndex); // Remove item if quantity is 1
+    }
+    notifyListeners(); // Notify listeners after modification
+  }
+}
+
+  notifyListeners();
+
+  double getTotalPrice() {
+    double totalPrice = 0.0;
+
+    for (CartItem cartItem in _cart) {
+      double itemTotalPrice = cartItem.food.price;
+      for (foodAddOn addOn in cartItem.selectedAddOns) {
+        itemTotalPrice += addOn.price;
+      }
+      totalPrice += itemTotalPrice * cartItem.quantity;
+    }
+    return totalPrice;
+  }
+
+  get totalItemCount {
+    int totalItemCount = 0;
+    for (CartItem cartItem in _cart) {
+      totalItemCount += cartItem.quantity;
+    }
+    return totalItemCount;
+  }
+  void clearCartItems() {
+    _cart.clear();
     notifyListeners();
   }
 }

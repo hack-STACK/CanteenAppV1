@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:kantin/Models/Food.dart';
 
 class MyFoodTile extends StatelessWidget {
-  const MyFoodTile({Key? key, required this.onTap, required this.food})
-      : super(key: key);
+  const MyFoodTile({super.key, required this.onTap, required this.food});
 
   final void Function()? onTap;
   final Food food;

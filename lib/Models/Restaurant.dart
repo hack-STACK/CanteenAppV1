@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:kantin/Models/Food.dart';
 import 'package:kantin/Models/cartItem.dart';
 import 'package:collection/collection.dart';
+import 'package:intl/intl.dart';
 
 class Restaurant extends ChangeNotifier {
   final List<Food> _menu = [
@@ -219,18 +220,20 @@ class Restaurant extends ChangeNotifier {
     notifyListeners();
   }
 
-void removeFromCart(CartItem cartItem) {
-  int cartIndex = _cart.indexOf(cartItem);
-  if (cartIndex != -1) { // Check if the item exists in the cart
-    if (_cart[cartIndex].quantity > 1) {
-      _cart[cartIndex].quantity--; // Decrement quantity
-    } else {
-      _cart.removeAt(cartIndex); // Remove item if quantity is 1
+  void removeFromCart(CartItem cartItem) {
+    int cartIndex = _cart.indexOf(cartItem);
+    if (cartIndex != -1) {
+      // Check if the item exists in the cart
+      if (_cart[cartIndex].quantity > 1) {
+        _cart[cartIndex].quantity--; // Decrement quantity
+      } else {
+        _cart.removeAt(cartIndex); // Remove item if quantity is 1
+      }
+      notifyListeners(); // Notify listeners after modification
     }
-    notifyListeners(); // Notify listeners after modification
   }
-}
 
+  @override
   notifyListeners();
 
   double getTotalPrice() {
@@ -253,8 +256,50 @@ void removeFromCart(CartItem cartItem) {
     }
     return totalItemCount;
   }
+
   void clearCartItems() {
     _cart.clear();
     notifyListeners();
+  }
+
+  String displayReceipt() {
+    final receipt = StringBuffer();
+    receipt.write("Here's your receipt");
+    receipt.writeln();
+
+    String formattedDate =
+        DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
+    receipt.write("Date: $formattedDate");
+    receipt.writeln();
+    receipt.writeln('--------------------------------');
+
+    for (final CartItem cartItem in _cart) {
+      receipt.writeln(
+          "${cartItem.quantity} x ${cartItem.food.name} - ${_formatPrice(cartItem.food.price)}");
+      if (cartItem.selectedAddOns.isNotEmpty) {
+        receipt.write(
+            '  Add-ons: ${_formatAddons(cartItem.selectedAddOns)}'); // Corrected method call
+      }
+      receipt.writeln();
+    }
+
+    receipt.writeln('--------------------------------');
+    receipt.writeln(
+        "Total items: ${_cart.fold(0, (sum, item) => sum + item.quantity)}"); // Total item count
+    receipt.write("Total price: ${_formatPrice(getTotalPrice())}");
+
+    return receipt.toString();
+  }
+
+  String _formatPrice(double price) {
+    final formatter = NumberFormat('#,##0', 'id_ID');
+    return 'Rp. ${formatter.format(price)}'; // Format price with 2 decimal places
+  }
+
+  String _formatAddons(List<foodAddOn> addons) {
+    // Changed to PascalCase
+    return addons
+        .map((addon) => '${addon.name} (${_formatPrice(addon.price)})')
+        .join(', ');
   }
 }

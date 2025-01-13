@@ -11,7 +11,7 @@ class PaymentPage extends StatefulWidget {
 }
 
 class _PaymentPageState extends State<PaymentPage> {
-  GlobalKey<FormState> formKey = new GlobalKey<FormState>();
+  GlobalKey<FormState> formKey = GlobalKey<FormState>();
   String cardNumber = '';
   String expiryDate = '';
   String cardHolderName = '';
@@ -38,12 +38,13 @@ class _PaymentPageState extends State<PaymentPage> {
                       onPressed: () => Navigator.pop(context),
                       child: Text('Cancel')),
                   TextButton(
-                      onPressed: () { 
+                      onPressed: () {
                         Navigator.pop(context);
                         Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (context) => DeliveryPage()));},
+                            context,
+                            MaterialPageRoute(
+                                builder: (context) => DeliveryPage()));
+                      },
                       child: Text('Yes')),
                 ],
               ));

@@ -78,7 +78,7 @@ class MyCartTile extends StatelessWidget {
                                       Text(foodAddOn.name),
                                       // add on price
                                       Text(
-                                        ' (' + foodAddOn.formatPrice() + ')',
+                                        ' (${foodAddOn.formatPrice()})',
                                       )
                                     ],
                                   ),

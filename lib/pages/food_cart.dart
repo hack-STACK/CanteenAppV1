@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:kantin/Component/my_Cart_Tile.dart';
 import 'package:kantin/Component/my_button.dart';
 import 'package:kantin/Models/Restaurant.dart';
-import 'package:kantin/Models/cartItem.dart';
 import 'package:kantin/pages/payment_page.dart';
 import 'package:provider/provider.dart';
 
@@ -61,7 +60,8 @@ class FoodCartPage extends StatelessWidget {
             MyButton(
               text: "Go to checkout",
               onTap: () {
-                Navigator.push(context, MaterialPageRoute(builder: (context) => PaymentPage() ));
+                Navigator.push(context,
+                    MaterialPageRoute(builder: (context) => PaymentPage()));
               },
             ),
             const SizedBox(height: 25),

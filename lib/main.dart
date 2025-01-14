@@ -1,10 +1,16 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:kantin/Services/Auth/gate.dart';
+import 'package:kantin/firebase_options.dart';
 import 'package:provider/provider.dart';
-import 'package:kantin/Auth/login_or_register.dart';
+import 'package:kantin/Services/Auth/login_or_register.dart';
 import 'package:kantin/Themes/theme_providers.dart';
 import 'package:kantin/Models/Restaurant.dart'; // Import your Restaurant model
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
   runApp(
     MultiProvider(
       providers: [
@@ -26,7 +32,7 @@ class MainApp extends StatelessWidget {
       builder: (context, themeProvider, child) {
         return MaterialApp(
           debugShowCheckedModeBanner: false,
-          home: const LoginOrRegister(),
+          home: const AuthGate(),
           theme: themeProvider.themeData,
         );
       },

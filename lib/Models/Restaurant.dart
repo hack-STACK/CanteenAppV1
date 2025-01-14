@@ -201,9 +201,10 @@ class Restaurant extends ChangeNotifier {
   ];
   List<Food> get menu => _menu;
   List<CartItem> get cart => _cart;
-
+  String _deliveryAddress = "Ruang 32";
   final List<CartItem> _cart = [];
-
+  
+  String get deliveryAddress => _deliveryAddress;
   void addToCart(Food food, List<foodAddOn> selectedAddOns) {
     CartItem? existingCart = _cart.firstWhereOrNull((item) {
       bool isSameFood = item.food == food;
@@ -219,7 +220,10 @@ class Restaurant extends ChangeNotifier {
     }
     notifyListeners();
   }
-
+  void updateDeliveryAddress(String newAddress) {
+    _deliveryAddress = newAddress;
+    notifyListeners();
+  }
   void removeFromCart(CartItem cartItem) {
     int cartIndex = _cart.indexOf(cartItem);
     if (cartIndex != -1) {

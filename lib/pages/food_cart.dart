@@ -57,14 +57,19 @@ class FoodCartPage extends StatelessWidget {
                       },
                     ),
             ),
-            MyButton(
-              text: "Go to checkout",
-              onTap: () {
-                Navigator.push(context,
-                    MaterialPageRoute(builder: (context) => PaymentPage()));
-              },
-            ),
-            const SizedBox(height: 25),
+            // Conditionally render the button based on cart contents
+            if (userCart.isNotEmpty) ...[
+              MyButton(
+                text: "Go to checkout",
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => PaymentPage()),
+                  );
+                },
+              ),
+              const SizedBox(height: 25),
+            ],
           ],
         ),
       );

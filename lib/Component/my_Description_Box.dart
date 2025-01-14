@@ -5,19 +5,14 @@ class MyDescriptionBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Define text styles based on the theme
     var myPrimaryTextStyle = TextStyle(
-      color: Theme.of(context)
-          .colorScheme
-          .onSurface, // Use onSurface for better contrast
+      color: Theme.of(context).colorScheme.onSurface,
       fontSize: 18,
       fontWeight: FontWeight.bold,
     );
 
     var mySecondaryTextStyle = TextStyle(
-      color: Theme.of(context)
-          .colorScheme
-          .secondary, // Use secondary color for description
+      color: Theme.of(context).colorScheme.secondary,
       fontSize: 14,
     );
 
@@ -26,14 +21,13 @@ class MyDescriptionBox extends StatelessWidget {
         border: Border.all(color: Theme.of(context).colorScheme.secondary),
         borderRadius: BorderRadius.circular(10),
       ),
-      padding: EdgeInsets.all(25),
-      margin: EdgeInsets.all(25),
+      padding: EdgeInsets.all(20),
+      margin: EdgeInsets.all(20),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Column(
-            crossAxisAlignment:
-                CrossAxisAlignment.start, // Align text to the start
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 'Rp.15.000',
@@ -46,8 +40,7 @@ class MyDescriptionBox extends StatelessWidget {
             ],
           ),
           Column(
-            crossAxisAlignment:
-                CrossAxisAlignment.start, // Align text to the start
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 '15-30 min',

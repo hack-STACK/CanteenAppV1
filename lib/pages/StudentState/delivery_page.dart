@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:kantin/Component/my_Receipt.dart'; // Ensure this is the correct import
 import 'package:kantin/Models/Restaurant.dart';
 import 'package:kantin/Services/Database/firestore.dart';
-import 'package:kantin/pages/homepage.dart';
+import 'package:kantin/pages/StudentState/StudentPage.dart';
 import 'package:provider/provider.dart';
-import 'package:kantin/pages/homepage.dart'; // Import your homepage
+// Import your homepage
 
 class DeliveryPage extends StatefulWidget {
   const DeliveryPage({super.key});
@@ -55,7 +55,7 @@ class _DeliveryPageState extends State<DeliveryPage> {
                   context.read<Restaurant>().clearCartItems();
                   Navigator.pushReplacement(
                     context,
-                    MaterialPageRoute(builder: (context) => Homepage()), // Navigate to the homepage
+                    MaterialPageRoute(builder: (context) => StudentPage()), // Navigate to the homepage
                   );
                 },
                 child: Text('Continue Shopping'),

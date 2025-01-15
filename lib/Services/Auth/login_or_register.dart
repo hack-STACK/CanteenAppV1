@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:kantin/Pages/login_page.dart';
-import 'package:kantin/pages/register_page.dart';
+import 'package:kantin/pages/User/login_page.dart';
+import 'package:kantin/pages/User/register_page.dart';
 
 class LoginOrRegister extends StatefulWidget {
   const LoginOrRegister({super.key});
@@ -14,7 +14,7 @@ class _LoginOrRegisterState extends State<LoginOrRegister> {
 
   void togglePages() {
     setState(() {
-      showLoginPage = !showLoginPage;
+      showLoginPage = !showLoginPage; // Toggle between login and register pages
     });
   }
 
@@ -31,7 +31,7 @@ class _LoginOrRegisterState extends State<LoginOrRegister> {
               )
             : RegisterPage(
                 key: const ValueKey('RegisterPage'),
-                ontap: togglePages, // Pass the toggle function
+                onTap: togglePages, // Ensure consistent naming
               ),
       ),
     );

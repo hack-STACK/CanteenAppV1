@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:kantin/Component/my_Cart_Tile.dart';
 import 'package:kantin/Component/my_button.dart';
 import 'package:kantin/Models/Restaurant.dart';
-import 'package:kantin/pages/payment_page.dart';
+import 'package:kantin/pages/StudentState/payment_page.dart';
 import 'package:provider/provider.dart';
 
 class FoodCartPage extends StatelessWidget {

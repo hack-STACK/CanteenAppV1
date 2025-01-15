@@ -11,7 +11,7 @@ class MyTextfield extends StatelessWidget {
     required this.controller,
     required this.hintText,
     required this.obscureText,
-    required this.hintColor, // Add hintColor as a parameter
+    required this.hintColor // Add hintColor as a parameter
   });
 
   @override

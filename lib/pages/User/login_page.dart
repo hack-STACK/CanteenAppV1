@@ -1,28 +1,77 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:kantin/Component/my_button.dart';
 import 'package:kantin/Component/my_textfield.dart';
 import 'package:kantin/Services/Auth/auth_Service.dart';
-import 'package:kantin/pages/homepage.dart';
+import 'package:kantin/pages/AdminState/AdminPage.dart';
+import 'package:kantin/pages/StudentState/StudentPage.dart';
 
-class RegisterPage extends StatefulWidget {
-  const RegisterPage({super.key, this.ontap});
-  final void Function()? ontap;
+class LoginPage extends StatefulWidget {
+  const LoginPage({super.key, this.onTap});
+  final void Function()? onTap;
 
   @override
-  _RegisterPageState createState() => _RegisterPageState();
+  _LoginPageState createState() => _LoginPageState();
 }
 
-class _RegisterPageState extends State<RegisterPage> {
+class _LoginPageState extends State<LoginPage> {
   final TextEditingController emailController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
-  final TextEditingController confirmPasswordController = TextEditingController();
   final FocusNode emailFocusNode = FocusNode();
   final FocusNode passwordFocusNode = FocusNode();
-  final FocusNode confirmPasswordFocusNode = FocusNode();
   Color emailHintColor = Colors.grey; // Default hint color for email
   Color passwordHintColor = Colors.grey; // Default hint color for password
-  Color confirmPasswordHintColor = Colors.grey; // Default hint color for confirm password
+  String errorMessage = ''; // To hold error messages
   bool isLoading = false; // Loading state
+
+  Future<void> login() async {
+    final _authService = AuthService();
+    setState(() {
+      isLoading = true; // Set loading state to true
+      errorMessage = ''; // Reset error message
+    });
+
+    try {
+      UserCredential userCredential = await _authService.signInWithEmailPassword(
+        emailController.text,
+        passwordController.text,
+      );
+
+      // Fetch user role from Firestore
+      DocumentSnapshot userDoc = await FirebaseFirestore.instance.collection('users').doc(userCredential.user!.uid).get();
+
+      // Check if the document exists and contains the 'role' field
+      if (userDoc.exists && userDoc.data() != null) {
+        String role = userDoc['role'] ?? 'student'; // Default to 'student' if role is null
+
+        // Navigate based on role
+        if (role == 'student') {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => StudentPage()),
+          );
+        } else if (role == 'admin') {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => AdminDashboard()),
+          );
+        }
+      } else {
+        setState(() {
+          errorMessage = 'User  document does not exist or is empty';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        errorMessage = 'Login failed: ${e.toString()}'; // Show error message
+      });
+    } finally {
+      setState(() {
+        isLoading = false; // Reset loading state
+      });
+    }
+  }
 
   @override
   void initState() {
@@ -45,73 +94,14 @@ class _RegisterPageState extends State<RegisterPage> {
             : Colors.grey; // Change color based on focus
       });
     });
-
-    // Listen for focus changes on the confirm password field
-    confirmPasswordFocusNode.addListener(() {
-      setState(() {
-        confirmPasswordHintColor = confirmPasswordFocusNode.hasFocus
-            ? Colors.blue
-            : Colors.grey; // Change color based on focus
-      });
-    });
-  }
-
-  void register() async {
-    final _authService = AuthService();
-    if (passwordController.text == confirmPasswordController.text) {
-      setState(() {
-        isLoading = true; // Set loading state to true
-      });
-      try {
-        await _authService.signUpWithEmailPassword(
-            emailController.text, passwordController.text);
-        // Navigate to the homepage after successful registration
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => Homepage()),
-        );
-      } catch (e) {
-        setState(() {
-          isLoading = false; // Reset loading state
-        });
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: Text('Registration Failed'),
-            content: Text(e.toString()), // Show a user-friendly error message
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text('OK'),
-              ),
-            ],
-          ),
-        );
-      }
-    } else {
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Text("Passwords don't match!"),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text('OK'),
-            ),
-          ],
-        ),
-      );
-    }
   }
 
   @override
   void dispose() {
     emailFocusNode.dispose(); // Dispose the email focus node
     passwordFocusNode.dispose(); // Dispose the password focus node
-    confirmPasswordFocusNode.dispose(); // Dispose the confirm password focus node
     emailController.dispose(); // Dispose the email controller
     passwordController.dispose(); // Dispose the password controller
-    confirmPasswordController.dispose(); // Dispose the confirm password controller
     super.dispose();
   }
 
@@ -121,7 +111,7 @@ class _RegisterPageState extends State<RegisterPage> {
     final screenSize = MediaQuery.of(context).size;
 
     return Scaffold(
-      backgroundColor : Theme.of(context).colorScheme.surface,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       body: GestureDetector(
         onTap: () {
           // Dismiss the keyboard when tapping outside the text fields
@@ -135,13 +125,13 @@ class _RegisterPageState extends State<RegisterPage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(
-                    Icons.lock_open_rounded,
+                    Icons.lock_open_rounded ,
                     size: screenSize.width * 0.2, // Responsive icon size
                     color: Theme.of(context).colorScheme.primary,
                   ),
                   const SizedBox(height: 25),
                   Text(
-                    "Create an Account",
+                    "Food Delivery App",
                     style: TextStyle(
                       fontSize: 20, // Increased font size for better visibility
                       color: Theme.of(context).colorScheme.inversePrimary,
@@ -161,32 +151,30 @@ class _RegisterPageState extends State<RegisterPage> {
                     obscureText: true,
                     hintColor: passwordHintColor, // Use dynamic hint color
                   ),
-                  const SizedBox(height: 10),
-                  MyTextfield(
-                    controller: confirmPasswordController,
-                    hintText: "Confirm Password",
-                    obscureText: true,
-                    hintColor: confirmPasswordHintColor, // Use dynamic hint color
-                  ),
                   const SizedBox(height: 25),
-                  isLoading // Show loading indicator if registering
+                  if (errorMessage.isNotEmpty) // Display error message if exists
+                    Text(
+                      errorMessage,
+                      style: TextStyle(color: Colors.red),
+                    ),
+                  const SizedBox(height: 10),
+                  isLoading // Show loading indicator while logging in
                       ? CircularProgressIndicator()
-                      : MyButton(
-                          text: "Register",
-                          onTap: register,
-                        ),
+                      : MyButton(text: "Sign in", onTap: login),
                   const SizedBox(height: 25),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        'Already a member? ',
-                        style: TextStyle(color: Theme.of(context).colorScheme.onPrimary),
+                        'Not a member? ',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onPrimary,
+                        ),
                       ),
                       GestureDetector(
-                        onTap: widget.ontap,
+                        onTap: widget.onTap, // Call the onTap function to navigate
                         child: Text(
-                          "Login now",
+                          "Register now",
                           style: TextStyle(
                             color: Theme.of(context).colorScheme.primary,
                             fontWeight: FontWeight.bold,

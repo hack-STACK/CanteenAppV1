@@ -1,57 +1,58 @@
 import 'package:flutter/material.dart';
 import 'package:kantin/Component/my_drawer_tile.dart';
 import 'package:kantin/Services/Auth/auth_Service.dart';
-import 'package:kantin/pages/Setting_Page.dart';
-import 'package:kantin/pages/login_page.dart';
+import 'package:kantin/Services/Auth/login_or_register.dart';
+import 'package:kantin/pages/StudentState/Setting_Page.dart';
+import 'package:kantin/pages/User/login_page.dart';
 
 class MyDrawer extends StatelessWidget {
   const MyDrawer({super.key});
 
-  void logout(BuildContext context) async {
-    final authService = AuthService();
-    final shouldLogout = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Logout'),
-        content: Text('Are you sure you want to logout?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: Text('Logout'),
-          ),
-        ],
-      ),
-    );
+void logout(BuildContext context) async {
+  final authService = AuthService();
+  final shouldLogout = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text('Logout'),
+      content: Text('Are you sure you want to logout?'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          child: Text('Logout'),
+        ),
+      ],
+    ),
+  );
 
-    if (shouldLogout == true) {
-      try {
-        await authService.signOut();
-        // Navigate to LoginPage after logging out
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (context) => LoginPage()), // Pass an empty function or handle it appropriately
-          (route) => false, // Remove all previous routes
-        );
-      } catch (e) {
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: Text('Error'),
-            content: Text('Failed to logout: ${e.toString()}'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: Text('OK'),
-              ),
-            ],
-          ),
-        );
-      }
+  if (shouldLogout == true) {
+    try {
+      await authService.signOut();
+      // Navigate to LoginOrRegister after logging out
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => const LoginOrRegister()),
+        (route) => false, // Remove all previous routes
+      );
+    } catch (e) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text('Error'),
+          content: Text('Failed to logout: ${e.toString()}'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text('OK'),
+            ),
+          ],
+        ),
+      );
     }
   }
+}
 
   @override
   Widget build(BuildContext context) {

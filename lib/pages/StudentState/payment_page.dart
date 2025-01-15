@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_credit_card/flutter_credit_card.dart';
 import 'package:kantin/Component/my_button.dart';
-import 'package:kantin/pages/delivery_page.dart';
+import 'package:kantin/pages/StudentState/delivery_page.dart';
 
 class PaymentPage extends StatefulWidget {
   const PaymentPage({super.key});

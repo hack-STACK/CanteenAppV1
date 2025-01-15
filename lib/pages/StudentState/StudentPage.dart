@@ -7,17 +7,17 @@ import 'package:kantin/Component/my_drawer.dart';
 import 'package:kantin/Component/my_food_tile.dart';
 import 'package:kantin/Models/Food.dart';
 import 'package:kantin/Models/Restaurant.dart';
-import 'package:kantin/pages/food_page.dart';
+import 'package:kantin/pages/StudentState/food_page.dart';
 import 'package:provider/provider.dart';
 
-class Homepage extends StatefulWidget {
-  const Homepage({super.key});
+class StudentPage extends StatefulWidget {
+  const StudentPage({super.key});
 
   @override
   _HomepageState createState() => _HomepageState();
 }
 
-class _HomepageState extends State<Homepage>
+class _HomepageState extends State<StudentPage>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
 

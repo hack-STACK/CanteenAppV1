@@ -1,44 +1,51 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class AuthService {
   final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  /// Returns the currently signed-in user, or null if no user is signed in.
   User? getCurrentUser () {
     return _firebaseAuth.currentUser ;
   }
 
-  /// Signs in a user with the provided email and password.
-  /// Throws a [FirebaseAuthException] if the sign-in fails.
   Future<UserCredential> signInWithEmailPassword(String email, String password) async {
     try {
       UserCredential userCredential = await _firebaseAuth.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
-      return userCredential;
+
+      // Fetch user role from Firestore
+      DocumentSnapshot userDoc = await _firestore.collection('users').doc(userCredential.user!.uid).get();
+      String role = userDoc['role'];
+
+      // Return user credential along with role
+      return userCredential; // You can also return role if needed
     } on FirebaseAuthException catch (e) {
-      // Handle specific error codes if needed
       throw Exception('Failed to sign in: ${e.message}');
     }
   }
 
-  /// Signs up a new user with the provided email and password.
-  /// Throws a [FirebaseAuthException] if the sign-up fails.
-  Future<UserCredential> signUpWithEmailPassword(String email, String password) async {
+  Future<UserCredential> signUpWithEmailPassword(String email, String password, String role) async {
     try {
       UserCredential userCredential = await _firebaseAuth.createUserWithEmailAndPassword(
         email: email,
         password: password,
       );
+
+      // Save user role in Firestore
+      await _firestore.collection('users').doc(userCredential.user!.uid).set({
+        'email': email,
+        'role': role, // Assign role during registration
+      });
+
       return userCredential;
     } on FirebaseAuthException catch (e) {
-      // Handle specific error codes if needed
       throw Exception('Failed to sign up: ${e.message}');
     }
   }
 
-  /// Signs out the currently signed-in user.
   Future<void> signOut() async {
     await _firebaseAuth.signOut();
   }

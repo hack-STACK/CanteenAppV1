@@ -14,7 +14,7 @@ class FireStoreService {
       print("Order saved successfully!"); // Debugging line
     } catch (e) {
       print("Error saving order: $e");
-      throw e; // Rethrow the error for further handling
+      rethrow; // Rethrow the error for further handling
     }
   }
 }

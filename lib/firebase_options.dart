@@ -65,4 +65,5 @@ class DefaultFirebaseOptions {
     storageBucket: 'food-a126f.firebasestorage.app',
     iosBundleId: 'com.example.kantin',
   );
+
 }

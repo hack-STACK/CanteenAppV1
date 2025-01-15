@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:kantin/Services/Auth/gate.dart';
 import 'package:kantin/firebase_options.dart';
 import 'package:provider/provider.dart';
-import 'package:kantin/Services/Auth/login_or_register.dart';
 import 'package:kantin/Themes/theme_providers.dart';
 import 'package:kantin/Models/Restaurant.dart'; // Import your Restaurant model
 

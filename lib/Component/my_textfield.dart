@@ -5,20 +5,24 @@ class MyTextfield extends StatelessWidget {
   final String hintText;
   final bool obscureText;
   final Color hintColor;
+  final FormFieldSetter<String>? onSaved; // Add onSaved as a parameter\
+  final TextInputType? keyboardInputType;
 
   const MyTextfield({
     super.key,
     required this.controller,
     required this.hintText,
     required this.obscureText,
-    required this.hintColor // Add hintColor as a parameter
+    required this.hintColor,
+    this.onSaved,
+    this.keyboardInputType, // Add onSaved as an optional parameter
   });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: TextField(
+      child: TextFormField(
         controller: controller,
         obscureText: obscureText,
         decoration: InputDecoration(
@@ -33,8 +37,9 @@ class MyTextfield extends StatelessWidget {
             ),
           ),
           hintText: hintText,
-          hintStyle: TextStyle(color: hintColor), // Use the passed hint color
+          hintStyle: TextStyle(color: hintColor),
         ),
+        onSaved: onSaved, // Use the onSaved callback
       ),
     );
   }

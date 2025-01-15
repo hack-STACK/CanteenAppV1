@@ -3,7 +3,7 @@ import 'package:kantin/Models/Restaurant.dart';
 import 'package:provider/provider.dart';
 
 class MyReceipt extends StatelessWidget {
-  const MyReceipt({Key? key}) : super(key: key);
+  const MyReceipt({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -11,7 +11,8 @@ class MyReceipt extends StatelessWidget {
     final screenWidth = MediaQuery.of(context).size.width;
 
     return Padding(
-      padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.05, vertical: 25),
+      padding:
+          EdgeInsets.symmetric(horizontal: screenWidth * 0.05, vertical: 25),
       child: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -29,7 +30,8 @@ class MyReceipt extends StatelessWidget {
             Container(
               decoration: BoxDecoration(
                 color: Theme.of(context).colorScheme.surface,
-                border: Border.all(color: Theme.of(context).colorScheme.secondary),
+                border:
+                    Border.all(color: Theme.of(context).colorScheme.secondary),
                 borderRadius: BorderRadius.circular(8),
                 boxShadow: [
                   BoxShadow(

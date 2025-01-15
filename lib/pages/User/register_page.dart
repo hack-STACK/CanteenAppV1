@@ -3,9 +3,13 @@ import 'package:kantin/Component/my_button.dart';
 import 'package:kantin/Component/my_textfield.dart';
 import 'package:kantin/Services/Auth/auth_Service.dart';
 import 'package:kantin/pages/StudentState/StudentPage.dart';
+import 'package:kantin/pages/User/Identity_ask_REG.dart';
 
 class RegisterPage extends StatefulWidget {
-  const RegisterPage({super.key, this.onTap, });
+  const RegisterPage({
+    super.key,
+    this.onTap,
+  });
   final void Function()? onTap;
 
   @override
@@ -15,10 +19,11 @@ class RegisterPage extends StatefulWidget {
 class _RegisterPageState extends State<RegisterPage> {
   final TextEditingController emailController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
-  final TextEditingController confirmPasswordController = TextEditingController();
+  final TextEditingController confirmPasswordController =
+      TextEditingController();
   bool isLoading = false; // Loading state
-  String errorMessage = ''; 
-  String selectedRole = 'student'; // Default role// To hold error messages
+  String errorMessage = '';
+  String selectedRole = 'student'; // Default role
 
   void register() async {
     final _authService = AuthService();
@@ -42,10 +47,12 @@ class _RegisterPageState extends State<RegisterPage> {
         passwordController.text,
         selectedRole, // Include the selected role
       );
-      // Navigate to the homepage after successful registration
+      // Navigate to the IdentityAskReg page after successful registration
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (context) => StudentPage()),
+        MaterialPageRoute(
+            builder: (context) =>
+                IdentityAskReg(role: selectedRole)), // Pass the selected role
       );
     } catch (e) {
       setState(() {
@@ -70,7 +77,6 @@ class _RegisterPageState extends State<RegisterPage> {
       ),
     );
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -102,7 +108,7 @@ class _RegisterPageState extends State<RegisterPage> {
                 const SizedBox(height: 25),
                 MyTextfield(
                   controller: emailController,
-                  hintText : "Email",
+                  hintText: "Email",
                   obscureText: false,
                   hintColor: Colors.grey,
                 ),
@@ -120,9 +126,9 @@ class _RegisterPageState extends State<RegisterPage> {
                   obscureText: true,
                   hintColor: Colors.grey,
                 ),
-                                const SizedBox(height: 10),
+                const SizedBox(height: 10),
                 DropdownButton<String>(
-                  value: selectedRole ,
+                  value: selectedRole,
                   items: <String>['student', 'admin']
                       .map<DropdownMenuItem<String>>((String value) {
                     return DropdownMenuItem<String>(
@@ -137,8 +143,7 @@ class _RegisterPageState extends State<RegisterPage> {
                   },
                 ),
                 const SizedBox(height: 10),
-                const SizedBox(height: 10),
-                if (errorMessage.isNotEmpty) 
+                if (errorMessage.isNotEmpty)
                   Text(
                     errorMessage,
                     style: TextStyle(color: Colors.red),

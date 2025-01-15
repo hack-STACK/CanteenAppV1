@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:kantin/Component/my_Quantitty_Selector.dart';
-import 'package:kantin/Models/Food.dart';
 import 'package:kantin/Models/Restaurant.dart';
 import 'package:kantin/Models/cartItem.dart';
 import 'package:provider/provider.dart';
@@ -14,7 +13,9 @@ class MyCartTile extends StatelessWidget {
     return Consumer<Restaurant>(
       builder: (context, restaurant, child) => Container(
         decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface, // Use surface color for better contrast
+          color: Theme.of(context)
+              .colorScheme
+              .surface, // Use surface color for better contrast
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
@@ -58,7 +59,8 @@ class MyCartTile extends StatelessWidget {
                           cartItem.food.name,
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
-                            fontSize: 22, // Increased font size for better visibility
+                            fontSize:
+                                22, // Increased font size for better visibility
                             color: Theme.of(context).colorScheme.onSurface,
                           ),
                         ),
@@ -80,15 +82,18 @@ class MyCartTile extends StatelessWidget {
                       restaurant.removeFromCart(cartItem);
                     },
                     onAdd: () {
-                      restaurant.addToCart(cartItem.food, cartItem.selectedAddOns);
+                      restaurant.addToCart(
+                          cartItem.food, cartItem.selectedAddOns);
                     },
                   ),
                 ],
               ),
             ),
-            if (cartItem.selectedAddOns.isNotEmpty) // Only show if there are add-ons
+            if (cartItem
+                .selectedAddOns.isNotEmpty) // Only show if there are add-ons
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 child: SizedBox(
                   height: 50, // Fixed height for the add-ons list
                   child: ListView(
@@ -112,8 +117,12 @@ class MyCartTile extends StatelessWidget {
                           onSelected: (bool selected) {
                             // Handle selection if needed
                           },
-                          backgroundColor: Theme.of(context).colorScheme.secondary,
-                          selectedColor: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+                          backgroundColor:
+                              Theme.of(context).colorScheme.secondary,
+                          selectedColor: Theme.of(context)
+                              .colorScheme
+                              .primary
+                              .withOpacity(0.2),
                           labelStyle: TextStyle(
                             color: Theme.of(context).colorScheme.onSecondary,
                             fontSize: 12,
@@ -122,7 +131,7 @@ class MyCartTile extends StatelessWidget {
                           showCheckmark: false,
                         ),
                       );
-                    }). toList(),
+                    }).toList(),
                   ),
                 ),
               ),

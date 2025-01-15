@@ -26,24 +26,28 @@ class _LoginPageState extends State<LoginPage> {
   bool isLoading = false; // Loading state
 
   Future<void> login() async {
-    final _authService = AuthService();
+    final authService = AuthService();
     setState(() {
       isLoading = true; // Set loading state to true
       errorMessage = ''; // Reset error message
     });
 
     try {
-      UserCredential userCredential = await _authService.signInWithEmailPassword(
+      UserCredential userCredential = await authService.signInWithEmailPassword(
         emailController.text,
         passwordController.text,
       );
 
       // Fetch user role from Firestore
-      DocumentSnapshot userDoc = await FirebaseFirestore.instance.collection('users').doc(userCredential.user!.uid).get();
+      DocumentSnapshot userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userCredential.user!.uid)
+          .get();
 
       // Check if the document exists and contains the 'role' field
       if (userDoc.exists && userDoc.data() != null) {
-        String role = userDoc['role'] ?? 'student'; // Default to 'student' if role is null
+        String role = userDoc['role'] ??
+            'student'; // Default to 'student' if role is null
 
         // Navigate based on role
         if (role == 'student') {
@@ -82,7 +86,9 @@ class _LoginPageState extends State<LoginPage> {
       setState(() {
         emailHintColor = emailFocusNode.hasFocus
             ? Colors.blue
-            : Theme.of(context).colorScheme.inversePrimary; // Change color based on focus
+            : Theme.of(context)
+                .colorScheme
+                .inversePrimary; // Change color based on focus
       });
     });
 
@@ -118,14 +124,16 @@ class _LoginPageState extends State<LoginPage> {
           FocusScope.of(context).unfocus();
         },
         child: Center(
-          child: SingleChildScrollView( // Allow scrolling for smaller screens
+          child: SingleChildScrollView(
+            // Allow scrolling for smaller screens
             child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: screenSize.width * 0.1), // Responsive padding
+              padding: EdgeInsets.symmetric(
+                  horizontal: screenSize.width * 0.1), // Responsive padding
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(
-                    Icons.lock_open_rounded ,
+                    Icons.lock_open_rounded,
                     size: screenSize.width * 0.2, // Responsive icon size
                     color: Theme.of(context).colorScheme.primary,
                   ),
@@ -152,7 +160,8 @@ class _LoginPageState extends State<LoginPage> {
                     hintColor: passwordHintColor, // Use dynamic hint color
                   ),
                   const SizedBox(height: 25),
-                  if (errorMessage.isNotEmpty) // Display error message if exists
+                  if (errorMessage
+                      .isNotEmpty) // Display error message if exists
                     Text(
                       errorMessage,
                       style: TextStyle(color: Colors.red),
@@ -172,7 +181,8 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                       ),
                       GestureDetector(
-                        onTap: widget.onTap, // Call the onTap function to navigate
+                        onTap:
+                            widget.onTap, // Call the onTap function to navigate
                         child: Text(
                           "Register now",
                           style: TextStyle(

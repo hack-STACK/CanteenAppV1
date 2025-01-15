@@ -55,10 +55,11 @@ class _DeliveryPageState extends State<DeliveryPage> {
                   context.read<Restaurant>().clearCartItems();
                   Navigator.pushReplacement(
                     context,
-                    MaterialPageRoute(builder: (context) => StudentPage()), // Navigate to the homepage
+                    MaterialPageRoute(
+                        builder: (context) =>
+                            StudentPage()), // Navigate to the homepage
                   );
                 },
-                child: Text('Continue Shopping'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Theme.of(context).colorScheme.onSecondary,
                   padding: EdgeInsets.symmetric(horizontal: 30, vertical: 15),
@@ -66,6 +67,7 @@ class _DeliveryPageState extends State<DeliveryPage> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                 ),
+                child: Text('Continue Shopping'),
               ),
             ),
           ],
@@ -141,7 +143,7 @@ class _DeliveryPageState extends State<DeliveryPage> {
                 child: IconButton(
                   onPressed: () {},
                   icon: Icon(Icons.call),
-                  color: Theme.of(context).colorScheme .onPrimary,
+                  color: Theme.of(context).colorScheme.onPrimary,
                 ),
               ),
             ],

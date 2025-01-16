@@ -22,7 +22,9 @@ void main() async {
     ),
   );
 }
+
 String role = 'admin'; // Default role
+
 class MainApp extends StatelessWidget {
   const MainApp({super.key});
 
@@ -32,7 +34,7 @@ class MainApp extends StatelessWidget {
       builder: (context, themeProvider, child) {
         return MaterialApp(
           debugShowCheckedModeBanner: false,
-          home: IdentityAskReg(role: role) ,                                          //const AuthGate(),
+          home: AuthGate(), //const AuthGate(),
           theme: themeProvider.themeData,
         );
       },

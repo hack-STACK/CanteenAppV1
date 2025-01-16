@@ -33,7 +33,7 @@ class _MenuPageState extends State<MenuPage> {
       );
       _menuService.createMenu(newMenu);
       _nameController.clear();
- _descriptionController.clear();
+      _descriptionController.clear();
       _priceController.clear();
       _imagePathController.clear();
       Navigator.pop(context); // Close the dialog after adding

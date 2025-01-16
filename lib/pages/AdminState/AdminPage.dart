@@ -72,11 +72,12 @@ class AdminDashboard extends StatelessWidget {
           ),
           actions: [
             TextButton(
-              onPressed: () {
+              onPressed: () async {
                 // Handle adding the menu item
                 final String name = nameController.text;
                 final String description = descriptionController.text;
-                final double price = double.tryParse(priceController.text) ?? 0.0;
+                final double price =
+                    double.tryParse(priceController.text) ?? 0.0;
                 final String imagePath = imagePathController.text;
 
                 if (name.isNotEmpty && description.isNotEmpty && price > 0) {
@@ -88,23 +89,32 @@ class AdminDashboard extends StatelessWidget {
                     imagePath: imagePath,
                   );
 
-                  // Call the MenuService to add the menu item
-                  MenuService().createMenu(newMenu).then((_) {
+                  try {
+                    await FirebaseFirestore.instance
+                        .collection('menus')
+                        .add(newMenu.toMap());
                     Navigator.pop(context); // Close the dialog
-                    // Optionally show a success message
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(content: Text('Menu item added successfully!')),
                     );
-                  }).catchError((error) {
-                    // Handle error
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Failed to add menu item: $error')),
-                    );
-                  });
+                  } catch (e) {
+                    if (e.toString().contains('PERMISSION_DENIED')) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                            content: Text(
+                                "You don't have permission to perform this action.")),
+                      );
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Failed to add menu item: $e')),
+                      );
+                    }
+                  }
                 } else {
                   // Show error message if fields are invalid
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Please fill in all fields correctly.')),
+                    SnackBar(
+                        content: Text('Please fill in all fields correctly.')),
                   );
                 }
               },
@@ -114,25 +124,12 @@ class AdminDashboard extends StatelessWidget {
               onPressed: () => Navigator.pop(context),
               child: Text('Cancel'),
             ),
- ],
+          ],
         );
       },
     );
   }
-void addMenuItem(Menu menu) async {
-  final user = FirebaseAuth.instance.currentUser;
-  if (user == null) {
-    print("User is not authenticated");
-    return; // Handle the case where the user is not authenticated
-  }
 
-  try {
-    await FirebaseFirestore.instance.collection('menus').add(menu.toMap());
-    print("Menu item added successfully");
-  } catch (e) {
-    print("Failed to add menu item: $e");
-  }
-}
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -164,11 +161,13 @@ void addMenuItem(Menu menu) async {
             Card(
               child: ListTile(
                 title: const Text('Total Revenue'),
-                subtitle: const Text('Rp. 1,000,000'), // Replace with dynamic data
+                subtitle:
+                    const Text('Rp. 1,000,000'), // Replace with dynamic data
               ),
             ),
             ElevatedButton(
-              onPressed: () => _showAddMenuDialog(context), // Show dialog to add menu
+              onPressed: () =>
+                  _showAddMenuDialog(context), // Show dialog to add menu
               child: const Text('Add Menu Item'),
             ),
             // Add more cards or widgets as needed

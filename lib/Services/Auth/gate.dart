@@ -21,19 +21,37 @@ class AuthGate extends StatelessWidget {
           if (snapshot.hasData) {
             // User is signed in
             return FutureBuilder<DocumentSnapshot>(
-              future: FirebaseFirestore.instance.collection('users').doc(snapshot.data!.uid).get(),
+              future: FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(snapshot.data!.uid)
+                  .get(),
               builder: (context, userSnapshot) {
                 if (userSnapshot.connectionState == ConnectionState.waiting) {
                   return Center(child: CircularProgressIndicator());
                 }
 
-                String role = userSnapshot.data!['role'];
-                if (role == 'student') {
-                  return const StudentPage();
-                } else if (role == 'admin') {
-                  return const AdminDashboard();
+                if (userSnapshot.hasError) {
+                  return Center(
+                    child:
+                        Text('Error fetching user data: ${userSnapshot.error}'),
+                  );
                 }
-                return const LoginOrRegister();
+
+                // Check if the document exists and contains the 'role' field
+                if (userSnapshot.data != null && userSnapshot.data!.exists) {
+                  String role = userSnapshot.data!['role'] ??
+                      'student'; // Default to 'student' if role is null
+
+                  if (role == 'student') {
+                    return const StudentPage();
+                  } else if (role == 'admin') {
+                    return const AdminDashboard();
+                  }
+                } else {
+                  return const LoginOrRegister(); // Handle case where user document does not exist
+                }
+
+                return const LoginOrRegister(); // Fallback
               },
             );
           } else {

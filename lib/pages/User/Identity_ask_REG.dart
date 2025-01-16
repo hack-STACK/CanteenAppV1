@@ -105,19 +105,42 @@ class _IdentityAskRegState extends State<IdentityAskReg> {
         }
       }
       Map<String, dynamic> userData = {
-  '1_uid': documentId,
-  '4_email': user.email,
-  '2_name': _name,
-  '3_age': _age,
-  '8_role': widget.role == 'admin' ? 'admin' : 'student',
-  '9_createdAt': Timestamp.now(),
-};
-  if (widget.role == 'student') {
-    userData['5_class'] = _selectedClass;
-  }else if (widget.role == 'admin') {
-    userData['6_slot'] = _selectedSlot;
-    userData['7_canteenName'] = _canteenName;
-  }
+        '1_uid': documentId,
+        '4_email': user.email,
+        '2_name': _name,
+        '3_age': _age,
+        '8_role': widget.role == 'admin' ? 'admin' : 'student',
+        '9_createdAt': Timestamp.now(),
+      };
+      if (widget.role == 'student') {
+        userData['5_class'] = _selectedClass;
+      } else if (widget.role == 'admin') {
+        userData['6_slot'] = _selectedSlot;
+        userData['7_canteenName'] = _canteenName;
+      }
+      // Check if the number of slots exceeds 12
+      if (widget.role == 'admin') {
+        try {
+          final slotsQuery = await FirebaseFirestore.instance
+              .collection('canteen_slots')
+              .get();
+
+          if (slotsQuery.docs.length >= 12) {
+            _showErrorDialog(
+                'Maximum number of canteen slots reached. Cannot add more slots.');
+            setState(() {
+              _isLoading = false;
+            });
+            return;
+          }
+        } catch (e) {
+          _showErrorDialog('Failed to check canteen slots: ${e.toString()}');
+          setState(() {
+            _isLoading = false;
+          });
+          return;
+        }
+      }
 
       try {
         // Save user data

@@ -45,20 +45,25 @@ class _RegisterPageState extends State<RegisterPage> {
       await _authService.signUpWithEmailPassword(
         emailController.text,
         passwordController.text,
-        selectedRole, // Include the selected role
+        selectedRole, // Pass the selected role
       );
-      // Navigate to the IdentityAskReg page after successful registration
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-            builder: (context) =>
-                IdentityAskReg(role: selectedRole)), // Pass the selected role
-      );
+
+      if (mounted) {
+        // Only navigate if the widget is still mounted
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => IdentityAskReg(role: selectedRole),
+          ),
+        );
+      }
     } catch (e) {
-      setState(() {
-        isLoading = false; // Reset loading state
-      });
-      _showErrorDialog('Registration failed: ${e.toString()}');
+      if (mounted) {
+        setState(() {
+          isLoading = false; // Reset loading state
+        });
+        _showErrorDialog('Registration failed: ${e.toString()}');
+      }
     }
   }
 
@@ -76,6 +81,14 @@ class _RegisterPageState extends State<RegisterPage> {
         ],
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    emailController.dispose();
+    passwordController.dispose();
+    confirmPasswordController.dispose();
+    super.dispose();
   }
 
   @override

@@ -2,6 +2,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:kantin/Services/Auth/gate.dart';
 import 'package:kantin/firebase_options.dart';
+import 'package:kantin/pages/User/Identity_ask_REG.dart';
 import 'package:provider/provider.dart';
 import 'package:kantin/Themes/theme_providers.dart';
 import 'package:kantin/Models/Restaurant.dart'; // Import your Restaurant model
@@ -21,7 +22,7 @@ void main() async {
     ),
   );
 }
-
+String role = 'admin'; // Default role
 class MainApp extends StatelessWidget {
   const MainApp({super.key});
 
@@ -31,7 +32,7 @@ class MainApp extends StatelessWidget {
       builder: (context, themeProvider, child) {
         return MaterialApp(
           debugShowCheckedModeBanner: false,
-          home: const AuthGate(),
+          home: IdentityAskReg(role: role) ,                                          //const AuthGate(),
           theme: themeProvider.themeData,
         );
       },

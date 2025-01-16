@@ -26,56 +26,55 @@ class _LoginPageState extends State<LoginPage> {
   bool isLoading = false; // Loading state
 
   Future<void> login() async {
-    final authService = AuthService();
-    setState(() {
-      isLoading = true; // Set loading state to true
-      errorMessage = ''; // Reset error message
-    });
+  final authService = AuthService();
+  setState(() {
+    isLoading = true; // Set loading state to true
+    errorMessage = ''; // Reset error message
+  });
 
-    try {
-      UserCredential userCredential = await authService.signInWithEmailPassword(
-        emailController.text,
-        passwordController.text,
-      );
+  try {
+    UserCredential userCredential = await authService.signInWithEmailPassword(
+      emailController.text,
+      passwordController.text,
+    );
 
-      // Fetch user role from Firestore
-      DocumentSnapshot userDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(userCredential.user!.uid)
-          .get();
+    // Fetch user role from Firestore
+    DocumentSnapshot userDoc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(userCredential.user!.uid)
+        .get();
 
-      // Check if the document exists and contains the 'role' field
-      if (userDoc.exists && userDoc.data() != null) {
-        String role = userDoc['role'] ??
-            'student'; // Default to 'student' if role is null
+    // Check if the document exists and contains the 'role' field
+    if (userDoc.exists && userDoc.data() != null) {
+      String role = userDoc['role'] ?? 'student'; // Default to 'student' if role is null
 
-        // Navigate based on role
-        if (role == 'student') {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => StudentPage()),
-          );
-        } else if (role == 'admin') {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => AdminDashboard()),
-          );
-        }
-      } else {
-        setState(() {
-          errorMessage = 'User  document does not exist or is empty';
-        });
+      // Navigate based on role
+      if (role == 'student') {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => StudentPage()),
+        );
+      } else if (role == 'admin') {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => AdminDashboard()),
+        );
       }
-    } catch (e) {
+    } else {
       setState(() {
-        errorMessage = 'Login failed: ${e.toString()}'; // Show error message
-      });
-    } finally {
-      setState(() {
-        isLoading = false; // Reset loading state
+        errorMessage = 'User  document does not exist or is empty';
       });
     }
+  } catch (e) {
+    setState(() {
+      errorMessage = 'Login failed: ${e.toString()}'; // Show error message
+    });
+  } finally {
+    setState(() {
+      isLoading = false; // Reset loading state
+    });
   }
+}
 
   @override
   void initState() {

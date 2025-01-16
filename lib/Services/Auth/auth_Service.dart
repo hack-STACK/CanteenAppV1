@@ -8,24 +8,46 @@ class AuthService {
   User? getCurrentUser () {
     return _firebaseAuth.currentUser ;
   }
+Future<UserCredential> signInWithEmailPassword(String email, String password) async {
+  try {
+    // Attempt to sign in the user with email and password
+    UserCredential userCredential = await _firebaseAuth.signInWithEmailAndPassword(
+      email: email,
+      password: password,
+    );
 
-  Future<UserCredential> signInWithEmailPassword(String email, String password) async {
-    try {
-      UserCredential userCredential = await _firebaseAuth.signInWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
+    // Fetch user role from Firestore
+    DocumentSnapshot userDoc = await _firestore.collection('users').doc(userCredential.user!.uid).get();
 
-      // Fetch user role from Firestore
-      DocumentSnapshot userDoc = await _firestore.collection('users').doc(userCredential.user!.uid).get();
-      String role = userDoc['role'];
-
-      // Return user credential along with role
-      return userCredential; // You can also return role if needed
-    } on FirebaseAuthException catch (e) {
-      throw Exception('Failed to sign in: ${e.message}');
+    // Check if the user document exists
+    if (!userDoc.exists) {
+      throw Exception('User  document does not exist.');
     }
+
+    // Cast the data to Map<String, dynamic>
+    Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
+
+    // Retrieve the role, defaulting to 'student' if not found
+    String role = userData['role'] ?? 'student';
+
+    // Optionally, you can return the role or store it in a variable for later use
+    // For now, we just return the userCredential
+    return userCredential; // You can also return role if needed
+  } on FirebaseAuthException catch (e) {
+    // Handle specific Firebase authentication errors
+    switch (e.code) {
+      case 'user-not-found':
+        throw Exception('No user found for that email.');
+      case 'wrong-password':
+        throw Exception('Wrong password provided for that user.');
+      default:
+        throw Exception('Failed to sign in: ${e.message}');
+    }
+  } catch (e) {
+    // Handle any other errors
+    throw Exception('Error fetching user role: ${e.toString()}');
   }
+}
 
   Future<UserCredential> signUpWithEmailPassword(String email, String password, String role) async {
     try {
@@ -42,11 +64,24 @@ class AuthService {
 
       return userCredential;
     } on FirebaseAuthException catch (e) {
-      throw Exception('Failed to sign up: ${e.message}');
+      switch (e.code) {
+        case 'email-already-in-use':
+          throw Exception('The email address is already in use by another account.');
+        case 'invalid-email':
+          throw Exception('The email address is not valid.');
+        case 'weak-password':
+          throw Exception('The password provided is too weak.');
+        default:
+          throw Exception('Failed to sign up: ${e.message}');
+      }
     }
   }
 
   Future<void> signOut() async {
-    await _firebaseAuth.signOut();
+    try {
+      await _firebaseAuth.signOut();
+    } catch (e) {
+      throw Exception('Failed to sign out: ${e.toString()}');
+    }
   }
 }

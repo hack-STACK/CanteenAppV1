@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:kantin/Component/my_dropdown.dart';
 import 'package:kantin/Component/my_textfield.dart';
+import 'package:kantin/Services/Database/firestore.dart';
 import 'package:kantin/pages/AdminState/AdminPage.dart';
 import 'package:kantin/pages/StudentState/StudentPage.dart';
-
-// ... (Other imports)
 
 class IdentityAskReg extends StatefulWidget {
   final String role;
@@ -22,7 +22,15 @@ class _IdentityAskRegState extends State<IdentityAskReg> {
   int? _age;
   String? _selectedClass;
   String? _selectedSlot;
+  String? _canteenName; // New variable for canteen name
   bool _isLoading = false;
+
+  // Declare controllers as class members
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _ageController = TextEditingController();
+  final TextEditingController _canteenNameController = TextEditingController();
+
+  final FireStoreService db = FireStoreService();
 
   final List<String> _studentClasses = [
     'Kelas 10 XRPL 1',
@@ -35,18 +43,20 @@ class _IdentityAskRegState extends State<IdentityAskReg> {
     'Kelas TKJ 2',
   ];
 
-  final List<String> _canteenSlots = [
-    'Canteen Slot 1',
-    'Canteen Slot 2',
-    'Canteen Slot 3',
-    'Canteen Slot 4',
-    'Canteen Slot 5',
-    'Canteen Slot 6',
-    'Canteen Slot 7',
-    'Canteen Slot 8',
-    'Canteen Slot 9',
-    'Canteen Slot 10',
-  ];
+  List<String> _canteenSlots = []; // Store canteen slots
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchCanteenSlots(); // Fetch canteen slots when the widget is initialized
+  }
+
+  Future<void> _fetchCanteenSlots() async {
+    List<String> slots = await db.getCanteenSlots();
+    setState(() {
+      _canteenSlots = slots; // Update the state with fetched slots
+    });
+  }
 
   void _showErrorDialog(String message) {
     showDialog(
@@ -82,17 +92,39 @@ class _IdentityAskRegState extends State<IdentityAskReg> {
 
       String documentId = user.uid;
 
+      // Check if the canteen name already exists
+      if (widget.role == 'admin' && _canteenName != null) {
+        bool exists = await db.doesCanteenNameExist(_canteenName!);
+        if (exists) {
+          _showErrorDialog(
+              'Canteen name already exists. Please choose another name.');
+          setState(() {
+            _isLoading = false;
+          });
+          return;
+        }
+      }
+      Map<String, dynamic> userData = {
+  '1_uid': documentId,
+  '4_email': user.email,
+  '2_name': _name,
+  '3_age': _age,
+  '8_role': widget.role == 'admin' ? 'admin' : 'student',
+  '9_createdAt': Timestamp.now(),
+};
+  if (widget.role == 'student') {
+    userData['5_class'] = _selectedClass;
+  }else if (widget.role == 'admin') {
+    userData['6_slot'] = _selectedSlot;
+    userData['7_canteenName'] = _canteenName;
+  }
+
       try {
+        // Save user data
         await FirebaseFirestore.instance
             .collection('users')
             .doc(documentId)
-            .set({
-          'name': _name,
-          'age': _age,
-          'class': widget.role == 'student' ? _selectedClass : null,
-          'slot': widget.role == 'admin' ? _selectedSlot : null,
-          'createdAt': Timestamp.now(),
-        });
+            .set(userData);
 
         if (widget.role == 'student') {
           Navigator.pushReplacement(
@@ -116,122 +148,118 @@ class _IdentityAskRegState extends State<IdentityAskReg> {
   }
 
   @override
+  void dispose() {
+    // Dispose of the controllers when the widget is removed from the widget tree
+    _nameController.dispose();
+    _ageController.dispose();
+    _canteenNameController.dispose();
+    super.dispose();
+  }
+
+  @override
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Identity Registration'),
+        centerTitle: true,
+        backgroundColor: Colors.blueGrey[800],
       ),
       body: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(20.0),
         child: Center(
-          child: Container(
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black26,
-                  blurRadius: 8,
-                  offset: Offset(0, 4),
-                ),
-              ],
-            ),
-            padding: const EdgeInsets.all(20),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Identity Registration',
-                    style: Theme.of(context).textTheme.titleLarge,
+          child: SingleChildScrollView(
+            child: Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black26,
+                    blurRadius: 8,
+                    offset: const Offset(0, 4),
                   ),
-                  const SizedBox(height: 16),
-                  MyTextfield(
-                    controller: TextEditingController(),
-                    hintText: 'Name',
-                    obscureText: false,
-                    hintColor: Colors.grey,
-                    onSaved: (value) {
-                      _name = value!;
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  MyTextfield(
-                    controller: TextEditingController(),
-                    hintText: 'Age',
-                    obscureText: false,
-                    hintColor: Colors.grey,
-                    keyboardInputType: TextInputType.number,
-                    onSaved: (value) {
-                      _age = int.tryParse(value!);
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  if (widget.role == 'student') ...[
-                    DropdownButtonFormField<String>(
-                      decoration: InputDecoration(
-                        labelText: 'Select Class',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                      value: _selectedClass,
-                      items: _studentClasses
-                          .map<DropdownMenuItem<String>>((String value) {
-                        return DropdownMenuItem<String>(
-                          value: value,
-                          child: Text(value),
-                        );
-                      }).toList(),
-                      onChanged: (String? newValue) {
-                        setState(() {
-                          _selectedClass = newValue;
-                        });
-                      },
-                      validator: (value) =>
-                          value == null ? 'Please select a class' : null,
+                ],
+              ),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Identity Registration',
+                      style: Theme.of(context)
+                          .textTheme
+                          .headlineSmall!
+                          .copyWith(fontWeight: FontWeight.bold),
                     ),
-                  ] else if (widget.role == 'admin') ...[
-                    DropdownButtonFormField<String>(
-                      decoration: InputDecoration(
-                        labelText: 'Select Canteen Slot',
-                        border: OutlineInputBorder(
+                    const SizedBox(height: 20),
+                    MyTextfield(
+                      controller: _nameController,
+                      hintText: 'Enter your name',
+                      obscureText: false,
+                      onSaved: (value) {
+                        _name = value!;
+                      },
+                      hintColor: Colors.grey.shade400,
+                    ),
+                    const SizedBox(height: 20),
+                    MyTextfield(
+                      controller: _ageController,
+                      hintText: 'Enter your age',
+                      obscureText: false,
+                      keyboardInputType: TextInputType.number,
+                      onSaved: (value) {
+                        _age = int.tryParse(value!);
+                      },
+                      hintColor: Colors.grey.shade400,
+                    ),
+                    const SizedBox(height: 20),
+                    if (widget.role == 'admin')
+                      MyTextfield(
+                        controller: _canteenNameController,
+                        hintText: 'Enter Canteen Name',
+                        obscureText: false,
+                        onSaved: (value) {
+                          _canteenName = value!;
+                        },
+                        hintColor: Colors.grey.shade400,
+                      ),
+                    if (widget.role == 'student')
+                      if (widget.role == 'student')
+                        MyDropdown(
+                          value: _selectedClass,
+                          hintText: 'Select Class',
+                          hintColor: Colors.grey.shade400,
+                          items: _studentClasses,
+                          onChanged: (String? newValue) {
+                            setState(() {
+                              _selectedClass = newValue;
+                            });
+                          },
+                          validator: (value) =>
+                              value == null ? 'Please select a class' : null,
+                          onSaved: (value) {
+                            _selectedClass = value;
+                          },
+                        ),
+                    const SizedBox(height: 30),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                            vertical: 15, horizontal: 30),
+                        backgroundColor: Colors.blueGrey[800],
+                        shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8),
                         ),
                       ),
-                      value: _selectedSlot,
-                      items: _canteenSlots
-                          .map<DropdownMenuItem<String>>((String value) {
-                        return DropdownMenuItem<String>(
-                          value: value,
-                          child: Text(value),
-                        );
-                      }).toList(),
-                      onChanged: (String? newValue) {
-                        setState(() {
-                          _selectedSlot = newValue;
-                        });
-                      },
-                      validator: (value) =>
-                          value == null ? 'Please select a slot' : null,
+                      onPressed: _isLoading ? null : _submit,
+                      child: Text(_isLoading ? 'Submitting...' : 'Submit',
+                          style: const TextStyle(color: Colors.white)),
                     ),
                   ],
-                  const SizedBox(height: 20),
-                  _isLoading
-                      ? CircularProgressIndicator()
-                      : ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
-                                vertical: 12, horizontal: 20),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          onPressed: _submit,
-                          child: Text('Submit', style: TextStyle(fontSize: 16)),
-                        ),
-                ],
+                ),
               ),
             ),
           ),

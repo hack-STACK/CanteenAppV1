@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:kantin/Models/Food.dart';
 import 'package:kantin/Models/cartItem.dart';
@@ -5,6 +6,7 @@ import 'package:collection/collection.dart';
 import 'package:intl/intl.dart';
 
 class Restaurant extends ChangeNotifier {
+    String? currentAdminId;
   final List<Food> _menu = [
     Food(
       name: "Nasi Goreng",
@@ -306,4 +308,44 @@ class Restaurant extends ChangeNotifier {
         .map((addon) => '${addon.name} (${_formatPrice(addon.price)})')
         .join(', ');
   }
+
+    void setCurrentAdminId(String id) {
+    currentAdminId = id; // Set the current admin ID
+    notifyListeners();
+  }
+   List<CanteenSlot> _canteenSlots = [];
+
+  List<CanteenSlot> get canteenSlots => _canteenSlots;
+
+  Future<void> fetchCanteenSlots(String adminId) async {
+    final slotsSnapshot = await FirebaseFirestore.instance
+        .collection('canteen_slots')
+        .where('adminId', isEqualTo: adminId)
+        .get();
+
+    _canteenSlots = slotsSnapshot.docs.map((doc) {
+      return CanteenSlot(
+        id: doc.id,
+        name: doc['slotName'],
+      );
+    }).toList();
+    notifyListeners();
+  }
+
+  Future<void> renameCanteenSlot(String slotId, String newName) async {
+    await FirebaseFirestore.instance
+        .collection('canteen_slots')
+        .doc(slotId)
+        .update({'slotName': newName});
+    // Optionally, refresh the slots after renaming
+    await fetchCanteenSlots(currentAdminId!);
+  }
+}
+
+class CanteenSlot {
+  final String id;
+  final String name;
+
+  CanteenSlot({required this.id, required this.name});
+
 }

@@ -17,4 +17,40 @@ class FireStoreService {
       rethrow; // Rethrow the error for further handling
     }
   }
+    // Method to save a canteen slot to Firestore
+  Future<void> saveCanteenSlot(String adminId, String slotName) async {
+    try {
+      print("Saving canteen slot: $slotName for admin: $adminId"); // Debugging line
+      await _db.collection('canteen_slots').add({
+        'adminId': adminId,
+        'slotName': slotName,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      print("Canteen slot saved successfully!"); // Debugging line
+    } catch (e) {
+      print("Error saving canteen slot: $e");
+      rethrow; // Rethrow the error for further handling
+    }
+  }
+    Future<List<String>> getCanteenSlots() async {
+    try {
+      QuerySnapshot snapshot = await _db.collection('canteen_slots').get();
+      return snapshot.docs.map((doc) => doc['slotName'] as String).toList();
+    } catch (e) {
+      print("Error fetching canteen slots: $e");
+      return []; // Return an empty list on error
+    }
+  }
+    // Method to check if a canteen name already exists
+  Future<bool> doesCanteenNameExist(String canteenName) async {
+    try {
+      QuerySnapshot snapshot = await _db.collection('canteen_slots')
+          .where('slotName', isEqualTo: canteenName)
+          .get();
+      return snapshot.docs.isNotEmpty; // Return true if any documents found
+    } catch (e) {
+      print("Error checking canteen name: $e");
+      return false; // Return false on error
+    }
+  }
 }

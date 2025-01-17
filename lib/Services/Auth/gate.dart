@@ -45,7 +45,7 @@ class AuthGate extends StatelessWidget {
                   if (role == 'student') {
                     return const StudentPage();
                   } else if (role == 'admin') {
-                    return const AdminDashboard();
+                    return const AdminDashboard(canteenName: '',);
                   }
                 } else {
                   return const LoginOrRegister(); // Handle case where user document does not exist

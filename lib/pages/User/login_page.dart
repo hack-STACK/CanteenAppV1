@@ -57,7 +57,7 @@ class _LoginPageState extends State<LoginPage> {
       } else if (role == 'admin') {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => AdminDashboard()),
+          MaterialPageRoute(builder: (context) => AdminDashboard(canteenName: '',)),
         );
       }
     } else {

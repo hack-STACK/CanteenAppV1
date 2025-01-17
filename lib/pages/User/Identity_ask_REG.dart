@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:kantin/Component/my_dropdown.dart';
 import 'package:kantin/Component/my_textfield.dart';
+import 'package:kantin/Models/Restaurant.dart';
 import 'package:kantin/Services/Database/firestore.dart';
 import 'package:kantin/pages/AdminState/AdminPage.dart';
 import 'package:kantin/pages/StudentState/StudentPage.dart';
@@ -83,7 +84,7 @@ class _IdentityAskRegState extends State<IdentityAskReg> {
 
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) {
-        _showErrorDialog('User  not authenticated.');
+        _showErrorDialog('User not authenticated.');
         setState(() {
           _isLoading = false;
         });
@@ -104,45 +105,62 @@ class _IdentityAskRegState extends State<IdentityAskReg> {
           return;
         }
       }
-      Map<String, dynamic> userData = {
-        '1_uid': documentId,
-        '4_email': user.email,
-        '2_name': _name,
-        '3_age': _age,
-        '8_role': widget.role == 'admin' ? 'admin' : 'student',
-        '9_createdAt': Timestamp.now(),
-      };
-      if (widget.role == 'student') {
-        userData['5_class'] = _selectedClass;
-      } else if (widget.role == 'admin') {
-        userData['6_slot'] = _selectedSlot;
-        userData['7_canteenName'] = _canteenName;
-      }
-      // Check if the number of slots exceeds 12
-      if (widget.role == 'admin') {
-        try {
+
+      try {
+        // Auto-create canteen ID and assign slot for admin
+        String canteenId = '';
+        String assignedSlot = '';
+
+        if (widget.role == 'admin') {
+          // Check if slots are available
           final slotsQuery = await FirebaseFirestore.instance
               .collection('canteen_slots')
               .get();
 
           if (slotsQuery.docs.length >= 12) {
             _showErrorDialog(
-                'Maximum number of canteen slots reached. Cannot add more slots.');
+                'Maximum number of canteen slots reached. Cannot register new admin.');
             setState(() {
               _isLoading = false;
             });
             return;
           }
-        } catch (e) {
-          _showErrorDialog('Failed to check canteen slots: ${e.toString()}');
-          setState(() {
-            _isLoading = false;
-          });
-          return;
-        }
-      }
 
-      try {
+          // Generate unique canteen ID
+          final canteenDocRef = await FirebaseFirestore.instance
+              .collection('canteen_slots')
+              .add({'placeholder': true}); // Temporary data
+          canteenId = canteenDocRef.id;
+
+          // Assign the next available slot
+          assignedSlot = (slotsQuery.docs.length + 1).toString();
+
+          // Save canteen slot data
+          await canteenDocRef.set({
+            'canteenId': canteenId,
+            'slotNumber': assignedSlot,
+            'adminUid': documentId,
+            'canteenName': _canteenName,
+            'createdAt': Timestamp.now(),
+          });
+        }
+
+        Map<String, dynamic> userData = {
+          '1_uid': documentId,
+          '4_email': user.email,
+          '2_name': _name,
+          '3_age': _age,
+          '8_role': widget.role == 'admin' ? 'admin' : 'student',
+          '9_createdAt': Timestamp.now(),
+        };
+
+        if (widget.role == 'student') {
+          userData['5_class'] = _selectedClass;
+        } else if (widget.role == 'admin') {
+          userData['6_slot'] = assignedSlot;
+          userData['7_canteenName'] = _canteenName;
+        }
+
         // Save user data
         await FirebaseFirestore.instance
             .collection('users')
@@ -154,11 +172,20 @@ class _IdentityAskRegState extends State<IdentityAskReg> {
             context,
             MaterialPageRoute(builder: (context) => const StudentPage()),
           );
-        } else if (widget.role == 'admin') {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const AdminDashboard()),
-          );
+        }
+        if (widget.role == 'admin') {
+          final canteenName = await db.getCanteenNameByUid(documentId);
+
+          if (canteenName != null) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => AdminDashboard(canteenName: canteenName),
+              ),
+            );
+          } else {
+            _showErrorDialog('Failed to fetch canteen name.');
+          }
         }
       } catch (e) {
         _showErrorDialog('Failed to save data: ${e.toString()}');

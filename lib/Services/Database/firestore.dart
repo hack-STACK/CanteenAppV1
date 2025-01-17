@@ -53,4 +53,24 @@ class FireStoreService {
       return false; // Return false on error
     }
   }
+  Future<String?> getCanteenNameByUid(String adminUid) async {
+  try {
+    final querySnapshot = await FirebaseFirestore.instance
+        .collection('canteen_slots')
+        .where('adminUid', isEqualTo: adminUid)
+        .limit(1)
+        .get();
+
+    if (querySnapshot.docs.isNotEmpty) {
+      return querySnapshot.docs.first['canteenName'] as String?;
+    } else {
+      print('Canteen name not found for this admin.');
+      return null;
+    }
+  } catch (e) {
+    print('Failed to fetch canteen name: $e');
+    return null;
+  }
+}
+
 }

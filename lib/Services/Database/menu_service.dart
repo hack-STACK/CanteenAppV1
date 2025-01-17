@@ -25,14 +25,16 @@ class MenuService {
   }
 
   // Read all menu items
-  Stream<List<Menu>> getMenus() {
-    return _db.collection('menus').snapshots().map((snapshot) {
-      return snapshot.docs
-          .map(
-              (doc) => Menu.fromMap(doc.id, doc.data() as Map<String, dynamic>))
-          .toList();
-    });
-  }
+Stream<List<Menu>> getMenus() {
+  return _db.collection('menus').snapshots().map((snapshot) {
+    return snapshot.docs
+        .map((doc) => Menu.fromMap(
+              doc.id, // Pass the document ID
+              doc.data() as Map<String, dynamic>, // Pass the document data
+            ))
+        .toList();
+  });
+}
 
   // Update a menu item
   Future<void> updateMenu(Menu menu) async {

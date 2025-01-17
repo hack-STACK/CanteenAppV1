@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:kantin/Component/my_button.dart';
 import 'package:kantin/Component/my_textfield.dart';
@@ -25,31 +27,46 @@ class _RegisterPageState extends State<RegisterPage> {
   String errorMessage = '';
   String selectedRole = 'student'; // Default role
 
-  void register() async {
-    final _authService = AuthService();
-    if (passwordController.text.isEmpty || emailController.text.isEmpty) {
-      _showErrorDialog('Please fill in all fields.');
-      return;
-    }
+ void register() async {
+  final _authService = AuthService();
 
-    if (passwordController.text != confirmPasswordController.text) {
-      _showErrorDialog("Passwords don't match!");
-      return;
-    }
+  // Validate inputs
+  if (emailController.text.isEmpty || passwordController.text.isEmpty) {
+    _showErrorDialog('Please fill in all fields.');
+    return;
+  }
 
-    setState(() {
-      isLoading = true; // Set loading state to true
-    });
+  if (passwordController.text != confirmPasswordController.text) {
+    _showErrorDialog("Passwords don't match!");
+    return;
+  }
 
-    try {
-      await _authService.signUpWithEmailPassword(
-        emailController.text,
-        passwordController.text,
-        selectedRole, // Pass the selected role
-      );
+  setState(() {
+    isLoading = true; // Show loading indicator
+  });
 
+  try {
+    // Register user with Firebase Authentication
+    final userCredential = await _authService.signUpWithEmailPassword(
+      emailController.text,
+      passwordController.text,
+      selectedRole,
+    );
+
+    // Check if the user was created successfully
+    if (userCredential.user != null) {
+      // Save user data to Firestore
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userCredential.user!.uid)
+          .set({
+        'email': emailController.text,
+        'role': selectedRole,
+        'createdAt': Timestamp.now(),
+      });
+
+      // Navigate to the next screen
       if (mounted) {
-        // Only navigate if the widget is still mounted
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
@@ -57,15 +74,19 @@ class _RegisterPageState extends State<RegisterPage> {
           ),
         );
       }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          isLoading = false; // Reset loading state
-        });
-        _showErrorDialog('Registration failed: ${e.toString()}');
-      }
+    }
+  } catch (e) {
+    // Handle errors and show an appropriate message
+    _showErrorDialog('Registration failed: ${e.toString()}');
+  } finally {
+    if (mounted) {
+      setState(() {
+        isLoading = false; // Hide loading indicator
+      });
     }
   }
+}
+
 
   void _showErrorDialog(String message) {
     showDialog(

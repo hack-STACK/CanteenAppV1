@@ -1,10 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:kantin/Component/my_button.dart';
 import 'package:kantin/Component/my_textfield.dart';
 import 'package:kantin/Services/Auth/auth_Service.dart';
-import 'package:kantin/pages/StudentState/StudentPage.dart';
 import 'package:kantin/pages/User/Identity_ask_REG.dart';
 
 class RegisterPage extends StatefulWidget {
@@ -27,66 +25,65 @@ class _RegisterPageState extends State<RegisterPage> {
   String errorMessage = '';
   String selectedRole = 'student'; // Default role
 
- void register() async {
-  final _authService = AuthService();
+  void register() async {
+    final authService = AuthService();
 
-  // Validate inputs
-  if (emailController.text.isEmpty || passwordController.text.isEmpty) {
-    _showErrorDialog('Please fill in all fields.');
-    return;
-  }
+    // Validate inputs
+    if (emailController.text.isEmpty || passwordController.text.isEmpty) {
+      _showErrorDialog('Please fill in all fields.');
+      return;
+    }
 
-  if (passwordController.text != confirmPasswordController.text) {
-    _showErrorDialog("Passwords don't match!");
-    return;
-  }
+    if (passwordController.text != confirmPasswordController.text) {
+      _showErrorDialog("Passwords don't match!");
+      return;
+    }
 
-  setState(() {
-    isLoading = true; // Show loading indicator
-  });
+    setState(() {
+      isLoading = true; // Show loading indicator
+    });
 
-  try {
-    // Register user with Firebase Authentication
-    final userCredential = await _authService.signUpWithEmailPassword(
-      emailController.text,
-      passwordController.text,
-      selectedRole,
-    );
+    try {
+      // Register user with Firebase Authentication
+      final userCredential = await authService.signUpWithEmailPassword(
+        emailController.text,
+        passwordController.text,
+        selectedRole,
+      );
 
-    // Check if the user was created successfully
-    if (userCredential.user != null) {
-      // Save user data to Firestore
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(userCredential.user!.uid)
-          .set({
-        'email': emailController.text,
-        'role': selectedRole,
-        'createdAt': Timestamp.now(),
-      });
+      // Check if the user was created successfully
+      if (userCredential.user != null) {
+        // Save user data to Firestore
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(userCredential.user!.uid)
+            .set({
+          'email': emailController.text,
+          'role': selectedRole,
+          'createdAt': Timestamp.now(),
+        });
 
-      // Navigate to the next screen
+        // Navigate to the next screen
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => IdentityAskReg(role: selectedRole),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      // Handle errors and show an appropriate message
+      _showErrorDialog('Registration failed: ${e.toString()}');
+    } finally {
       if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => IdentityAskReg(role: selectedRole),
-          ),
-        );
+        setState(() {
+          isLoading = false; // Hide loading indicator
+        });
       }
     }
-  } catch (e) {
-    // Handle errors and show an appropriate message
-    _showErrorDialog('Registration failed: ${e.toString()}');
-  } finally {
-    if (mounted) {
-      setState(() {
-        isLoading = false; // Hide loading indicator
-      });
-    }
   }
-}
-
 
   void _showErrorDialog(String message) {
     showDialog(

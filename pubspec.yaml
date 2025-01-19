@@ -8,6 +8,8 @@ environment:
 
 dependencies:
   cloud_firestore: ^5.6.1
+  crop_your_image: ^2.0.0
+  cropperx: ^1.1.1
   firebase_auth: ^5.4.0
   firebase_core: ^3.10.0
   firebase_storage: ^12.4.0
@@ -17,6 +19,7 @@ dependencies:
   image_picker: ^1.1.2
   intl: ^0.20.1
   provider: ^6.1.2
+  supabase_flutter: ^2.8.3
 
 dev_dependencies:
   flutter_test:

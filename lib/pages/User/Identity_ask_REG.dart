@@ -3,7 +3,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:kantin/Component/my_dropdown.dart';
 import 'package:kantin/Component/my_textfield.dart';
-import 'package:kantin/Models/Restaurant.dart';
 import 'package:kantin/Services/Database/firestore.dart';
 import 'package:kantin/pages/AdminState/AdminPage.dart';
 import 'package:kantin/pages/StudentState/StudentPage.dart';
@@ -11,7 +10,7 @@ import 'package:kantin/pages/StudentState/StudentPage.dart';
 class IdentityAskReg extends StatefulWidget {
   final String role;
 
-  const IdentityAskReg({Key? key, required this.role}) : super(key: key);
+  const IdentityAskReg({super.key, required this.role});
 
   @override
   _IdentityAskRegState createState() => _IdentityAskRegState();

@@ -5,6 +5,7 @@ import 'package:kantin/Component/my_button.dart';
 import 'package:kantin/Component/my_textfield.dart';
 import 'package:kantin/Services/Auth/auth_Service.dart';
 import 'package:kantin/pages/AdminState/AdminPage.dart';
+import 'package:kantin/pages/AdminState/dashboard/dashboard_screen.dart';
 import 'package:kantin/pages/StudentState/StudentPage.dart';
 
 class LoginPage extends StatefulWidget {
@@ -57,7 +58,8 @@ class _LoginPageState extends State<LoginPage> {
       } else if (role == 'admin') {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => AdminDashboard(canteenName: '',)),
+          MaterialPageRoute(builder: (context) => DashboardScreen())
+          // MaterialPageRoute(builder: (context) => AdminDashboard(canteenName: '',)),
         );
       }
     } else {

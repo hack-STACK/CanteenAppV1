@@ -5,6 +5,7 @@ import 'package:kantin/Component/my_dropdown.dart';
 import 'package:kantin/Component/my_textfield.dart';
 import 'package:kantin/Services/Database/firestore.dart';
 import 'package:kantin/pages/AdminState/AdminPage.dart';
+import 'package:kantin/pages/AdminState/dashboard/dashboard_screen.dart';
 import 'package:kantin/pages/StudentState/StudentPage.dart';
 
 class IdentityAskReg extends StatefulWidget {
@@ -179,7 +180,8 @@ class _IdentityAskRegState extends State<IdentityAskReg> {
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(
-                builder: (context) => AdminDashboard(canteenName: canteenName),
+                builder: (context) => DashboardScreen()
+                // builder: (context) => AdminDashboard(canteenName: canteenName),
               ),
             );
           } else {

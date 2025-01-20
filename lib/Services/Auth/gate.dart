@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:kantin/Services/Auth/login_or_register.dart';
+import 'package:kantin/pages/AdminState/dashboard/dashboard_screen.dart';
 import 'package:kantin/pages/StudentState/StudentPage.dart';
 import 'package:kantin/pages/AdminState/AdminPage.dart';
 
@@ -45,7 +46,8 @@ class AuthGate extends StatelessWidget {
                   if (role == 'student') {
                     return const StudentPage();
                   } else if (role == 'admin') {
-                    return const AdminDashboard(canteenName: '',);
+                    return const DashboardScreen();
+                    // return const AdminDashboard(canteenName: '',);
                   }
                 } else {
                   return const LoginOrRegister(); // Handle case where user document does not exist

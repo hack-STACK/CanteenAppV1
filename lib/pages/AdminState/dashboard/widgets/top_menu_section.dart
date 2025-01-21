@@ -9,13 +9,13 @@ class TopMenuSection extends StatefulWidget {
   final VoidCallback? onSeeAllTap;
 
   const TopMenuSection({
-    Key? key,
+    super.key,
     this.title = 'Top menus',
     this.filterOptions = const ['Latest', 'Popular', 'Trending'],
     this.itemCount = 3,
     this.accentColor = const Color(0xFFFF542D),
     this.onSeeAllTap,
-  }) : super(key: key);
+  });
 
   @override
   State<TopMenuSection> createState() => _TopMenuSectionState();
@@ -81,7 +81,8 @@ class _TopMenuSectionState extends State<TopMenuSection> {
                   onPressed: widget.onSeeAllTap,
                   style: TextButton.styleFrom(
                     foregroundColor: widget.accentColor,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     minimumSize: const Size(60, 36),
                   ),
                   child: const Text(

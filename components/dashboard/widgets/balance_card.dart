@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 class BalanceCard extends StatelessWidget {
-  const BalanceCard({Key? key}) : super(key: key);
+  const BalanceCard({super.key});
 
   @override
   Widget build(BuildContext context) {

@@ -2,11 +2,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:kantin/Services/Auth/login_or_register.dart';
-import 'package:kantin/pages/AdminState/dashboard/dashboard_screen.dart';
-// import 'package:kantin/pages/AdminState/Pages/dashboard_screen.dart';
-import 'package:kantin/pages/AdminState/dashboard/widgets/Navigation_bar.dart';
-import 'package:kantin/pages/StudentState/StudentPage.dart';
 import 'package:kantin/pages/AdminState/AdminPage.dart';
+import 'package:kantin/pages/AdminState/dashboard/Homepage.dart';
+// import 'package:kantin/pages/AdminState/Pages/dashboard_screen.dart';
+import 'package:kantin/pages/StudentState/StudentPage.dart';
 
 class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
@@ -48,7 +47,7 @@ class AuthGate extends StatelessWidget {
                   if (role == 'student') {
                     return const StudentPage();
                   } else if (role == 'admin') {
-                    return const AdminDashboardScreen();
+                    return const MainAdmin();
                     // return const AdminDashboard(canteenName: '',);
                   }
                 } else {

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 class StatsRow extends StatelessWidget {
-  const StatsRow({Key? key}) : super(key: key);
+  const StatsRow({super.key});
 
   @override
   Widget build(BuildContext context) {

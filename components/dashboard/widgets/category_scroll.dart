@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 class CategoryScroll extends StatelessWidget {
-  const CategoryScroll({Key? key}) : super(key: key);
+  const CategoryScroll({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -25,12 +25,12 @@ class CategoryScroll extends StatelessWidget {
       margin: const EdgeInsets.only(right: 10),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
       decoration: BoxDecoration(
-        color: isSelected 
+        color: isSelected
             ? const Color(0xFFFF542D).withOpacity(0.5)
             : Colors.white.withOpacity(0.2),
         borderRadius: BorderRadius.circular(28),
         border: Border.all(
-          color: isSelected 
+          color: isSelected
               ? const Color(0xFFCBCBCB).withOpacity(0.75)
               : const Color(0xFFFF542D).withOpacity(0.2),
         ),

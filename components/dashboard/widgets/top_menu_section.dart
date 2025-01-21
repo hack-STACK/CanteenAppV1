@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'menu_item.dart';
 
 class TopMenuSection extends StatelessWidget {
-  const TopMenuSection({Key? key}) : super(key: key);
+  const TopMenuSection({super.key});
 
   @override
   Widget build(BuildContext context) {

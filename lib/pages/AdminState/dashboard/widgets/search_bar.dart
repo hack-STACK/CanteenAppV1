@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 
 class CustomSearchBarWidget extends StatelessWidget {
-  const CustomSearchBarWidget({Key? key}) : super(key: key);
+  const CustomSearchBarWidget({super.key});
 
   @override
   Widget build(BuildContext context) {
-      final screenWidth = MediaQuery.of(context).size.width;
+    final screenWidth = MediaQuery.of(context).size.width;
 
     return Container(
-      width:  screenWidth * 0.9,
+      width: screenWidth * 0.9,
       margin: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.43),

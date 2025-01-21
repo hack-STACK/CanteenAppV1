@@ -180,10 +180,9 @@ class _IdentityAskRegState extends State<IdentityAskReg> {
           if (canteenName != null) {
             Navigator.pushReplacement(
               context,
-              MaterialPageRoute(
-                builder: (context) => DashboardScreen()
-                // builder: (context) => AdminDashboard(canteenName: canteenName),
-              ),
+              MaterialPageRoute(builder: (context) => MainAdmin()
+                  // builder: (context) => AdminDashboard(canteenName: canteenName),
+                  ),
             );
           } else {
             _showErrorDialog('Failed to fetch canteen name.');

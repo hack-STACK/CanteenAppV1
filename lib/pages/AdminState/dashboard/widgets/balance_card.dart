@@ -9,23 +9,23 @@ class BalanceCardWidget extends StatefulWidget {
   final Color primaryColor;
   final Color backgroundColor;
   final VoidCallback? onCardTap;
-  
 
   const BalanceCardWidget({
-    Key? key,
+    super.key,
     required this.currentBalance,
     this.currencyCode = 'IDR',
     required this.historicalData,
     this.primaryColor = const Color(0xFFFF542D),
     this.backgroundColor = Colors.white,
     this.onCardTap,
-  }) : super(key: key);
+  });
 
   @override
   _BalanceCardWidgetState createState() => _BalanceCardWidgetState();
 }
 
-class _BalanceCardWidgetState extends State<BalanceCardWidget> with SingleTickerProviderStateMixin {
+class _BalanceCardWidgetState extends State<BalanceCardWidget>
+    with SingleTickerProviderStateMixin {
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   String _selectedTimeframe = 'Monthly';
@@ -56,7 +56,8 @@ class _BalanceCardWidgetState extends State<BalanceCardWidget> with SingleTicker
 
   void _updateChartData() {
     setState(() {
-      final data = widget.historicalData[_selectedTimeframe.toLowerCase()] ?? [];
+      final data =
+          widget.historicalData[_selectedTimeframe.toLowerCase()] ?? [];
       _chartData = List.generate(
         data.length,
         (index) => FlSpot(index.toDouble(), data[index]),

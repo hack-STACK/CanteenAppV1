@@ -3,13 +3,14 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 
 class ImprovedOrdersCard extends StatefulWidget {
-  const ImprovedOrdersCard({Key? key}) : super(key: key);
+  const ImprovedOrdersCard({super.key});
 
   @override
   _ImprovedOrdersCardState createState() => _ImprovedOrdersCardState();
 }
 
-class _ImprovedOrdersCardState extends State<ImprovedOrdersCard> with SingleTickerProviderStateMixin {
+class _ImprovedOrdersCardState extends State<ImprovedOrdersCard>
+    with SingleTickerProviderStateMixin {
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   String _selectedTimeframe = 'Monthly';
@@ -110,7 +111,9 @@ class _ImprovedOrdersCardState extends State<ImprovedOrdersCard> with SingleTick
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text('Total Orders', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
+                const Text('Total Orders',
+                    style:
+                        TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
                 _buildTimeframeDropdown(),
               ],
             ),
@@ -120,9 +123,10 @@ class _ImprovedOrdersCardState extends State<ImprovedOrdersCard> with SingleTick
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.calendar_today, size:  16),
+                const Icon(Icons.calendar_today, size: 16),
                 const SizedBox(width: 4),
-                Text(DateTime.now().year.toString(), style: TextStyle(fontSize: 12)),
+                Text(DateTime.now().year.toString(),
+                    style: TextStyle(fontSize: 12)),
               ],
             ),
           ],

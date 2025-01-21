@@ -16,6 +16,7 @@ dependencies:
   fl_chart: ^0.70.2
   flutter:
     sdk: flutter
+  flutter_animate: ^4.5.2
   flutter_credit_card: ^4.0.1
   flutter_svg: ^2.0.17
   image_picker: ^1.1.2

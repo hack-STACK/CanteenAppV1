@@ -9,6 +9,7 @@ class BalanceCardWidget extends StatefulWidget {
   final Color primaryColor;
   final Color backgroundColor;
   final VoidCallback? onCardTap;
+  
 
   const BalanceCardWidget({
     Key? key,

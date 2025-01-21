@@ -5,7 +5,8 @@ import 'package:kantin/Component/my_button.dart';
 import 'package:kantin/Component/my_textfield.dart';
 import 'package:kantin/Services/Auth/auth_Service.dart';
 import 'package:kantin/pages/AdminState/AdminPage.dart';
-import 'package:kantin/pages/AdminState/dashboard/dashboard_screen.dart';
+// import 'package:kantin/pages/AdminState/Pages/dashboard_screen.dart';
+import 'package:kantin/pages/AdminState/dashboard/widgets/Navigation_bar.dart';
 import 'package:kantin/pages/StudentState/StudentPage.dart';
 
 class LoginPage extends StatefulWidget {

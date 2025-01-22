@@ -1,12 +1,12 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:kantin/Services/Auth/gate.dart';
+import 'package:kantin/Services/Auth/role_provider.dart';
 import 'package:kantin/firebase_options.dart';
 import 'package:provider/provider.dart';
 import 'package:kantin/Themes/theme_providers.dart';
 import 'package:kantin/Models/Restaurant.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:firebase_app_check/firebase_app_check.dart'; // Import Firebase App Check
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -18,17 +18,6 @@ void main() async {
   } catch (e) {
     print("Error initializing Firebase: $e");
     return; // Exit if Firebase initialization fails
-  }
-
-  // Initialize App Check
-  try {
-    await FirebaseAppCheck.instance.activate(
-      androidProvider: AndroidProvider.playIntegrity, // For Android
-      appleProvider: AppleProvider.appAttest, // For iOS
-    );
-  } catch (e) {
-    print("Error initializing App Check: $e");
-    return; // Exit if App Check initialization fails
   }
 
   // Initialize Supabase
@@ -47,6 +36,8 @@ void main() async {
       providers: [
         ChangeNotifierProvider(create: (context) => ThemeProviders()),
         ChangeNotifierProvider(create: (context) => Restaurant()),
+        ChangeNotifierProvider(
+            create: (context) => RoleProvider()), // Add RoleProvider
       ],
       child: const MainApp(),
     ),

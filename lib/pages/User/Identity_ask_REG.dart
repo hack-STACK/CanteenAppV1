@@ -5,8 +5,6 @@ import 'package:kantin/Component/my_dropdown.dart';
 import 'package:kantin/Component/my_textfield.dart';
 import 'package:kantin/Services/Database/firestore.dart';
 import 'package:kantin/pages/AdminState/AdminPage.dart';
-// import 'package:kantin/pages/AdminState/Pages/dashboard_screen.dart';
-import 'package:kantin/pages/AdminState/dashboard/widgets/Navigation_bar.dart';
 import 'package:kantin/pages/StudentState/StudentPage.dart';
 
 class IdentityAskReg extends StatefulWidget {
@@ -23,11 +21,9 @@ class _IdentityAskRegState extends State<IdentityAskReg> {
   String _name = '';
   int? _age;
   String? _selectedClass;
-  String? _selectedSlot;
-  String? _canteenName; // New variable for canteen name
+  String? _canteenName;
   bool _isLoading = false;
 
-  // Declare controllers as class members
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _ageController = TextEditingController();
   final TextEditingController _canteenNameController = TextEditingController();
@@ -45,18 +41,18 @@ class _IdentityAskRegState extends State<IdentityAskReg> {
     'Kelas TKJ 2',
   ];
 
-  List<String> _canteenSlots = []; // Store canteen slots
+  List<String> _canteenSlots = [];
 
   @override
   void initState() {
     super.initState();
-    _fetchCanteenSlots(); // Fetch canteen slots when the widget is initialized
+    _fetchCanteenSlots();
   }
 
   Future<void> _fetchCanteenSlots() async {
     List<String> slots = await db.getCanteenSlots();
     setState(() {
-      _canteenSlots = slots; // Update the state with fetched slots
+      _canteenSlots = slots;
     });
   }
 
@@ -76,7 +72,7 @@ class _IdentityAskRegState extends State<IdentityAskReg> {
     );
   }
 
-  void _submit() async {
+  Future<void> _submit() async {
     if (_formKey.currentState!.validate()) {
       _formKey.currentState!.save();
       setState(() {
@@ -85,7 +81,7 @@ class _IdentityAskRegState extends State<IdentityAskReg> {
 
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) {
-        _showErrorDialog('User not authenticated.');
+        _showErrorDialog('User  not authenticated.');
         setState(() {
           _isLoading = false;
         });
@@ -94,7 +90,6 @@ class _IdentityAskRegState extends State<IdentityAskReg> {
 
       String documentId = user.uid;
 
-      // Check if the canteen name already exists
       if (widget.role == 'admin' && _canteenName != null) {
         bool exists = await db.doesCanteenNameExist(_canteenName!);
         if (exists) {
@@ -108,12 +103,10 @@ class _IdentityAskRegState extends State<IdentityAskReg> {
       }
 
       try {
-        // Auto-create canteen ID and assign slot for admin
         String canteenId = '';
         String assignedSlot = '';
 
         if (widget.role == 'admin') {
-          // Check if slots are available
           final slotsQuery = await FirebaseFirestore.instance
               .collection('canteen_slots')
               .get();
@@ -127,19 +120,15 @@ class _IdentityAskRegState extends State<IdentityAskReg> {
             return;
           }
 
-          // Generate unique canteen ID
           final canteenDocRef = await FirebaseFirestore.instance
               .collection('canteen_slots')
-              .add({'placeholder': true}); // Temporary data
+              .add({'placeholder': true});
           canteenId = canteenDocRef.id;
-
-          // Assign the next available slot
           assignedSlot = (slotsQuery.docs.length + 1).toString();
 
-          // Save canteen slot data
           await canteenDocRef.set({
             'canteenId': canteenId,
-            'slotNumber': assignedSlot,
+            ' slotNumber': assignedSlot,
             'adminUid': documentId,
             'canteenName': _canteenName,
             'createdAt': Timestamp.now(),
@@ -151,7 +140,7 @@ class _IdentityAskRegState extends State<IdentityAskReg> {
           '4_email': user.email,
           '2_name': _name,
           '3_age': _age,
-          '8_role': widget.role == 'admin' ? 'admin' : 'student',
+          '8_role': widget.role,
           '9_createdAt': Timestamp.now(),
         };
 
@@ -162,7 +151,6 @@ class _IdentityAskRegState extends State<IdentityAskReg> {
           userData['7_canteenName'] = _canteenName;
         }
 
-        // Save user data
         await FirebaseFirestore.instance
             .collection('users')
             .doc(documentId)
@@ -173,16 +161,12 @@ class _IdentityAskRegState extends State<IdentityAskReg> {
             context,
             MaterialPageRoute(builder: (context) => const StudentPage()),
           );
-        }
-        if (widget.role == 'admin') {
+        } else if (widget.role == 'admin') {
           final canteenName = await db.getCanteenNameByUid(documentId);
-
           if (canteenName != null) {
             Navigator.pushReplacement(
               context,
-              MaterialPageRoute(builder: (context) => MainAdmin()
-                  // builder: (context) => AdminDashboard(canteenName: canteenName),
-                  ),
+              MaterialPageRoute(builder: (context) => MainAdmin()),
             );
           } else {
             _showErrorDialog('Failed to fetch canteen name.');
@@ -200,14 +184,12 @@ class _IdentityAskRegState extends State<IdentityAskReg> {
 
   @override
   void dispose() {
-    // Dispose of the controllers when the widget is removed from the widget tree
     _nameController.dispose();
     _ageController.dispose();
     _canteenNameController.dispose();
     super.dispose();
   }
 
-  @override
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -278,23 +260,22 @@ class _IdentityAskRegState extends State<IdentityAskReg> {
                         hintColor: Colors.grey.shade400,
                       ),
                     if (widget.role == 'student')
-                      if (widget.role == 'student')
-                        MyDropdown(
-                          value: _selectedClass,
-                          hintText: 'Select Class',
-                          hintColor: Colors.grey.shade400,
-                          items: _studentClasses,
-                          onChanged: (String? newValue) {
-                            setState(() {
-                              _selectedClass = newValue;
-                            });
-                          },
-                          validator: (value) =>
-                              value == null ? 'Please select a class' : null,
-                          onSaved: (value) {
-                            _selectedClass = value;
-                          },
-                        ),
+                      MyDropdown(
+                        value: _selectedClass,
+                        hintText: 'Select Class',
+                        hintColor: Colors.grey.shade400,
+                        items: _studentClasses,
+                        onChanged: (String? newValue) {
+                          setState(() {
+                            _selectedClass = newValue;
+                          });
+                        },
+                        validator: (value) =>
+                            value == null ? 'Please select a class' : null,
+                        onSaved: (value) {
+                          _selectedClass = value;
+                        },
+                      ),
                     const SizedBox(height: 30),
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(
@@ -306,7 +287,7 @@ class _IdentityAskRegState extends State<IdentityAskReg> {
                         ),
                       ),
                       onPressed: _isLoading ? null : _submit,
-                      child: Text(_isLoading ? 'Submitting...' : 'Submit',
+                      child: Text(_isLoading ? 'Submitting ...' : 'Submit',
                           style: const TextStyle(color: Colors.white)),
                     ),
                   ],

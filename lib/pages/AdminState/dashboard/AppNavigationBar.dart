@@ -44,7 +44,7 @@ class AppNavigationBar {
               GoRoute(
                 path: '/Notifications',
                 name: 'Notifications',
-                builder: (context, state) => const OrderPage(),
+                builder: (context, state) => const OrdersScreen(),
               ),
             ],
           ),

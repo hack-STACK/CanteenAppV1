@@ -14,6 +14,7 @@ class CustomNavigationBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+      print('Primary Color: ${Theme.of(context).colorScheme.primary}');
     return Stack(
       clipBehavior: Clip.none,
       alignment: Alignment.bottomCenter,
@@ -22,7 +23,7 @@ class CustomNavigationBar extends StatelessWidget {
         Container(
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).colorScheme.surface,
             borderRadius: BorderRadius.circular(75),
             boxShadow: [
               BoxShadow(
@@ -39,12 +40,14 @@ class CustomNavigationBar extends StatelessWidget {
               children: [
                 Expanded(
                     child: _buildNavigationItem(
+                  context: context,
                   index: 0,
                   icon: Icons.home_outlined,
                   semanticLabel: 'Home',
                 )),
                 Expanded(
                     child: _buildNavigationItem(
+                  context: context,
                   index: 1,
                   icon: Icons.track_changes_outlined,
                   semanticLabel: 'Tracker',
@@ -53,12 +56,14 @@ class CustomNavigationBar extends StatelessWidget {
                 const SizedBox(width: 60),
                 Expanded(
                     child: _buildNavigationItem(
+                  context: context,
                   index: 2,
                   icon: Icons.notifications_outlined,
                   semanticLabel: 'Notifications',
                 )),
                 Expanded(
                     child: _buildNavigationItem(
+                  context: context,
                   index: 3,
                   icon: Icons.settings_outlined,
                   semanticLabel: 'Settings',
@@ -70,13 +75,15 @@ class CustomNavigationBar extends StatelessWidget {
         // Floating Add Button
         Positioned(
           top: -4, // Adjust this value to position the button higher
-          child: _buildAddButton(),
+          child: _buildAddButton(context),
         ),
       ],
     ).animate().fadeIn(duration: 300.ms).slideY(begin: 0.1);
   }
+  
 
   Widget _buildNavigationItem({
+    required BuildContext context,
     required int index,
     required IconData icon,
     required String semanticLabel,
@@ -94,14 +101,16 @@ class CustomNavigationBar extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
             decoration: BoxDecoration(
               color: isSelected
-                  ? const Color(0xFF0B4AF5).withOpacity(0.1)
+                  ? Theme.of(context).colorScheme.primary.withOpacity(0.1)
                   : Colors.transparent,
               borderRadius: BorderRadius.circular(50),
             ),
             child: Icon(
               icon,
               size: 24,
-              color: isSelected ? const Color(0xFF0B4AF5) : Colors.grey,
+              color: isSelected
+                  ? Theme.of(context).colorScheme.primary
+                  : Theme.of(context).colorScheme.onSurface,
             ),
           )
               .animate(target: isSelected ? 1 : 0)
@@ -113,7 +122,7 @@ class CustomNavigationBar extends StatelessWidget {
             semanticLabel,
             style: TextStyle(
               fontSize: 12,
-              color: const Color(0xFF0B4AF5),
+              color: Theme.of(context).colorScheme.primary,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -122,7 +131,7 @@ class CustomNavigationBar extends StatelessWidget {
     );
   }
 
-  Widget _buildAddButton() {
+  Widget _buildAddButton(BuildContext context) {
     return GestureDetector(
       onTap: onAddPressed,
       child: Container(
@@ -131,8 +140,8 @@ class CustomNavigationBar extends StatelessWidget {
         decoration: BoxDecoration(
           gradient: LinearGradient(
             colors: [
-              const Color(0xFF0B4AF5),
-              const Color(0xFF0B4AF5).withOpacity(0.8),
+              Theme.of(context).colorScheme.primary,
+              Theme.of(context).colorScheme.primary.withOpacity(0.8),
             ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
@@ -140,7 +149,7 @@ class CustomNavigationBar extends StatelessWidget {
           borderRadius: BorderRadius.circular(50),
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFF0B4AF5).withOpacity(0.3),
+              color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
               blurRadius: 10,
               spreadRadius: 2,
               offset: const Offset(0, 4),
@@ -155,7 +164,8 @@ class CustomNavigationBar extends StatelessWidget {
           ),
         ),
       ).animate().scaleXY(begin: 0.9, end: 1.0).shimmer(
-          duration: 1500.ms, color: const Color(0xFF0B4AF5).withOpacity(0.3)),
+          duration: 1500.ms,
+          color: Theme.of(context).colorScheme.primary.withOpacity(0.3)),
     );
   }
 }

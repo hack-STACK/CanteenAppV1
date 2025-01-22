@@ -27,12 +27,28 @@ class StatsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: const [
-        Expanded(child: AverageOrderCard()),
-        SizedBox(width: 16),
-        Expanded(child: TopMenuCard()),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 600) {
+          // For smaller screens, stack vertically
+          return Column(
+            children: [
+              AverageOrderCard(),
+              const SizedBox(height: 16),
+              TopMenuCard(),
+            ],
+          );
+        } else {
+          // For wider screens, use row
+          return Row(
+            children: [
+              Expanded(child: AverageOrderCard()),
+              const SizedBox(width: 16),
+              Expanded(child: TopMenuCard()),
+            ],
+          );
+        }
+      },
     );
   }
 }
@@ -174,6 +190,13 @@ class TopMenuCard extends StatelessWidget {
             name: 'Nasi Goreng',
             orders: '245',
             trend: '+15%',
+          ),
+          const SizedBox(height: 12),
+          _buildMenuItem(
+            rank: 2,
+            name: 'Mie Goreng',
+            orders: '180',
+            trend: '+8%',
           ),
           const SizedBox(height: 12),
           _buildMenuItem(

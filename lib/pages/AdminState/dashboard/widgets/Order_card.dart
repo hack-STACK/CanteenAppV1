@@ -2,27 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 
-class AnalyticsTheme {
-  static const Color primary = Color(0xFF0B4AF5);
-  static const Color accent = Color(0xFFFF542D);
-  static const Color background = Color(0xFFF8FAFF);
-  static const Color cardBackground = Colors.white;
-  static const Color textPrimary = Color(0xFF1A1F36);
-  static const Color textSecondary = Color(0xFF6B7280);
-
-  static const cardDecoration = BoxDecoration(
-    color: cardBackground,
-    borderRadius: BorderRadius.all(Radius.circular(24)),
-    boxShadow: [
-      BoxShadow(
-        color: Color(0x0A000000),
-        blurRadius: 10,
-        offset: Offset(0, 4),
-      ),
-    ],
-  );
-}
-
 class ImprovedOrdersCard extends StatefulWidget {
   const ImprovedOrdersCard({super.key});
 
@@ -37,7 +16,6 @@ class _ImprovedOrdersCardState extends State<ImprovedOrdersCard>
   String _selectedTimeframe = 'Monthly';
   final List<String> _timeframes = ['Daily', 'Weekly', 'Monthly', 'Yearly'];
 
-  // Enhanced data structure
   late OrdersData _ordersData;
 
   @override
@@ -68,74 +46,85 @@ class _ImprovedOrdersCardState extends State<ImprovedOrdersCard>
 
   @override
   Widget build(BuildContext context) {
+    final ColorScheme colorScheme = Theme.of(context).colorScheme;
+    final TextTheme textTheme = Theme.of(context).textTheme;
+
     return FadeTransition(
       opacity: _fadeAnimation,
       child: Container(
         padding: const EdgeInsets.all(24),
-        decoration: AnalyticsTheme.cardDecoration,
+        decoration: BoxDecoration(
+          color: colorScheme.surface,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: colorScheme.shadow.withOpacity(0.1),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildHeader(),
+            _buildHeader(colorScheme, textTheme),
             const SizedBox(height: 24),
-            _buildMetrics(),
+            _buildMetrics(colorScheme, textTheme),
             const SizedBox(height: 24),
-            _buildChart(),
+            _buildChart(colorScheme),
             const SizedBox(height: 16),
-            _buildTimeIndicator(),
+            _buildTimeIndicator(colorScheme, textTheme),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildHeader() {
+  Widget _buildHeader(ColorScheme colorScheme, TextTheme textTheme) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'Total Orders',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.w700,
-                color: AnalyticsTheme.textPrimary,
-                letterSpacing: -0.5,
+              style: textTheme.titleLarge?.copyWith(
+                color: colorScheme.onSurface,
+                fontWeight: FontWeight.bold,
               ),
             ),
             const SizedBox(height: 4),
             Text(
               'Overview of order analytics',
-              style: TextStyle(
-                fontSize: 14,
-                color: AnalyticsTheme.textSecondary,
-                fontWeight: FontWeight.w500,
+              style: textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
               ),
             ),
           ],
         ),
-        _buildTimeframeDropdown(),
+        _buildTimeframeDropdown(colorScheme, textTheme),
       ],
     );
   }
 
-  Widget _buildTimeframeDropdown() {
+  Widget _buildTimeframeDropdown(ColorScheme colorScheme, TextTheme textTheme) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: AnalyticsTheme.background,
+        color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
         borderRadius: BorderRadius.circular(12),
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           value: _selectedTimeframe,
-          icon: const Icon(Icons.keyboard_arrow_down,
-              color: AnalyticsTheme.textSecondary),
-          style: const TextStyle(
-            color: AnalyticsTheme.textPrimary,
-            fontSize: 14,
+          dropdownColor: colorScheme.surface,
+          icon: Icon(
+            Icons.keyboard_arrow_down,
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
+          style: textTheme.bodyMedium?.copyWith(
+            color: colorScheme.onSurface,
             fontWeight: FontWeight.w600,
           ),
           onChanged: (String? newValue) {
@@ -157,7 +146,7 @@ class _ImprovedOrdersCardState extends State<ImprovedOrdersCard>
     );
   }
 
-  Widget _buildMetrics() {
+  Widget _buildMetrics(ColorScheme colorScheme, TextTheme textTheme) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -166,18 +155,22 @@ class _ImprovedOrdersCardState extends State<ImprovedOrdersCard>
           value: _ordersData.totalOrders.toString(),
           trend: '+12.5%',
           isPositive: true,
+          colorScheme: colorScheme,
+          textTheme: textTheme,
         ),
         _MetricCard(
           label: 'Average Order',
           value: '\$${_ordersData.averageOrder}',
           trend: '-2.3%',
           isPositive: false,
+          colorScheme: colorScheme,
+          textTheme: textTheme,
         ),
       ],
     );
   }
 
-  Widget _buildChart() {
+  Widget _buildChart(ColorScheme colorScheme) {
     return SizedBox(
       height: 200,
       child: LineChart(
@@ -188,7 +181,7 @@ class _ImprovedOrdersCardState extends State<ImprovedOrdersCard>
             horizontalInterval: 20,
             getDrawingHorizontalLine: (value) {
               return FlLine(
-                color: AnalyticsTheme.background,
+                color: colorScheme.surfaceVariant,
                 strokeWidth: 1,
               );
             },
@@ -201,8 +194,8 @@ class _ImprovedOrdersCardState extends State<ImprovedOrdersCard>
                 getTitlesWidget: (value, meta) {
                   return Text(
                     _ordersData.getXAxisLabel(value.toInt()),
-                    style: const TextStyle(
-                      color: AnalyticsTheme.textSecondary,
+                    style: TextStyle(
+                      color: colorScheme.onSurfaceVariant,
                       fontSize: 12,
                     ),
                   );
@@ -217,12 +210,12 @@ class _ImprovedOrdersCardState extends State<ImprovedOrdersCard>
             LineChartBarData(
               spots: _ordersData.chartData,
               isCurved: true,
-              color: AnalyticsTheme.accent,
+              color: colorScheme.primary,
               barWidth: 3,
               dotData: FlDotData(show: false),
               belowBarData: BarAreaData(
                 show: true,
-                color: AnalyticsTheme.accent.withOpacity(0.1),
+                color: colorScheme.primary.withOpacity(0.1),
               ),
             ),
           ],
@@ -231,25 +224,27 @@ class _ImprovedOrdersCardState extends State<ImprovedOrdersCard>
     );
   }
 
-  Widget _buildTimeIndicator() {
+  Widget _buildTimeIndicator(ColorScheme colorScheme, TextTheme textTheme) {
     return Center(
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          color: AnalyticsTheme.background,
+          color: colorScheme.primaryContainer.withOpacity(0.1),
           borderRadius: BorderRadius.circular(20),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.calendar_today,
-                size: 16, color: AnalyticsTheme.textSecondary),
+             Icon(
+              Icons.calendar_today,
+              size: 16,
+              color: colorScheme.onSurfaceVariant,
+            ),
             const SizedBox(width: 8),
             Text(
               DateFormat('MMMM yyyy').format(DateTime.now()),
-              style: TextStyle(
-                fontSize: 14,
-                color: AnalyticsTheme.textSecondary,
+              style: textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
                 fontWeight: FontWeight.w500,
               ),
             ),
@@ -271,12 +266,16 @@ class _MetricCard extends StatelessWidget {
   final String value;
   final String trend;
   final bool isPositive;
+  final ColorScheme colorScheme;
+  final TextTheme textTheme;
 
   const _MetricCard({
     required this.label,
     required this.value,
     required this.trend,
     required this.isPositive,
+    required this.colorScheme,
+    required this.textTheme,
   });
 
   @override
@@ -284,7 +283,7 @@ class _MetricCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AnalyticsTheme.background,
+        color: colorScheme.surface,
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
@@ -292,19 +291,19 @@ class _MetricCard extends StatelessWidget {
         children: [
           Text(
             label,
-            style: TextStyle(
+            style: textTheme.bodyMedium?.copyWith(
               fontSize: 14,
-              color: AnalyticsTheme.textSecondary,
+              color: colorScheme.onSurfaceVariant,
               fontWeight: FontWeight.w500,
             ),
           ),
           const SizedBox(height: 8),
           Text(
             value,
-            style: const TextStyle(
+            style: textTheme.titleLarge?.copyWith(
               fontSize: 24,
-              fontWeight: FontWeight.w700,
-              color: AnalyticsTheme.textPrimary,
+              fontWeight: FontWeight.bold,
+              color: colorScheme.onSurface,
             ),
           ),
           const SizedBox(height: 4),
@@ -318,7 +317,7 @@ class _MetricCard extends StatelessWidget {
               const SizedBox(width: 4),
               Text(
                 trend,
-                style: TextStyle(
+                style: textTheme.bodyMedium?.copyWith(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
                   color: isPositive ? Colors.green : Colors.red,

@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:kantin/pages/AdminState/dashboard/DashboardScreen.dart';
 import 'package:kantin/pages/AdminState/dashboard/Order_page.dart';
-import 'package:kantin/pages/AdminState/dashboard/Profile_page.dart';
 import 'package:kantin/pages/AdminState/dashboard/TrackerPage.dart';
 import 'package:kantin/pages/AdminState/dashboard/Homepage.dart';
+import 'package:kantin/pages/AdminState/dashboard/settings_screen.dart';
 
 class AppNavigationBar {
   AppNavigationBar._();
@@ -53,7 +53,7 @@ class AppNavigationBar {
               GoRoute(
                 path: '/Settings',
                 name: 'Settings',
-                builder: (context, state) => const SettingPage(),
+                builder: (context, state) => const SettingsScreen(),
               ),
             ],
           ),

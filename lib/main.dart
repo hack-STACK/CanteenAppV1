@@ -5,28 +5,53 @@ import 'package:kantin/firebase_options.dart';
 import 'package:provider/provider.dart';
 import 'package:kantin/Themes/theme_providers.dart';
 import 'package:kantin/Models/Restaurant.dart';
-import 'package:supabase_flutter/supabase_flutter.dart'; // Import your Restaurant model
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:firebase_app_check/firebase_app_check.dart'; // Import Firebase App Check
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  await Supabase.initialize(
+
+  // Initialize Firebase
+  try {
+    await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform);
+  } catch (e) {
+    print("Error initializing Firebase: $e");
+    return; // Exit if Firebase initialization fails
+  }
+
+  // Initialize App Check
+  try {
+    await FirebaseAppCheck.instance.activate(
+      androidProvider: AndroidProvider.playIntegrity, // For Android
+      appleProvider: AppleProvider.appAttest, // For iOS
+    );
+  } catch (e) {
+    print("Error initializing App Check: $e");
+    return; // Exit if App Check initialization fails
+  }
+
+  // Initialize Supabase
+  try {
+    await Supabase.initialize(
       url: 'https://hmmahzohkafghtdjbkqi.supabase.co',
-      anonKey:
-          'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhtbWFoem9oa2FmZ2h0ZGpia3FpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzcwOTk4NjMsImV4cCI6MjA1MjY3NTg2M30.mbmgey9hVH4l2f_NpnFv5sgC8mo5dp70qX5avlJ8Jgw');
+      anonKey: 'your-supabase-anon-key', // Use a secure method to manage this
+    );
+  } catch (e) {
+    print("Error initializing Supabase: $e");
+    return; // Exit if Supabase initialization fails
+  }
+
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (context) => ThemeProviders()),
-        ChangeNotifierProvider(
-            create: (context) => Restaurant()), // Add Restaurant provider
+        ChangeNotifierProvider(create: (context) => Restaurant()),
       ],
       child: const MainApp(),
     ),
   );
 }
-
-String role = 'admin'; // Default role
 
 class MainApp extends StatelessWidget {
   const MainApp({super.key});
@@ -37,7 +62,7 @@ class MainApp extends StatelessWidget {
       builder: (context, themeProvider, child) {
         return MaterialApp(
           debugShowCheckedModeBanner: false,
-          home: AuthGate(), //const AuthGate(),
+          home: const AuthGate(), // Ensure AuthGate is properly defined
           theme: themeProvider.themeData,
         );
       },

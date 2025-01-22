@@ -10,6 +10,7 @@ dependencies:
   cloud_firestore: ^5.6.1
   crop_your_image: ^2.0.0
   cropperx: ^1.1.1
+  firebase_app_check: ^0.3.2+1
   firebase_auth: ^5.4.0
   firebase_core: ^3.10.0
   firebase_storage: ^12.4.0

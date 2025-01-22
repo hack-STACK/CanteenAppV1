@@ -44,6 +44,13 @@ class _ImprovedOrdersCardState extends State<ImprovedOrdersCard>
     });
   }
 
+  void printColorDetails() {
+    final ColorScheme colorScheme = Theme.of(context).colorScheme;
+    print('Primary Color: ${colorScheme.primary}');
+    print('Surface Color: ${colorScheme.surface}');
+    print('On Surface Color: ${colorScheme.onSurface}');
+  }
+
   @override
   Widget build(BuildContext context) {
     final ColorScheme colorScheme = Theme.of(context).colorScheme;
@@ -235,7 +242,7 @@ class _ImprovedOrdersCardState extends State<ImprovedOrdersCard>
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-             Icon(
+            Icon(
               Icons.calendar_today,
               size: 16,
               color: colorScheme.onSurfaceVariant,

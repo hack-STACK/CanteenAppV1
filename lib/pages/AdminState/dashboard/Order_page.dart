@@ -7,8 +7,10 @@ class OrdersScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ColorScheme colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
-      backgroundColor: const Color(0xFFEFEFEF),
+      backgroundColor: colorScheme.background,
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
@@ -21,9 +23,9 @@ class OrdersScreen extends StatelessWidget {
                     child: Column(
                       children: [
                         const SizedBox(height: 24),
-                        _buildHeader(),
+                        _buildHeader(context),
                         const SizedBox(height: 24),
-                        _buildOrdersCard(),
+                        _buildOrdersCard(context),
                       ],
                     ),
                   ),
@@ -36,22 +38,22 @@ class OrdersScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildHeader() {
+  Widget _buildHeader(BuildContext context) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        _buildBackButton(),
-        _buildNotificationBadge("23"),
+        _buildBackButton(context),
+        _buildNotificationBadge("23", context),
       ],
     );
   }
 
-  Widget _buildBackButton() {
+  Widget _buildBackButton(BuildContext context) {
     return Container(
       width: 48,
       height: 48,
       decoration: BoxDecoration(
-        color: const Color(0xFFFF542D),
+        color: Theme.of(context).colorScheme.primary,
         shape: BoxShape.circle,
         boxShadow: [
           BoxShadow(
@@ -65,10 +67,10 @@ class OrdersScreen extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           customBorder: const CircleBorder(),
-          onTap: () {},
-          child: const Icon(
+          onTap: () => Navigator.of(context).pop(),
+          child: Icon(
             Icons.arrow_back_ios,
-            color: Colors.white,
+            color: Theme.of(context).colorScheme.onPrimary,
             size: 20,
           ),
         ),
@@ -76,10 +78,10 @@ class OrdersScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildOrdersCard() {
+  Widget _buildOrdersCard(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
@@ -92,55 +94,52 @@ class OrdersScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildOrdersHeader(),
-          _buildOrdersList(),
+          _buildOrdersHeader(context),
+          _buildOrdersList(context),
         ],
       ),
     );
   }
 
-  Widget _buildOrdersHeader() {
-    return const Padding(
-      padding: EdgeInsets.all(24.0),
+  Widget _buildOrdersHeader(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(24.0),
       child: Text(
-        'Orders',
-        style: TextStyle(
-          fontSize: 32,
-          fontWeight: FontWeight.bold,
-          fontFamily: 'Inter',
-          color: Color(0xFF1A1A1A),
-        ),
+        'Active Orders',
+        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.bold,
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
       ),
     );
   }
 
-  Widget _buildOrdersList() {
+  Widget _buildOrdersList(BuildContext context) {
+    // Replace with your actual order data
+    final dummyOrders = List.generate(6, (index) => Order.dummy());
+
     return ListView.separated(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-      itemCount: 6,
+      itemCount: dummyOrders.length,
       separatorBuilder: (context, index) => const SizedBox(height: 12),
       itemBuilder: (context, index) => OrderItem(
-        order: Order(
-          name: 'Food Name',
-          price: 'Rp.0.000',
-          category: 'Main course',
-        ),
-        notificationCount: '2',
+        order: dummyOrders[index],
+        notificationCount: (index % 2 == 0) ? '2' : null,
       ),
     );
   }
 
-  Widget _buildNotificationBadge(String count) {
+  Widget _buildNotificationBadge(String count, BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFFFF542D),
+        color: Theme.of(context).colorScheme.errorContainer,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFFFF542D).withOpacity(0.3),
+            color: Theme.of(context).colorScheme.error.withOpacity(0.2),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -148,11 +147,10 @@ class OrdersScreen extends StatelessWidget {
       ),
       child: Text(
         count,
-        style: const TextStyle(
-          color: Colors.white,
+        style: TextStyle(
+          color: Theme.of(context).colorScheme.onErrorContainer,
           fontSize: 14,
           fontWeight: FontWeight.w600,
-          fontFamily: 'Inter',
         ),
       ),
     );

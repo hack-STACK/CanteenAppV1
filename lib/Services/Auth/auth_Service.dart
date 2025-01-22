@@ -100,4 +100,22 @@ class AuthService {
       throw Exception('Failed to sign out: ${e.toString()}');
     }
   }
+
+  Future<void> deleteAccount() async {
+    User? user = _firebaseAuth.currentUser;
+
+    if (user != null) {
+      try {
+        // Delete the user document from Firestore
+        await _firestore.collection('users').doc(user.uid).delete();
+
+        // Delete the user from Firebase Authentication
+        await user.delete();
+      } catch (e) {
+        throw Exception('Failed to delete account: ${e.toString()}');
+      }
+    } else {
+      throw Exception('No user is currently signed in.');
+    }
+  }
 }

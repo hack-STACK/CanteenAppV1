@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:kantin/pages/AdminState/dashboard/TrackerPage.dart';
-import 'package:kantin/pages/AdminState/dashboard/widgets/menu_item.dart';
 import 'widgets/balance_card.dart';
 import 'widgets/category_scroll.dart';
 import 'widgets/profile_header.dart';
 import 'widgets/search_bar.dart';
 import 'widgets/top_menu_section.dart';
 
-class adminDashboardScreen extends StatelessWidget {
-  const adminDashboardScreen({Key? key}) : super(key: key);
+class AdminDashboardScreen extends StatelessWidget {
+  const AdminDashboardScreen({super.key, int? standId});
 
   @override
   Widget build(BuildContext context) {
@@ -46,8 +45,10 @@ class adminDashboardScreen extends StatelessWidget {
                   primaryColor: const Color(0xFFFF542D),
                   backgroundColor: Colors.white,
                   onCardTap: () {
-                    MaterialPageRoute(
-                      builder: (context) => TrackerScreen(),
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (context) => const TrackerScreen()),
                     );
                   },
                 ),
@@ -61,7 +62,7 @@ class adminDashboardScreen extends StatelessWidget {
                     'Recommended'
                   ],
                   itemCount: 4,
-                  accentColor: Color(0xFFFF542D),
+                  accentColor: const Color(0xFFFF542D),
                   onSeeAllTap: () {
                     // Handle see all tap
                   },

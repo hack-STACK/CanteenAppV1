@@ -2,9 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:kantin/Services/Auth/auth_Service.dart';
 import 'package:kantin/Services/Auth/login_or_register.dart';
 import 'package:kantin/pages/AdminState/dashboard/widgets/settings_tile.dart';
+import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
+import 'package:kantin/pages/User/login_page.dart';
 
-class SettingsSection extends StatelessWidget {
-  const SettingsSection({Key? key}) : super(key: key);
+class SettingsSection extends StatefulWidget {
+  const SettingsSection({super.key});
+
+  @override
+  _SettingsSectionState createState() => _SettingsSectionState();
+}
+
+class _SettingsSectionState extends State<SettingsSection> {
+  bool _isLoading = false; // Loading state for logout and delete account
 
   @override
   Widget build(BuildContext context) {
@@ -38,20 +47,41 @@ class SettingsSection extends StatelessWidget {
     );
 
     if (shouldLogout == true) {
+      setState(() {
+        _isLoading = true; // Set loading state
+      });
+
       try {
         await authService.signOut();
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (context) => const LoginOrRegister()),
-          (route) => false,
-        );
+        print("User  signed out successfully."); // Debug statement
+
+        // Navigate to LoginOrRegister after logout
+        if (mounted) {
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (context) => const LoginPage()),
+            (route) => false,
+          );
+        }
       } catch (e) {
         _showErrorDialog(context, 'Failed to logout: ${e.toString()}');
+      } finally {
+        setState(() {
+          _isLoading = false; // Reset loading state
+        });
       }
     }
   }
 
   Future<void> deleteAccount(BuildContext context) async {
     final authService = AuthService();
+    final firebaseUser = firebase_auth.FirebaseAuth.instance.currentUser;
+
+    // Check if a user is signed in before attempting to delete the account
+    if (firebaseUser == null) {
+      _showErrorDialog(context, 'No user currently signed in.');
+      return;
+    }
+
     final shouldDelete = await _showConfirmationDialog(
       context,
       'Delete Account',
@@ -59,20 +89,29 @@ class SettingsSection extends StatelessWidget {
     );
 
     if (shouldDelete == true) {
+      setState(() {
+        _isLoading = true; // Set loading state
+      });
+
       try {
         await authService.deleteAccount(); // Call the delete account method
 
-        // Check if the widget is still mounted before navigating
-        if (!context.mounted) return;
-
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (context) => const LoginOrRegister()),
-          (route) => false,
-        );
+        // Navigate to LoginOrRegister after account deletion
+        if (mounted) {
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (context) => const LoginPage()),
+            (route) => false,
+          );
+        }
       } catch (e) {
-        if (!context.mounted)
-          return; // Check if still mounted before showing dialog
-        _showErrorDialog(context, 'Failed to delete account: ${e.toString()}');
+        if (mounted) {
+          _showErrorDialog(
+              context, 'Failed to delete account: ${e.toString()}');
+        }
+      } finally {
+        setState(() {
+          _isLoading = false; // Reset loading state
+        });
       }
     }
   }
@@ -143,15 +182,26 @@ class SettingsSection extends StatelessWidget {
       SettingsTile(
         icon: Icons.logout,
         title: 'Logout',
-        onTap: () => logout(context),
+        onTap: () {
+          if (!_isLoading) {
+            logout(context);
+          }
+        },
       ),
       const SizedBox(height: 20),
       SettingsTile(
         icon: Icons.delete,
         title: 'Delete Account',
-        onTap: () => deleteAccount(context), // Call deleteAccount method
-        isDestructive: true,
+        onTap: () {
+          if (!_isLoading) {
+            deleteAccount(context);
+          }
+        },
       ),
+      if (_isLoading)
+        const Center(
+          child: CircularProgressIndicator(),
+        ),
     ];
   }
 }

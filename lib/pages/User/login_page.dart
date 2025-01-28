@@ -4,9 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:kantin/Component/my_button.dart';
 import 'package:kantin/Component/my_textfield.dart';
 import 'package:kantin/Services/Auth/auth_Service.dart';
+import 'package:kantin/Services/Database/Stan_service.dart';
 import 'package:kantin/pages/AdminState/AdminPage.dart';
-// import 'package:kantin/pages/AdminState/Pages/dashboard_screen.dart';
-import 'package:kantin/pages/AdminState/dashboard/widgets/Navigation_bar.dart';
 import 'package:kantin/pages/StudentState/StudentPage.dart';
 
 class LoginPage extends StatefulWidget {
@@ -22,16 +21,17 @@ class _LoginPageState extends State<LoginPage> {
   final TextEditingController passwordController = TextEditingController();
   final FocusNode emailFocusNode = FocusNode();
   final FocusNode passwordFocusNode = FocusNode();
-  Color emailHintColor = Colors.grey; // Default hint color for email
-  Color passwordHintColor = Colors.grey; // Default hint color for password
-  String errorMessage = ''; // To hold error messages
-  bool isLoading = false; // Loading state
+  Color emailHintColor = Colors.grey;
+  Color passwordHintColor = Colors.grey;
+  String errorMessage = '';
+  bool isLoading = false;
 
   Future<void> login() async {
     final authService = AuthService();
+    final stanService = StanService(); // Create an instance of StanService
     setState(() {
-      isLoading = true; // Set loading state to true
-      errorMessage = ''; // Reset error message
+      isLoading = true;
+      errorMessage = '';
     });
 
     try {
@@ -46,10 +46,12 @@ class _LoginPageState extends State<LoginPage> {
           .doc(userCredential.user!.uid)
           .get();
 
-      // Check if the document exists and contains the 'role' field
       if (userDoc.exists && userDoc.data() != null) {
-        String role = userDoc['role'] ??
-            'student'; // Default to 'student' if role is null
+        String role = userDoc['role'] ?? 'student'; // Default to 'student'
+
+        // Fetch stanId from Supabase
+        final stan = await stanService.getStanById(userCredential.user!.uid
+            as int); // Assuming user ID is used to fetch stan
 
         // Navigate based on role
         if (role == 'student') {
@@ -59,9 +61,11 @@ class _LoginPageState extends State<LoginPage> {
           );
         } else if (role == 'admin') {
           Navigator.pushReplacement(
-              context, MaterialPageRoute(builder: (context) => MainAdmin())
-              // MaterialPageRoute(builder: (context) => AdminDashboard(canteenName: '',)),
-              );
+            context,
+            MaterialPageRoute(
+                builder: (context) =>
+                    MainAdmin(stanId: stan!.id ?? 0)), // Pass the stanId
+          );
         }
       } else {
         setState(() {
@@ -70,11 +74,11 @@ class _LoginPageState extends State<LoginPage> {
       }
     } catch (e) {
       setState(() {
-        errorMessage = 'Login failed: ${e.toString()}'; // Show error message
+        errorMessage = 'Login failed: ${e.toString()}';
       });
     } finally {
       setState(() {
-        isLoading = false; // Reset loading state
+        isLoading = false;
       });
     }
   }
@@ -83,120 +87,111 @@ class _LoginPageState extends State<LoginPage> {
   void initState() {
     super.initState();
 
-    // Listen for focus changes on the email field
     emailFocusNode.addListener(() {
       setState(() {
-        emailHintColor = emailFocusNode.hasFocus
-            ? Colors.blue
-            : Theme.of(context)
-                .colorScheme
-                .inversePrimary; // Change color based on focus
+        emailHintColor = emailFocusNode.hasFocus ? Colors.blue : Colors.grey;
       });
     });
 
-    // Listen for focus changes on the password field
     passwordFocusNode.addListener(() {
       setState(() {
-        passwordHintColor = passwordFocusNode.hasFocus
-            ? Colors.blue
-            : Colors.grey; // Change color based on focus
+        passwordHintColor =
+            passwordFocusNode.hasFocus ? Colors.blue : Colors.grey;
       });
     });
   }
 
   @override
   void dispose() {
-    emailFocusNode.dispose(); // Dispose the email focus node
-    passwordFocusNode.dispose(); // Dispose the password focus node
-    emailController.dispose(); // Dispose the email controller
-    passwordController.dispose(); // Dispose the password controller
+    emailFocusNode.dispose();
+    passwordFocusNode.dispose();
+    emailController.dispose();
+    passwordController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    // Get the screen size
     final screenSize = MediaQuery.of(context).size;
 
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
       body: GestureDetector(
         onTap: () {
-          // Dismiss the keyboard when tapping outside the text fields
           FocusScope.of(context).unfocus();
         },
         child: Center(
           child: SingleChildScrollView(
-            // Allow scrolling for smaller screens
-            child: Padding(
-              padding: EdgeInsets.symmetric(
-                  horizontal: screenSize.width * 0.1), // Responsive padding
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.lock_open_rounded,
-                    size: screenSize.width * 0.2, // Responsive icon size
-                    color: Theme.of(context).colorScheme.primary,
+            padding: EdgeInsets.symmetric(horizontal: screenSize.width * 0.1),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.lock_open_rounded,
+                  size: screenSize.width * 0.2,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(height: 25),
+                Text(
+                  "Food Delivery App",
+                  style: TextStyle(
+                    fontSize: 20,
+                    color: Theme.of(context).colorScheme.inversePrimary,
                   ),
-                  const SizedBox(height: 25),
+                ),
+                const SizedBox(height: 25),
+                MyTextfield(
+                  controller: emailController,
+                  hintText: "Email",
+                  obscureText: false,
+                  hintColor: emailHintColor,
+                  validator: (value) {
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 10),
+                MyTextfield(
+                  controller: passwordController,
+                  hintText: "Password",
+                  obscureText: true,
+                  hintColor: passwordHintColor,
+                  validator: (value) {
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 25),
+                if (errorMessage.isNotEmpty)
                   Text(
-                    "Food Delivery App",
-                    style: TextStyle(
-                      fontSize: 20, // Increased font size for better visibility
-                      color: Theme.of(context).colorScheme.inversePrimary,
-                    ),
+                    errorMessage,
+                    style: TextStyle(color: Colors.red),
                   ),
-                  const SizedBox(height: 25),
-                  MyTextfield(
-                    controller: emailController,
-                    hintText: "Email",
-                    obscureText: false,
-                    hintColor: emailHintColor, // Use dynamic hint color
-                  ),
-                  const SizedBox(height: 10),
-                  MyTextfield(
-                    controller: passwordController,
-                    hintText: "Password",
-                    obscureText: true,
-                    hintColor: passwordHintColor, // Use dynamic hint color
-                  ),
-                  const SizedBox(height: 25),
-                  if (errorMessage
-                      .isNotEmpty) // Display error message if exists
+                const SizedBox(height: 10),
+                isLoading
+                    ? CircularProgressIndicator()
+                    : MyButton(text: "Sign in", onTap: login),
+                const SizedBox(height: 25),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
                     Text(
-                      errorMessage,
-                      style: TextStyle(color: Colors.red),
+                      'Not a member? ',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onPrimary,
+                      ),
                     ),
-                  const SizedBox(height: 10),
-                  isLoading // Show loading indicator while logging in
-                      ? CircularProgressIndicator()
-                      : MyButton(text: "Sign in", onTap: login),
-                  const SizedBox(height: 25),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        'Not a member? ',
+                    GestureDetector(
+                      onTap: widget.onTap,
+                      child: Text(
+                        "Register now",
                         style: TextStyle(
-                          color: Theme.of(context).colorScheme.onPrimary,
+                          color: Theme.of(context).colorScheme.primary,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
-                      GestureDetector(
-                        onTap:
-                            widget.onTap, // Call the onTap function to navigate
-                        child: Text(
-                          "Register now",
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.primary,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ),

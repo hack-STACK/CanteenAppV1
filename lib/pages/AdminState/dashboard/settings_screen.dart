@@ -4,7 +4,7 @@ import 'package:kantin/pages/AdminState/dashboard/widgets/report_section.dart';
 import 'package:kantin/pages/AdminState/dashboard/widgets/settings_section.dart';
 
 class SettingsScreen extends StatelessWidget {
-  const SettingsScreen({Key? key}) : super(key: key);
+  const SettingsScreen({super.key});
 
   @override
   Widget build(BuildContext context) {

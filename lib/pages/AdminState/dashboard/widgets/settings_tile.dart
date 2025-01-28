@@ -7,12 +7,12 @@ class SettingsTile extends StatelessWidget {
   final bool isDestructive;
 
   const SettingsTile({
-    Key? key,
+    super.key,
     this.icon,
     required this.title,
     required this.onTap,
     this.isDestructive = false,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

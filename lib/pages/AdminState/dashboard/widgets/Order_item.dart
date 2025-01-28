@@ -6,10 +6,10 @@ class OrderItem extends StatelessWidget {
   final String? notificationCount;
 
   const OrderItem({
-    Key? key,
+    super.key,
     required this.order,
     this.notificationCount,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -81,7 +81,7 @@ class OrderItem extends StatelessWidget {
       width: 96,
       height: 96,
       decoration: BoxDecoration(
-        color: colorScheme.surfaceVariant,
+        color: colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
@@ -155,7 +155,7 @@ class OrderItem extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        color: colorScheme.surfaceVariant,
+        color: colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Icon(

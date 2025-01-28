@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:kantin/pages/AdminState/dashboard/widgets/settings_tile.dart';
 
 class ReportSection extends StatelessWidget {
-  const ReportSection({Key? key}) : super(key: key);
+  const ReportSection({super.key});
 
   @override
   Widget build(BuildContext context) {

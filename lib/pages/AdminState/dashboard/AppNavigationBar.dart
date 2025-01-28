@@ -12,53 +12,66 @@ class AppNavigationBar {
   static final GlobalKey<NavigatorState> _rootNavigatorKey =
       GlobalKey<NavigatorState>();
 
-  static final GoRouter router = GoRouter(
-    navigatorKey: _rootNavigatorKey,
-    initialLocation: '/Home',
-    routes: [
-      StatefulShellRoute.indexedStack(
-        builder: (context, state, navigationShell) {
-          return DashboardScreen(navigationShell: navigationShell);
-        },
-        branches: [
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/Home',
-                name: 'Home',
-                builder: (context, state) => const adminDashboardScreen(),
-              ),
-            ],
-          ),
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/Tracker',
-                name: 'Tracker',
-                builder: (context, state) => const TrackerScreen(),
-              ),
-            ],
-          ),
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/Notifications',
-                name: 'Notifications',
-                builder: (context, state) => const OrdersScreen(),
-              ),
-            ],
-          ),
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/Settings',
-                name: 'Settings',
-                builder: (context, state) => const SettingsScreen(),
-              ),
-            ],
-          ),
-        ],
-      ),
-    ],
-  );
+  static GoRouter configureRouter(int? standId) {
+    return GoRouter(
+      navigatorKey: _rootNavigatorKey,
+      initialLocation: '/Home',
+      routes: [
+        StatefulShellRoute.indexedStack(
+          builder: (context, state, navigationShell) {
+            return DashboardScreen(navigationShell: navigationShell);
+          },
+          branches: [
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: '/Home',
+                  name: 'Home',
+                  builder: (context, state) {
+                    // Handle null standId case
+                    if (standId == null) {
+                      print('Stand ID is not available.'); // Debugging print
+                      return const Center(
+                          child: Text('Stand ID is not available.'));
+                    }
+                    print(
+                        'Navigating to AdminDashboardScreen with standId: $standId'); // Debugging print
+                    return AdminDashboardScreen(
+                        standId: standId); // Pass standId here
+                  },
+                ),
+              ],
+            ),
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: '/Tracker',
+                  name: 'Tracker',
+                  builder: (context, state) => const TrackerScreen(),
+                ),
+              ],
+            ),
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: '/Notifications',
+                  name: 'Notifications',
+                  builder: (context, state) => const OrdersScreen(),
+                ),
+              ],
+            ),
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: '/Settings',
+                  name: 'Settings',
+                  builder: (context, state) => const SettingsScreen(),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ],
+    );
+  }
 }

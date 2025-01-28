@@ -1,15 +1,16 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:kantin/Component/my_button.dart';
 import 'package:kantin/Component/my_textfield.dart';
 import 'package:kantin/Services/Auth/auth_Service.dart';
+import 'package:kantin/Services/Auth/role_provider.dart';
+import 'package:kantin/pages/StudentState/StudentPage.dart';
 import 'package:kantin/pages/User/Identity_ask_REG.dart';
+import 'package:provider/provider.dart';
 
 class RegisterPage extends StatefulWidget {
-  const RegisterPage({
-    super.key,
-    this.onTap,
-  });
+  const RegisterPage({super.key, this.onTap});
   final void Function()? onTap;
 
   @override
@@ -22,11 +23,11 @@ class _RegisterPageState extends State<RegisterPage> {
   final TextEditingController confirmPasswordController =
       TextEditingController();
   bool isLoading = false; // Loading state
-  String errorMessage = '';
-  String selectedRole = 'student'; // Default role
+  String errorMessage = 'error';
 
   void register() async {
     final authService = AuthService();
+    final roleProvider = Provider.of<RoleProvider>(context, listen: false);
 
     // Validate inputs
     if (emailController.text.isEmpty || passwordController.text.isEmpty) {
@@ -41,6 +42,7 @@ class _RegisterPageState extends State<RegisterPage> {
 
     setState(() {
       isLoading = true; // Show loading indicator
+      errorMessage = ''; // Reset error message
     });
 
     try {
@@ -48,7 +50,7 @@ class _RegisterPageState extends State<RegisterPage> {
       final userCredential = await authService.signUpWithEmailPassword(
         emailController.text,
         passwordController.text,
-        selectedRole,
+        roleProvider.role, // Use the role from the provider
       );
 
       // Check if the user was created successfully
@@ -59,19 +61,37 @@ class _RegisterPageState extends State<RegisterPage> {
             .doc(userCredential.user!.uid)
             .set({
           'email': emailController.text,
-          'role': selectedRole,
+          'role': roleProvider.role, // Use the role from the provider
           'createdAt': Timestamp.now(),
+          'isRegistered': false, // Set to false initially
         });
 
-        // Navigate to the next screen
-        if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => IdentityAskReg(role: selectedRole),
-            ),
-          );
+        // Navigate based on the user role
+        if (roleProvider.role == 'student' ||
+            roleProvider.role == 'admin_stalls') {
+          // Navigate to the IdentityAskReg page for both students and admins
+          if (mounted) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => IdentityAskReg(role: roleProvider.role),
+              ),
+            );
+          }
+        } else {
+          // Navigate to the student dashboard for other roles
+          if (mounted) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) =>
+                    StudentPage(), // Replace with your actual dashboard
+              ),
+            );
+          }
         }
+      } else {
+        _showErrorDialog('User  registration failed: User credential is null.');
       }
     } catch (e) {
       // Handle errors and show an appropriate message
@@ -89,12 +109,12 @@ class _RegisterPageState extends State<RegisterPage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Error'),
+        title: const Text('Error'),
         content: Text(message),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('OK'),
+            child: const Text('OK'),
           ),
         ],
       ),
@@ -111,7 +131,6 @@ class _RegisterPageState extends State<RegisterPage> {
 
   @override
   Widget build(BuildContext context) {
-    // Get the screen size
     final screenSize = MediaQuery.of(context).size;
 
     return Scaffold(
@@ -130,7 +149,7 @@ class _RegisterPageState extends State<RegisterPage> {
                 ),
                 const SizedBox(height: 25),
                 Text(
-                  "Create an Account",
+                  "Create an Account ",
                   style: TextStyle(
                     fontSize: 20,
                     color: Theme.of(context).colorScheme.inversePrimary,
@@ -142,6 +161,9 @@ class _RegisterPageState extends State<RegisterPage> {
                   hintText: "Email",
                   obscureText: false,
                   hintColor: Colors.grey,
+                  validator: (value) {
+                    return null;
+                  },
                 ),
                 const SizedBox(height: 10),
                 MyTextfield(
@@ -149,6 +171,9 @@ class _RegisterPageState extends State<RegisterPage> {
                   hintText: "Password",
                   obscureText: true,
                   hintColor: Colors.grey,
+                  validator: (value) {
+                    return null;
+                  },
                 ),
                 const SizedBox(height: 10),
                 MyTextfield(
@@ -156,21 +181,32 @@ class _RegisterPageState extends State<RegisterPage> {
                   hintText: "Confirm Password",
                   obscureText: true,
                   hintColor: Colors.grey,
+                  validator: (value) {
+                    return null;
+                  },
                 ),
                 const SizedBox(height: 10),
-                DropdownButton<String>(
-                  value: selectedRole,
-                  items: <String>['student', 'admin']
-                      .map<DropdownMenuItem<String>>((String value) {
-                    return DropdownMenuItem<String>(
-                      value: value,
-                      child: Text(value),
+                Consumer<RoleProvider>(
+                  builder: (context, roleProvider, child) {
+                    return DropdownButton<String>(
+                      value: roleProvider.role,
+                      items: <String>[
+                        'student',
+                        'admin_stalls'
+                      ] // Updated to include 'admin_stalls'
+                          .map<DropdownMenuItem<String>>((String value) {
+                        return DropdownMenuItem<String>(
+                          value: value,
+                          child: Text(value),
+                        );
+                      }).toList(),
+                      onChanged: (String? newValue) {
+                        if (newValue != null) {
+                          roleProvider
+                              .setRole(newValue); // Update role in provider
+                        }
+                      },
                     );
-                  }).toList(),
-                  onChanged: (String? newValue) {
-                    setState(() {
-                      selectedRole = newValue!;
-                    });
                   },
                 ),
                 const SizedBox(height: 10),

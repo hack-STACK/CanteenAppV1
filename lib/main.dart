@@ -24,7 +24,8 @@ void main() async {
   try {
     await Supabase.initialize(
       url: 'https://hmmahzohkafghtdjbkqi.supabase.co',
-      anonKey: 'your-supabase-anon-key', // Use a secure method to manage this
+      anonKey:
+          'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhtbWFoem9oa2FmZ2h0ZGpia3FpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzcwOTk4NjMsImV4cCI6MjA1MjY3NTg2M30.mbmgey9hVH4l2f_NpnFv5sgC8mo5dp70qX5avlJ8Jgw', // Use a secure method to manage this
     );
   } catch (e) {
     print("Error initializing Supabase: $e");
@@ -37,7 +38,9 @@ void main() async {
         ChangeNotifierProvider(create: (context) => ThemeProviders()),
         ChangeNotifierProvider(create: (context) => Restaurant()),
         ChangeNotifierProvider(
-            create: (context) => RoleProvider()), // Add RoleProvider
+          create: (context) => RoleProvider(
+              initialRole: 'student'), // Set default role to 'student'
+        ),
       ],
       child: const MainApp(),
     ),

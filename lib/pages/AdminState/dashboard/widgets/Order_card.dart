@@ -188,7 +188,7 @@ class _ImprovedOrdersCardState extends State<ImprovedOrdersCard>
             horizontalInterval: 20,
             getDrawingHorizontalLine: (value) {
               return FlLine(
-                color: colorScheme.surfaceVariant,
+                color: colorScheme.surfaceContainerHighest,
                 strokeWidth: 1,
               );
             },

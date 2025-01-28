@@ -15,7 +15,9 @@ class MyTextfield extends StatelessWidget {
     required this.obscureText,
     required this.hintColor,
     this.onSaved,
-    this.keyboardInputType, // Add onSaved as an optional parameter
+    this.keyboardInputType,
+    required String? Function(dynamic value)
+        validator, // Add onSaved as an optional parameter
   });
 
   @override

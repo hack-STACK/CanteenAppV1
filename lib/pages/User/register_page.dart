@@ -2,12 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:kantin/Component/my_button.dart';
+import 'package:kantin/Component/my_form.dart';
 import 'package:kantin/Component/my_textfield.dart';
+import 'package:kantin/Models/UsersModels.dart';
 import 'package:kantin/Services/Auth/auth_Service.dart';
 import 'package:kantin/Services/Auth/role_provider.dart';
+import 'package:kantin/Services/Database/UserService.dart';
 import 'package:kantin/pages/StudentState/StudentPage.dart';
 import 'package:kantin/pages/User/Identity_ask_REG.dart';
+import 'package:kantin/pages/User/PersonalForm.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key, this.onTap});
@@ -28,6 +33,9 @@ class _RegisterPageState extends State<RegisterPage> {
   void register() async {
     final authService = AuthService();
     final roleProvider = Provider.of<RoleProvider>(context, listen: false);
+    final userService = UserService(); // Initialize UserService
+    final supabaseClient =
+        Supabase.instance.client; // Initialize Supabase client
 
     // Validate inputs
     if (emailController.text.isEmpty || passwordController.text.isEmpty) {
@@ -55,10 +63,12 @@ class _RegisterPageState extends State<RegisterPage> {
 
       // Check if the user was created successfully
       if (userCredential.user != null) {
+        final String firebaseUid = userCredential.user!.uid; // Get Firebase UID
+
         // Save user data to Firestore
         await FirebaseFirestore.instance
             .collection('users')
-            .doc(userCredential.user!.uid)
+            .doc(firebaseUid)
             .set({
           'email': emailController.text,
           'role': roleProvider.role, // Use the role from the provider
@@ -66,15 +76,28 @@ class _RegisterPageState extends State<RegisterPage> {
           'isRegistered': false, // Set to false initially
         });
 
+        // Create a new UserModel instance
+        // UserModel newUser = UserModel(
+        //   username: emailController.text, // Assuming username is the email
+        //   password:
+        //       passwordController.text, // Ensure to hash this before storing
+        //   role: roleProvider.role,
+        //   firebaseUid: firebaseUid, id: 0, // Store Firebase UID
+        // );
+
+        // // // Save user data to Supabase using UserService
+        // // await userService.createUser(newUser);
+
         // Navigate based on the user role
         if (roleProvider.role == 'student' ||
             roleProvider.role == 'admin_stalls') {
-          // Navigate to the IdentityAskReg page for both students and admins
+          // Navigate to the PersonalInfoScreen for both students and admins
           if (mounted) {
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(
-                builder: (context) => IdentityAskReg(role: roleProvider.role),
+                builder: (context) =>
+                    PersonalInfoScreen(role: roleProvider.role, firebaseUid: firebaseUid,),
               ),
             );
           }

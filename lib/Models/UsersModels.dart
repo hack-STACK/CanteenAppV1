@@ -2,16 +2,18 @@ import 'package:crypto/crypto.dart';
 import 'dart:convert';
 
 class UserModel {
-  final int? id; // Unique identifier for each user, optional for new users
+  final int id; // Unique identifier for each user, optional for new users
   final String username; // Username for the user
-  final String password; // Password for the user (consider hashing this)
+  final String password; // Password for the user (hashed)
   final String role; // Role of the user (admin_stalls or student)
+  final String firebaseUid; // Firebase UID for the user
 
   UserModel({
-    this.id, // Make id optional for new users
+    required this.id, // Make id optional for new users
     required this.username,
     required this.password,
     required this.role,
+    required this.firebaseUid,
   });
 
   // Convert a UserModel instance to a Map for database operations
@@ -20,6 +22,7 @@ class UserModel {
       'username': username,
       'password': password, // Ensure to hash passwords before storing
       'role': role,
+      'firebase_uid': firebaseUid, // Include Firebase UID
     };
   }
 
@@ -30,11 +33,12 @@ class UserModel {
       username: map['username'],
       password: map['password'],
       role: map['role'],
+      firebaseUid: map['firebase_uid'], // Ensure correct key for Firebase UID
     );
   }
 
   // Hash the password using SHA-256
-  String hashPassword(String password) {
+  static String hashPassword(String password) {
     final bytes = utf8.encode(password); // Convert password to bytes
     final digest = sha256.convert(bytes); // Hash the bytes
     return digest.toString(); // Return the hashed password
@@ -45,11 +49,13 @@ class UserModel {
     required String username,
     required String password,
     required String role,
+    required String firebaseUid,
   }) {
     return UserModel(
       username: username,
-      password: password, // Hash the password before passing it
+      password: hashPassword(password), // Hash the password before passing it
       role: role,
+      firebaseUid: firebaseUid, id: 0, // Include Firebase UID
     );
   }
 }

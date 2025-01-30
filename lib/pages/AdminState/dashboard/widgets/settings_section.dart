@@ -58,7 +58,7 @@ class _SettingsSectionState extends State<SettingsSection> {
         // Navigate to LoginOrRegister after logout
         if (mounted) {
           Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(builder: (context) => const LoginPage()),
+            MaterialPageRoute(builder: (context) => const LoginOrRegister()),
             (route) => false,
           );
         }

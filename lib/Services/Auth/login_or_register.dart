@@ -24,6 +24,12 @@ class _LoginOrRegisterState extends State<LoginOrRegister> {
       backgroundColor: Theme.of(context).colorScheme.surface,
       body: AnimatedSwitcher(
         duration: const Duration(milliseconds: 300),
+        transitionBuilder: (Widget child, Animation<double> animation) {
+          return FadeTransition(
+            opacity: animation,
+            child: child,
+          );
+        },
         child: showLoginPage
             ? LoginPage(
                 key: const ValueKey('LoginPage'),

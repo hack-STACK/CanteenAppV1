@@ -13,8 +13,6 @@ class SettingsSection extends StatefulWidget {
 }
 
 class _SettingsSectionState extends State<SettingsSection> {
-  bool _isLoading = false; // Loading state for logout and delete account
-
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -47,27 +45,18 @@ class _SettingsSectionState extends State<SettingsSection> {
     );
 
     if (shouldLogout == true) {
-      setState(() {
-        _isLoading = true; // Set loading state
-      });
-
       try {
         await authService.signOut();
-        print("User  signed out successfully."); // Debug statement
+        print("User signed out successfully."); // Debug statement
 
         // Navigate to LoginOrRegister after logout
         if (mounted) {
-          Navigator.of(context).pushAndRemoveUntil(
+          Navigator.of(context).pushReplacement(
             MaterialPageRoute(builder: (context) => const LoginOrRegister()),
-            (route) => false,
           );
         }
       } catch (e) {
         _showErrorDialog(context, 'Failed to logout: ${e.toString()}');
-      } finally {
-        setState(() {
-          _isLoading = false; // Reset loading state
-        });
       }
     }
   }
@@ -89,14 +78,10 @@ class _SettingsSectionState extends State<SettingsSection> {
     );
 
     if (shouldDelete == true) {
-      setState(() {
-        _isLoading = true; // Set loading state
-      });
-
       try {
         await authService.deleteAccount(); // Call the delete account method
 
-        // Navigate to LoginOrRegister after account deletion
+        // Navigate to LoginPage after account deletion
         if (mounted) {
           Navigator.of(context).pushAndRemoveUntil(
             MaterialPageRoute(builder: (context) => const LoginPage()),
@@ -105,13 +90,8 @@ class _SettingsSectionState extends State<SettingsSection> {
         }
       } catch (e) {
         if (mounted) {
-          _showErrorDialog(
-              context, 'Failed to delete account: ${e.toString()}');
+          _showErrorDialog(context, 'Failed to delete account: ${e.toString()}');
         }
-      } finally {
-        setState(() {
-          _isLoading = false; // Reset loading state
-        });
       }
     }
   }
@@ -168,8 +148,7 @@ class _SettingsSectionState extends State<SettingsSection> {
         title: 'Notification',
         onTap: () {
           // Handle notification action
-        },
-      ),
+        },),
       const SizedBox(height: 20),
       SettingsTile(
         icon: Icons.discount,
@@ -183,9 +162,7 @@ class _SettingsSectionState extends State<SettingsSection> {
         icon: Icons.logout,
         title: 'Logout',
         onTap: () {
-          if (!_isLoading) {
-            logout(context);
-          }
+          logout(context);
         },
       ),
       const SizedBox(height: 20),
@@ -193,15 +170,9 @@ class _SettingsSectionState extends State<SettingsSection> {
         icon: Icons.delete,
         title: 'Delete Account',
         onTap: () {
-          if (!_isLoading) {
-            deleteAccount(context);
-          }
+          deleteAccount(context);
         },
       ),
-      if (_isLoading)
-        const Center(
-          child: CircularProgressIndicator(),
-        ),
     ];
   }
 }

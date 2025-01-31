@@ -186,7 +186,7 @@ Future<void> _saveAndSubmit() async {
           studentName: _nameController.text.trim(),
           studentAddress: _addressController.text.trim(),
           studentPhoneNumber: _phoneController.text.trim(),
-          userId: createdUser.id!,
+          userId: createdUser.id,
           studentImage: '', // Handle image upload separately if needed
         );
 

@@ -1,3 +1,4 @@
+import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:kantin/Services/Auth/gate.dart';
@@ -19,6 +20,11 @@ void main() async {
     print("Error initializing Firebase: $e");
     return; // Exit if Firebase initialization fails
   }
+    // Initialize App Check
+  await FirebaseAppCheck.instance.activate(
+    androidProvider: AndroidProvider.playIntegrity, // For Android
+    appleProvider: AppleProvider.appAttest, // For iOS
+  );
 
   // Initialize Supabase
   try {

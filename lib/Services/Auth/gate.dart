@@ -41,42 +41,36 @@ class AuthGate extends StatelessWidget {
                 }
 
                 // Check document existence and role
-                if (userSnapshot.data != null && userSnapshot.data!.exists) {
+                if (userSnapshot.data?.exists ?? false) {
                   final userData = userSnapshot.data!.data() as Map<String, dynamic>?;
 
                   if (userData != null) {
                     final String role = userData['role'] ?? 'student';
                     final bool isRegistered = userData['isRegistered'] ?? false;
                     final bool hasCompletedProfile = userData['hasCompletedProfile'] ?? false;
-                    final int? stanId = userData['stanId']; // Extract stanId
+                    final int? stanId = userData['stanId'];
 
                     // Set the role in the RoleProvider
                     WidgetsBinding.instance.addPostFrameCallback((_) {
-                      Provider.of<RoleProvider>(context, listen: false)
-                          .setRole(role);
+                      Provider.of<RoleProvider>(context, listen: false).setRole(role);
                     });
 
-                    // If profile is not completed, show personal info form
-                    if (!hasCompletedProfile) {
+                    // Determine which screen to show
+                    if (!hasCompletedProfile || (role == 'student' && !isRegistered)) {
                       return PersonalInfoScreen(
                         role: role,
-                        firebaseUid: snapshot.data!.uid, // Pass the Firebase UID
+                        firebaseUid: snapshot.data!.uid,
                       );
                     }
 
-                    // Return appropriate page based on role and registration status
-                    if (role == 'student' && !isRegistered) {
-                      return PersonalInfoScreen(
-                        role: role,
-                        firebaseUid: snapshot.data!.uid, // Pass the Firebase UID
-                      );
-                    } else if (role == 'admin_stalls') {
+                    // Return appropriate page based on role
+                    if (role == 'admin_stalls') {
                       return MainAdmin(
                         key: ValueKey('admin_${snapshot.data!.uid}'),
-                        stanId: stanId!, // Pass stanId to MainAdmin
+                        stanId: stanId!,
                       );
                     } else {
-                      return const StudentPage(); // Navigate to the Student dashboard
+                      return const StudentPage();
                     }
                   }
                 }
@@ -84,7 +78,7 @@ class AuthGate extends StatelessWidget {
                 // Handle new user registration
                 return PersonalInfoScreen(
                   role: 'student',
-                  firebaseUid: snapshot.data!.uid, // Pass the Firebase UID
+                  firebaseUid: snapshot.data!.uid,
                 );
               },
             );

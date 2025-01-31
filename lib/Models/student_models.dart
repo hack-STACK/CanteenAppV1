@@ -1,9 +1,9 @@
 class StudentModels {
-  final String studentName;
-  final String studentAddress;
-  final String studentPhoneNumber; // Changed to String to preserve formatting
-  final int userId; // Changed to camelCase for Dart conventions
-  final String studentImage;
+  final String studentName;        // Maps to 'nama_siswa'
+  final String studentAddress;     // Maps to 'alamat'
+  final String studentPhoneNumber; // Maps to 'telp'
+  final int userId;                // Maps to 'id_user'
+  final String studentImage;       // Maps to 'foto'
 
   StudentModels({
     required this.studentName,
@@ -16,22 +16,22 @@ class StudentModels {
   // Convert to JSON format for database operations
   Map<String, dynamic> toMap() {
     return {
-      'student_name': studentName,
-      'student_address': studentAddress,
-      'student_phone': studentPhoneNumber,
-      'user_id': userId,
-      'student_image': studentImage,
+      'nama_siswa': studentName,        // Updated to match the database column name
+      'alamat': studentAddress,          // Updated to match the database column name
+      'telp': studentPhoneNumber,        // Updated to match the database column name
+      'id_user': userId,                 // Updated to match the database column name
+      'foto': studentImage,              // Updated to match the database column name
     };
   }
 
   // Create instance from JSON data
   factory StudentModels.fromMap(Map<String, dynamic> map) {
     return StudentModels(
-      studentName: map['student_name'] ?? '',
-      studentAddress: map['student_address'] ?? '',
-      studentPhoneNumber: map['student_phone']?.toString() ?? '',
-      userId: map['user_id'] as int? ?? 0,
-      studentImage: map['student_image'] ?? '',
+      studentName: map['nama_siswa'] ?? '',                // Updated to match the database column name
+      studentAddress: map['alamat'] ?? '',                 // Updated to match the database column name
+      studentPhoneNumber: map['telp']?.toString() ?? '',   // Updated to match the database column name
+      userId: map['id_user'] as int? ?? 0,                  // Updated to match the database column name
+      studentImage: map['foto'] ?? '',                      // Updated to match the database column name
     );
   }
 

@@ -1,10 +1,9 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:kantin/Component/My_header,dart';
 import 'package:kantin/Models/Stan_model.dart';
 import 'package:kantin/Models/UsersModels.dart';
 import 'package:kantin/Models/student_models.dart';
-import 'package:kantin/RoleProvider.dart';
 import 'package:kantin/Services/Auth/role_provider.dart';
 import 'package:kantin/Services/Database/Stan_service.dart';
 import 'package:kantin/Services/Database/UserService.dart';
@@ -19,12 +18,10 @@ class PersonalInfoScreen extends StatelessWidget {
   final String role;
   final String firebaseUid;
   const PersonalInfoScreen(
-      {Key? key, required this.role, required this.firebaseUid})
-      : super(key: key);
+      {super.key, required this.role, required this.firebaseUid});
 
   @override
   Widget build(BuildContext context) {
-    final roleProvider = Provider.of<RoleProvider>(context, listen: false);
     return Scaffold(
       backgroundColor: const Color(0xFFEFEFEF),
       body: SafeArea(
@@ -55,10 +52,10 @@ class AdaptiveRegistrationForm extends StatefulWidget {
   final String userType;
   final String firebaseUid;
   const AdaptiveRegistrationForm({
-    Key? key,
+    super.key,
     required this.userType,
     required this.firebaseUid,
-  }) : super(key: key);
+  });
 
   @override
   _AdaptiveRegistrationFormState createState() =>
@@ -111,7 +108,8 @@ class _AdaptiveRegistrationFormState extends State<AdaptiveRegistrationForm> {
     });
   }
 
-Future<void> _saveAndSubmit() async {
+  Future<void> _saveAndSubmit() async {
+    // Validate the form
     if (_formKey.currentState == null || !_formKey.currentState!.validate()) {
       return;
     }
@@ -123,124 +121,99 @@ Future<void> _saveAndSubmit() async {
     });
 
     try {
-      // First save data locally
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('${widget.userType}_name', _nameController.text);
-      await prefs.setString('${widget.userType}_phone', _phoneController.text);
-
-      if (widget.userType == 'student') {
-        await prefs.setString('student_address', _addressController.text);
-      } else {
-        await prefs.setString('admin_canteen_name', _canteenNameController.text);
-        await prefs.setString('admin_description', _descriptionController.text);
-      }
-
       // Initialize services
       final userService = UserService();
       final studentService = StudentService();
-
-      // Check if username exists
-      final usernameExists = await userService.checkUsernameExists(_nameController.text.trim());
-      if (usernameExists) {
-        throw Exception('Username already exists. Please choose another one.');
-      }
+      final stanService = StanService();
 
       // Ensure you have the correct Firebase UID
       final firebaseUid = widget.firebaseUid;
 
-      // Check if the user with the same firebase_uid already exists
-      final firebaseUidExists = await userService.checkFirebaseUidExists(firebaseUid);
-      if (firebaseUidExists) {
-        throw Exception('User with this Firebase UID already exists.');
-      }
+      // Update the user's profile completion status
+      final updatedUserData = {
+        'has_completed_Profile': true, // Mark the form as completed
+        // Include any additional fields from the form here
+      };
 
-      // Create user in users table
-      final userData = UserModel(
-        username: _nameController.text.trim(),
-        password: '', // Handle password securely
-        role: widget.userType,
-        firebaseUid: firebaseUid,
-        id: 0,
+      // Update the user record in Supabase
+      final updatedUserResponse = await userService.updateUserByFirebaseUid(
+        firebaseUid,
+        updatedUserData,
       );
 
-      final createdUser = await userService.createUser(userData);
-      
-      if (createdUser.id == null) {
-        throw Exception('Failed to create user account');
-      }
+      // Get the user ID from the updated response
+      final int userId = updatedUserResponse['id'] as int;
 
       // Handle role-specific logic
       if (widget.userType == 'student') {
-        // Check if student with same name exists for this user
-        final studentExists = await studentService.checkStudentExists(
-          _nameController.text.trim(),
-          createdUser.id!
-        );
-
-        if (studentExists) {
-          throw Exception('Student with this name already exists for this user.');
-        }
-
         // Create student using StudentModels
         final studentData = StudentModels(
           studentName: _nameController.text.trim(),
           studentAddress: _addressController.text.trim(),
           studentPhoneNumber: _phoneController.text.trim(),
-          userId: createdUser.id,
+          userId: userId,
           studentImage: '', // Handle image upload separately if needed
         );
 
         // Use StudentService to create student
-        final createdStudent = await studentService.createStudent(studentData);
+        await studentService.createStudent(studentData);
+
+        // Update Firestore to mark the profile as completed
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(firebaseUid)
+            .update({'hasCompletedProfile': true});
 
         if (mounted) {
           // Show success message
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Student account created successfully'),
-              backgroundColor: Color(0xFFFF542D),
+              content: Text('Student account created successfully!'),
+              backgroundColor: Colors.green,
               behavior: SnackBarBehavior.floating,
             ),
           );
 
-          // Navigate to student page
+          // Navigate to the student page
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(builder: (context) => const StudentPage()),
           );
         }
-      } else {
+      } else if (widget.userType == 'admin') {
         // Admin stalls logic
         if (_canteenNameController.text.isEmpty) {
-          throw Exception('Canteen name cannot be empty');
+          throw Exception('Canteen name cannot be empty.');
         }
 
+        // Create a new stall
         final newStan = Stan(
           stanName: _canteenNameController.text.trim(),
           ownerName: _nameController.text.trim(),
           phone: _phoneController.text.trim(),
-          userId: createdUser.id!,
+          userId: userId,
           description: _descriptionController.text.trim(),
-          slot: 'Slot${(await _supabase.from('stalls').select('id')).length + 1}',
+          slot:
+              'Slot${(await _supabase.from('stalls').select('id')).length + 1}', // Generate a unique slot
         );
 
-        final createdStan = await _stanService.createStan(newStan);
+        final createdStan = await stanService.createStan(newStan);
 
-        if (createdStan == null || createdStan.id == null) {
-          throw Exception('Failed to create stall');
+        if (createdStan.id == null) {
+          throw Exception('Failed to create stall.');
         }
 
         if (mounted) {
           // Show success message
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Admin account created successfully'),
-              backgroundColor: Color(0xFFFF542D),
+              content: Text('Admin account created successfully!'),
+              backgroundColor: Colors.green,
               behavior: SnackBarBehavior.floating,
             ),
           );
 
-          // Navigate to admin page
+          // Navigate to the admin page
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
@@ -256,6 +229,7 @@ Future<void> _saveAndSubmit() async {
           _errorMessage = e.toString();
         });
 
+        // Show error message
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(_errorMessage),
@@ -272,6 +246,7 @@ Future<void> _saveAndSubmit() async {
       }
     }
   }
+
   @override
   Widget build(BuildContext context) {
     final isStudent = widget.userType == 'student';

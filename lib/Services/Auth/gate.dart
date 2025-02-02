@@ -1,12 +1,13 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:flutter/material.dart';
 import 'package:kantin/Services/Auth/login_or_register.dart';
+import 'package:kantin/Services/Auth/role_provider.dart';
+import 'package:kantin/Services/Database/UserService.dart';
 import 'package:kantin/pages/AdminState/AdminPage.dart';
 import 'package:kantin/pages/StudentState/StudentPage.dart';
 import 'package:kantin/pages/User/PersonalForm.dart';
 import 'package:provider/provider.dart';
-import 'role_provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
@@ -14,21 +15,17 @@ class AuthGate extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: StreamBuilder<User?>(
-        stream: FirebaseAuth.instance.authStateChanges(),
+      body: StreamBuilder<firebase_auth.User?>(
+        stream: firebase_auth.FirebaseAuth.instance.authStateChanges(),
         builder: (context, snapshot) {
-          // Show loading state
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          // Handle authentication state
           if (snapshot.hasData) {
-            return FutureBuilder<DocumentSnapshot>(
-              future: FirebaseFirestore.instance
-                  .collection('users')
-                  .doc(snapshot.data!.uid)
-                  .get(),
+            final firebaseUser = snapshot.data!;
+            return FutureBuilder<Map<String, dynamic>?>(
+              future: _fetchUserData(firebaseUser.uid),
               builder: (context, userSnapshot) {
                 if (userSnapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
@@ -36,58 +33,156 @@ class AuthGate extends StatelessWidget {
 
                 if (userSnapshot.hasError) {
                   return Center(
-                    child: Text('Error fetching user data: ${userSnapshot.error}'),
+                    child:
+                        Text('Error fetching user data: ${userSnapshot.error}'),
                   );
                 }
 
-                // Check document existence and role
-                if (userSnapshot.data?.exists ?? false) {
-                  final userData = userSnapshot.data!.data() as Map<String, dynamic>?;
+                final userData = userSnapshot.data;
+                if (userData != null) {
+                  final String role = userData['role'];
+                  final bool hasCompletedProfile =
+                      userData['has_completed_Profile'] ?? false;
+                  final int? userId = userData['id'];
 
-                  if (userData != null) {
-                    final String role = userData['role'] ?? 'student';
-                    final bool isRegistered = userData['isRegistered'] ?? false;
-                    final bool hasCompletedProfile = userData['hasCompletedProfile'] ?? false;
-                    final int? stanId = userData['stanId'];
+                  // Set the role in the RoleProvider
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    Provider.of<RoleProvider>(context, listen: false)
+                        .setRole(role);
+                  });
 
-                    // Set the role in the RoleProvider
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      Provider.of<RoleProvider>(context, listen: false).setRole(role);
-                    });
-
-                    // Determine which screen to show
-                    if (!hasCompletedProfile || (role == 'student' && !isRegistered)) {
-                      return PersonalInfoScreen(
-                        role: role,
-                        firebaseUid: snapshot.data!.uid,
-                      );
-                    }
-
-                    // Return appropriate page based on role
+                  if (hasCompletedProfile) {
                     if (role == 'admin_stalls') {
-                      return MainAdmin(
-                        key: ValueKey('admin_${snapshot.data!.uid}'),
-                        stanId: stanId!,
+                      return FutureBuilder<Map<String, dynamic>?>(
+                        future: _fetchStallData(userId!),
+                        builder: (context, stallSnapshot) {
+                          if (stallSnapshot.connectionState ==
+                              ConnectionState.waiting) {
+                            return const Center(
+                                child: CircularProgressIndicator());
+                          }
+
+                          if (stallSnapshot.hasError) {
+                            return Center(
+                              child: Text(
+                                  'Error fetching stall data: ${stallSnapshot.error}'),
+                            );
+                          }
+
+                          final stallData = stallSnapshot.data;
+                          if (stallData != null) {
+                            return MainAdmin(
+                              key: ValueKey('admin_${firebaseUser.uid}'),
+                              stanId: stallData['id'],
+                            );
+                          } else {
+                            return Center(
+                              child: Text(
+                                  'Stall data not found for user ID: $userId'),
+                            );
+                          }
+                        },
                       );
                     } else {
-                      return const StudentPage();
+                      return FutureBuilder<Map<String, dynamic>?>(
+                        future: _fetchStudentData(userId!),
+                        builder: (context, studentSnapshot) {
+                          if (studentSnapshot.connectionState ==
+                              ConnectionState.waiting) {
+                            return const Center(
+                                child: CircularProgressIndicator());
+                          }
+
+                          if (studentSnapshot.hasError) {
+                            return Center(
+                              child: Text(
+                                  'Error fetching student data: ${studentSnapshot.error}'),
+                            );
+                          }
+
+                          final studentData = studentSnapshot.data;
+                          if (studentData != null) {
+                            return const StudentPage();
+                          } else {
+                            return Center(
+                              child: Text(
+                                  'Student data not found for user ID: $userId'),
+                            );
+                          }
+                        },
+                      );
                     }
+                  } else {
+                    return PersonalInfoScreen(
+                      role: role,
+                      firebaseUid: firebaseUser.uid,
+                    );
                   }
                 }
 
-                // Handle new user registration
+                // Important change: Get the role from the provider instead of defaulting to 'student'
+                final roleProvider =
+                    Provider.of<RoleProvider>(context, listen: false);
                 return PersonalInfoScreen(
-                  role: 'student',
-                  firebaseUid: snapshot.data!.uid,
+                  role: roleProvider
+                      .role, // Use the role from provider instead of hardcoding 'student'
+                  firebaseUid: firebaseUser.uid,
                 );
               },
             );
           }
 
-          // Handle unauthenticated state
           return const LoginOrRegister();
         },
       ),
     );
+  }
+
+  Future<Map<String, dynamic>?> _fetchUserData(String firebaseUid) async {
+    final userService = UserService();
+    try {
+      final userExists = await userService.checkFirebaseUidExists(firebaseUid);
+      if (userExists) {
+        final response = await Supabase.instance.client
+            .from('users')
+            .select()
+            .eq('firebase_uid', firebaseUid)
+            .single();
+        return response;
+      } else {
+        return null;
+      }
+    } catch (e) {
+      print('Error fetching user data: $e');
+      throw Exception('Failed to fetch user data: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>?> _fetchStallData(int userId) async {
+    try {
+      final response = await Supabase.instance.client
+          .from('stalls')
+          .select()
+          .eq('id_user', userId)
+          .single();
+      return response;
+    } catch (e) {
+      print('Error fetching stall data: $e');
+      throw Exception('Failed to fetch stall data: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>?> _fetchStudentData(int userId) async {
+    try {
+      final response = await Supabase.instance.client
+          .from('students')
+          .select()
+          .eq('id_user', userId)
+          .single();
+      return response;
+    } catch (e) {
+      print('Error fetching student data: $e');
+      throw Exception('Failed to fetch student data: $e');
+    }
   }
 }

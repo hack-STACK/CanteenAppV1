@@ -5,8 +5,11 @@ import 'package:kantin/Component/my_button.dart';
 import 'package:kantin/Component/my_textfield.dart';
 import 'package:kantin/Services/Auth/auth_Service.dart';
 import 'package:kantin/Services/Database/Stan_service.dart';
+import 'package:kantin/Services/Database/UserService.dart';
 import 'package:kantin/pages/AdminState/AdminPage.dart';
 import 'package:kantin/pages/StudentState/StudentPage.dart';
+import 'package:kantin/pages/User/PersonalForm.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key, this.onTap});
@@ -17,6 +20,7 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
+  final _supabaseClient = Supabase.instance.client;
   final TextEditingController emailController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
   final FocusNode emailFocusNode = FocusNode();
@@ -29,48 +33,70 @@ class _LoginPageState extends State<LoginPage> {
   Future<void> login() async {
     final authService = AuthService();
     final stanService = StanService(); // Create an instance of StanService
+    final userService = UserService(); // Create an instance of UserService
     setState(() {
       isLoading = true;
       errorMessage = '';
     });
 
     try {
+      // Sign in with Firebase
       UserCredential userCredential = await authService.signInWithEmailPassword(
         emailController.text,
         passwordController.text,
       );
 
-      // Fetch user role from Firestore
-      DocumentSnapshot userDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(userCredential.user!.uid)
-          .get();
+      // Fetch user data from Supabase using Firebase UID
+      final user = await _supabaseClient
+          .from('users')
+          .select()
+          .eq('firebase_uid', userCredential.user!.uid)
+          .single();
 
-      if (userDoc.exists && userDoc.data() != null) {
-        String role = userDoc['role'] ?? 'student'; // Default to 'student'
+      String role = user['role'] ?? 'student'; // Default to 'student'
+      bool hasCompletedProfile = user['has_completed_form'] ?? false;
+      int userId = user['id']; // Fetch user ID from Supabase
 
-        // Fetch stanId from Supabase
-        final stan = await stanService.getStanById(userCredential.user!.uid
-            as int); // Assuming user ID is used to fetch stan
-
-        // Navigate based on role
+      // Navigate based on role and profile completion status
+      if (hasCompletedProfile) {
         if (role == 'student') {
+          // Fetch student data
+          final studentResponse = await _supabaseClient
+              .from('students')
+              .select()
+              .eq('id_user', userId)
+              .single();
+
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(builder: (context) => StudentPage()),
           );
         } else if (role == 'admin') {
+          // Fetch stall data
+          final stallResponse = await _supabaseClient
+              .from('stalls')
+              .select()
+              .eq('id_user', userId)
+              .single();
+
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
-                builder: (context) =>
-                    MainAdmin(stanId: stan!.id ?? 0)), // Pass the stanId
+              builder: (context) => MainAdmin(stanId: stallResponse['id']),
+            ),
           );
         }
       } else {
-        setState(() {
-          errorMessage = 'User  document does not exist or is empty';
-        });
+        // Redirect to PersonalInfoScreen if the profile is not completed
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => PersonalInfoScreen(
+              role: role,
+              firebaseUid: userCredential.user!.uid,
+            ),
+          ),
+        );
       }
     } catch (e) {
       setState(() {

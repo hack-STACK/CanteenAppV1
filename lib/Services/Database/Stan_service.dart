@@ -74,10 +74,13 @@ class StanService {
     }
   }
 
-  Future<Stan?> getStanById(int id) async {
+  Future<Stan?> getStanById(String id) async {
     try {
-      final response =
-          await _supabaseClient.from('stalls').select().eq('id', id).single();
+      final response = await _supabaseClient
+          .from('stalls')
+          .select()
+          .eq('firebase_uid', id) // Use a column that stores Firebase UIDs
+          .single();
 
       return Stan.fromMap(response);
     } catch (e) {

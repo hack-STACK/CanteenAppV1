@@ -6,12 +6,13 @@ class AdaptiveRegistrationForm extends StatefulWidget {
   final UserType userType;
 
   const AdaptiveRegistrationForm({
-    Key? key,
+    super.key,
     required this.userType,
-  }) : super(key: key);
+  });
 
   @override
-  _AdaptiveRegistrationFormState createState() => _AdaptiveRegistrationFormState();
+  _AdaptiveRegistrationFormState createState() =>
+      _AdaptiveRegistrationFormState();
 }
 
 class _AdaptiveRegistrationFormState extends State<AdaptiveRegistrationForm> {
@@ -58,8 +59,10 @@ class _AdaptiveRegistrationFormState extends State<AdaptiveRegistrationForm> {
           TextFormField(
             controller: _nameController,
             decoration: InputDecoration(
-              labelText: widget.userType == UserType.student ? 'Full Name' : 'Owner Name',
-              hintText: widget.userType == UserType.student 
+              labelText: widget.userType == UserType.student
+                  ? 'Full Name'
+                  : 'Owner Name',
+              hintText: widget.userType == UserType.student
                   ? 'Enter your full name'
                   : 'Enter owner name',
               prefixIcon: const Icon(Icons.person_outline),
@@ -73,7 +76,8 @@ class _AdaptiveRegistrationFormState extends State<AdaptiveRegistrationForm> {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: Color(0xFFFF542D), width: 2),
+                borderSide:
+                    const BorderSide(color: Color(0xFFFF542D), width: 2),
               ),
               filled: true,
               fillColor: Colors.grey.shade50,
@@ -86,7 +90,7 @@ class _AdaptiveRegistrationFormState extends State<AdaptiveRegistrationForm> {
             },
           ),
           const SizedBox(height: 24),
-          
+
           // Conditional fields based on user type
           if (widget.userType == UserType.student) ...[
             // Address field for students
@@ -106,7 +110,8 @@ class _AdaptiveRegistrationFormState extends State<AdaptiveRegistrationForm> {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Color(0xFFFF542D), width: 2),
+                  borderSide:
+                      const BorderSide(color: Color(0xFFFF542D), width: 2),
                 ),
                 filled: true,
                 fillColor: Colors.grey.shade50,
@@ -136,7 +141,8 @@ class _AdaptiveRegistrationFormState extends State<AdaptiveRegistrationForm> {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Color(0xFFFF542D), width: 2),
+                  borderSide:
+                      const BorderSide(color: Color(0xFFFF542D), width: 2),
                 ),
                 filled: true,
                 fillColor: Colors.grey.shade50,
@@ -167,14 +173,15 @@ class _AdaptiveRegistrationFormState extends State<AdaptiveRegistrationForm> {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Color(0xFFFF542D), width: 2),
+                  borderSide:
+                      const BorderSide(color: Color(0xFFFF542D), width: 2),
                 ),
                 filled: true,
                 fillColor: Colors.grey.shade50,
               ),
             ),
           ],
-          
+
           const SizedBox(height: 24),
           // Phone number field for both types
           TextFormField(
@@ -194,7 +201,8 @@ class _AdaptiveRegistrationFormState extends State<AdaptiveRegistrationForm> {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: Color(0xFFFF542D), width: 2),
+                borderSide:
+                    const BorderSide(color: Color(0xFFFF542D), width: 2),
               ),
               filled: true,
               fillColor: Colors.grey.shade50,
@@ -206,7 +214,7 @@ class _AdaptiveRegistrationFormState extends State<AdaptiveRegistrationForm> {
               return null;
             },
           ),
-          
+
           const SizedBox(height: 40),
           // Submit button
           ElevatedButton(

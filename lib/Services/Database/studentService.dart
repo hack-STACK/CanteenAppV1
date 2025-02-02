@@ -126,30 +126,30 @@ class StudentService {
     }
   }
 
-Future<bool> checkStudentExists(String studentName, int userId) async {
-  try {
-    final response = await _supabaseClient
-        .from('students')
-        .select('id_user') // Change 'user_id' to 'id_user'
-        .eq('nama_siswa', studentName) // Ensure you're using the correct column name for student name
-        .eq('id_user', userId) // Change 'user_id' to 'id_user'
-        .maybeSingle();
+  Future<bool> checkStudentExists(String studentName, int userId) async {
+    try {
+      final response = await _supabaseClient
+          .from('students')
+          .select('id_user') // Change 'user_id' to 'id_user'
+          .eq('nama_siswa',
+              studentName) // Ensure you're using the correct column name for student name
+          .eq('id_user', userId) // Change 'user_id' to 'id_user'
+          .maybeSingle();
 
-    return response != null;
-  } catch (e) {
-    print('Error checking student existence: $e');
-    throw Exception('Failed to check student existence: $e');
+      return response != null;
+    } catch (e) {
+      print('Error checking student existence: $e');
+      throw Exception('Failed to check student existence: $e');
+    }
   }
-}
+
   Future<String?> uploadStudentImage(String filePath, String fileName) async {
     try {
       final response = await _supabaseClient.storage
           .from('student-images')
           .upload(fileName, File(filePath));
 
-      if (response != null) {
-        throw response;
-      }
+      throw response;
 
       // Get the public URL of the uploaded image
       final imageUrl =

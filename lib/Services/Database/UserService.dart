@@ -87,6 +87,7 @@ class UserService {
         .from('users')
         .update(data)
         .eq('firebase_uid', firebaseUid)
+        .select()
         .single();
     return response;
   }

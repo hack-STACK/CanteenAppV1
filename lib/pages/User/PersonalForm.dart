@@ -175,12 +175,12 @@ class _AdaptiveRegistrationFormState extends State<AdaptiveRegistrationForm> {
           );
 
           // Navigate to the student page
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const StudentPage()),
-          );
+          Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(builder: (context) => const StudentPage()),
+              (Route) => false);
         }
-      } else if (widget.userType == 'admin') {
+      } else if (widget.userType == 'admin_stalls') {
         // Admin stalls logic
         if (_canteenNameController.text.isEmpty) {
           throw Exception('Canteen name cannot be empty.');
@@ -214,12 +214,12 @@ class _AdaptiveRegistrationFormState extends State<AdaptiveRegistrationForm> {
           );
 
           // Navigate to the admin page
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => MainAdmin(stanId: createdStan.id!),
-            ),
-          );
+          Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(
+                builder: (context) => MainAdmin(stanId: createdStan.id!),
+              ),
+              (Route) => false);
         }
       }
     } catch (e) {

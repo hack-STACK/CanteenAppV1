@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:kantin/Services/Auth/auth_Service.dart';
 import 'package:kantin/Services/Auth/login_or_register.dart';
@@ -46,17 +48,53 @@ class _SettingsSectionState extends State<SettingsSection> {
 
     if (shouldLogout == true) {
       try {
-        await authService.signOut();
-        print("User signed out successfully."); // Debug statement
+        // Show loading indicator
+        final loadingOverlay = showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => const Center(
+            child: CircularProgressIndicator(),
+          ),
+        );
 
-        // Navigate to LoginOrRegister after logout
+        // Add timeout to the signOut operation
+        await Future.wait([
+          authService.signOut(),
+          Future.delayed(const Duration(seconds: 2)), // Minimum loading time
+        ]).timeout(
+          const Duration(seconds: 5), // Maximum wait time
+          onTimeout: () {
+            throw TimeoutException('Logout is taking too long');
+          },
+        );
+
+        // Close loading indicator
         if (mounted) {
-          Navigator.of(context).pushReplacement(
+          Navigator.of(context).pop(); // Remove loading dialog
+        }
+
+        // Immediate navigation after successful logoutR
+        if (mounted) {
+          Navigator.of(context).pushAndRemoveUntil(
             MaterialPageRoute(builder: (context) => const LoginOrRegister()),
+            (route) => false,
           );
         }
       } catch (e) {
-        _showErrorDialog(context, 'Failed to logout: ${e.toString()}');
+        // Close loading indicator if it's showing
+        if (mounted) {
+          Navigator.of(context).pop(); // Remove loading dialog
+        }
+
+        // Show error message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e is TimeoutException
+                ? 'Logout timed out. Please try again.'
+                : 'Failed to logout: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
   }
@@ -65,7 +103,6 @@ class _SettingsSectionState extends State<SettingsSection> {
     final authService = AuthService();
     final firebaseUser = firebase_auth.FirebaseAuth.instance.currentUser;
 
-    // Check if a user is signed in before attempting to delete the account
     if (firebaseUser == null) {
       _showErrorDialog(context, 'No user currently signed in.');
       return;
@@ -79,19 +116,39 @@ class _SettingsSectionState extends State<SettingsSection> {
 
     if (shouldDelete == true) {
       try {
-        await authService.deleteAccount(); // Call the delete account method
+        // Show loading indicator
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => const Center(
+            child: CircularProgressIndicator(),
+          ),
+        );
 
-        // Navigate to LoginPage after account deletion
+        await authService.deleteAccount();
+
+        // Close loading indicator
         if (mounted) {
-          Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(builder: (context) => const LoginPage()),
-            (route) => false,
-          );
+          Navigator.of(context).pop();
+        }
+
+        // Navigate using a delay to ensure previous operation is complete
+        if (mounted) {
+          await Future.delayed(Duration.zero, () {
+            Navigator.of(context).pushAndRemoveUntil(
+              MaterialPageRoute(
+                builder: (context) => const LoginPage(),
+              ),
+              (route) => false,
+            );
+          });
         }
       } catch (e) {
+        // Close loading indicator if it's showing
         if (mounted) {
-          _showErrorDialog(context, 'Failed to delete account: ${e.toString()}');
+          Navigator.of(context).pop();
         }
+        _showErrorDialog(context, 'Failed to delete account: ${e.toString()}');
       }
     }
   }
@@ -148,7 +205,8 @@ class _SettingsSectionState extends State<SettingsSection> {
         title: 'Notification',
         onTap: () {
           // Handle notification action
-        },),
+        },
+      ),
       const SizedBox(height: 20),
       SettingsTile(
         icon: Icons.discount,

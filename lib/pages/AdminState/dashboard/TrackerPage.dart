@@ -4,7 +4,7 @@ import 'package:kantin/pages/AdminState/dashboard/widgets/Order_card.dart';
 import 'package:kantin/pages/AdminState/dashboard/widgets/Stats_row.dart';
 
 class TrackerScreen extends StatelessWidget {
-  const TrackerScreen({super.key});
+  const TrackerScreen({super.key, int? stanId});
 
   @override
   Widget build(BuildContext context) {

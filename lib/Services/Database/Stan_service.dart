@@ -127,18 +127,24 @@ class StanService {
     }
   }
 
-  Future<void> deleteStan(int id) async {
-    try {
-      final result = await _supabaseClient.from('stalls').delete().eq('id', id);
-
-      if (result == null || result.isEmpty) {
-        throw Exception('Stall not found');
-      }
-    } catch (e) {
-      print('Error deleting Stan: $e');
-      throw Exception('Failed to delete stall: $e');
-    }
+Future<Stan?> deleteStallsByUserId(int userId) async {
+  try {
+    final response = await _supabaseClient
+        .from('stalls')
+        .delete()
+        .eq('id_user', userId)
+        .maybeSingle();
+    // maybeSingle() returns null if no record was deleted
+    if (response == null) return null;
+    return Stan.fromMap(response);
+  } catch (e) {
+    throw Exception('Failed to delete stall for user: $e');
   }
+}
+
+
+
+
 
   // New method to check if a stall name exists
   Future<bool> checkStanNameExists(String stanName) async {

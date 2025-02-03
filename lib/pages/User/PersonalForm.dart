@@ -1,6 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:kantin/Component/My_header,dart';
+import 'package:kantin/Component/My_header.dart';
 import 'package:kantin/Models/Stan_model.dart';
 import 'package:kantin/Models/UsersModels.dart';
 import 'package:kantin/Models/student_models.dart';

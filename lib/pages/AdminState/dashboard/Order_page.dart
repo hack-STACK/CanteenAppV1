@@ -3,7 +3,7 @@ import 'package:kantin/Models/order.dart';
 import 'package:kantin/pages/AdminState/dashboard/widgets/Order_item.dart';
 
 class OrdersScreen extends StatelessWidget {
-  const OrdersScreen({super.key});
+  const OrdersScreen({super.key, int? stanId});
 
   @override
   Widget build(BuildContext context) {

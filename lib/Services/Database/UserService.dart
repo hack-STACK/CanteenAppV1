@@ -158,4 +158,18 @@ class UserService {
       throw Exception('Failed to check email: $e');
     }
   }
+  Future <UserModel> getUserByFirebaseUid(String uid) async {
+    try{
+      final Response = await _supabaseClient
+      .from('users')
+      .select()
+      .eq('firebase_uid', uid)
+      .single();
+      return UserModel.fromMap(Response);
+
+    }catch(e){
+      print('Error getting user by firebase uid: $e');
+      throw Exception('Failed to fetch user: $e');
+    }
+  }
 }

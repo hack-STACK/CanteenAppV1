@@ -3,12 +3,15 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:kantin/Services/Auth/auth_Service.dart';
 import 'package:kantin/Services/Auth/login_or_register.dart';
+import 'package:kantin/Services/Database/Stan_service.dart';
+import 'package:kantin/Services/Database/UserService.dart';
 import 'package:kantin/pages/AdminState/dashboard/widgets/settings_tile.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:kantin/pages/User/login_page.dart';
 
 class SettingsSection extends StatefulWidget {
-  const SettingsSection({super.key});
+  final int? standId;
+  const SettingsSection({super.key, this.standId});
 
   @override
   _SettingsSectionState createState() => _SettingsSectionState();
@@ -101,6 +104,8 @@ class _SettingsSectionState extends State<SettingsSection> {
 
   Future<void> deleteAccount(BuildContext context) async {
     final authService = AuthService();
+    final userService = UserService();
+    final stallService = StanService();
     final firebaseUser = firebase_auth.FirebaseAuth.instance.currentUser;
 
     if (firebaseUser == null) {
@@ -116,7 +121,7 @@ class _SettingsSectionState extends State<SettingsSection> {
 
     if (shouldDelete == true) {
       try {
-        // Show loading indicator
+        // Show a loading indicator (this dialog will be popped later)
         showDialog(
           context: context,
           barrierDismissible: false,
@@ -125,6 +130,22 @@ class _SettingsSectionState extends State<SettingsSection> {
           ),
         );
 
+        // 1. Retrieve Supabase user record using the Firebase UID.
+        final firebaseUid = firebaseUser.uid;
+        final user = await userService.getUserByFirebaseUid(firebaseUid);
+        if (user == null) {
+          throw Exception(
+              'Supabase user not found for Firebase UID: $firebaseUid');
+        }
+        final int supabaseUserId = user.id!;
+
+        // 2. Delete dependent stalls.
+        await stallService.deleteStallsByUserId(supabaseUserId);
+
+        // 3. Delete the user record from Supabase.
+        await userService.deleteUser(supabaseUserId);
+
+        // 4. Delete the Firebase account.
         await authService.deleteAccount();
 
         // Close loading indicator
@@ -132,16 +153,12 @@ class _SettingsSectionState extends State<SettingsSection> {
           Navigator.of(context).pop();
         }
 
-        // Navigate using a delay to ensure previous operation is complete
+        // Navigate to the login page by replacing the entire route stack.
         if (mounted) {
-          await Future.delayed(Duration.zero, () {
-            Navigator.of(context).pushAndRemoveUntil(
-              MaterialPageRoute(
-                builder: (context) => const LoginPage(),
-              ),
-              (route) => false,
-            );
-          });
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (context) => const LoginOrRegister()),
+            (route) => false,
+          );
         }
       } catch (e) {
         // Close loading indicator if it's showing

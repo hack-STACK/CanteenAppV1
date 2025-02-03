@@ -4,8 +4,8 @@ import 'package:kantin/pages/AdminState/dashboard/widgets/report_section.dart';
 import 'package:kantin/pages/AdminState/dashboard/widgets/settings_section.dart';
 
 class SettingsScreen extends StatelessWidget {
-  const SettingsScreen({super.key});
-
+  const SettingsScreen({super.key, this.standId});
+  final int? standId;
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -17,10 +17,10 @@ class SettingsScreen extends StatelessWidget {
             constraints: const BoxConstraints(maxWidth: 480),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
+              children: [
                 ProfileHeader(),
                 SizedBox(height: 27),
-                SettingsSection(),
+                SettingsSection(standId: standId),
                 SizedBox(height: 48),
                 ReportSection(),
               ],

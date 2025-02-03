@@ -47,7 +47,16 @@ class AppNavigationBar {
                 GoRoute(
                   path: '/Tracker',
                   name: 'Tracker',
-                  builder: (context, state) => const TrackerScreen(),
+                  builder: (context, state) {
+                    if (standId == null) {
+                      print('Stand ID is not available.');
+                      return const Center(
+                        child: Text('Stand ID is not available.')
+                      );
+                    }
+                    print('Navigating to TrackerScreen with standId: $standId'); // Debugging print
+                    return TrackerScreen(stanId: standId,); // Pass standId here
+                  },
                 ),
               ],
             ),
@@ -56,7 +65,16 @@ class AppNavigationBar {
                 GoRoute(
                   path: '/Notifications',
                   name: 'Notifications',
-                  builder: (context, state) => const OrdersScreen(),
+                  builder: (context, state) {
+                    if (standId == null) {
+                      print('Stand ID is not available.'); // Debugging print
+                      return const Center(
+                        child: Text('Stand ID is not available.')
+                      );
+                    }
+                    print("Navigating to order with stanId: $standId");
+                    return OrdersScreen(stanId: standId,);// Pass standId here
+                  },
                 ),
               ],
             ),
@@ -65,7 +83,16 @@ class AppNavigationBar {
                 GoRoute(
                   path: '/Settings',
                   name: 'Settings',
-                  builder: (context, state) => const SettingsScreen(),
+                  builder: (context, state) {
+                    if (standId == null) {
+                      print('Stand ID is not available.'); // Debugging print
+                      return const Center(
+                        child: Text('Stand ID is not available.')
+                      );
+                    }
+                    print('Navigating to SettingsScreen with standId: $standId'); // Debugging print
+                    return SettingsScreen(standId: standId,); // Pass standId here
+                  },
                 ),
               ],
             ),

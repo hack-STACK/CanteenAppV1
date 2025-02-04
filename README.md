@@ -1,93 +1,114 @@
-# CanteenAppV1
+# 🍱 CanteenAppV1
 
-CanteenAppV1 is a Flutter application designed to manage canteen operations, including user registration, student and stall management, and order tracking. The app integrates with Firebase for authentication and Supabase for database operations.
+<div align="center">
+  <img src="assets/images/app_logo.png" alt="CanteenApp Logo" width="200"/>
+  <br>
+  <p><strong>A modern Flutter-based canteen management system</strong></p>
+</div>
 
-## Features
+## 🌟 Features
 
-- User registration and authentication
-- Profile management for students and stall owners
-- Order management and tracking
-- Integration with Firebase and Supabase
+- 🔐 **Secure Authentication**
+  - Firebase integration for user management
+  - Role-based access control (Student/Stall Owner)
 
-## Getting Started
+- 👤 **User Management**
+  - Student profile management
+  - Stall owner dashboard
+  - Personal information updates
+
+- 🏪 **Stall Management**
+  - Menu management
+  - Order tracking
+  - Real-time updates
+
+- 📱 **Modern UI/UX**
+  - Intuitive interface
+  - Responsive design
+  - Cross-platform support
+
+## 🚀 Getting Started
 
 ### Prerequisites
 
-- Flutter SDK: [Install Flutter](https://flutter.dev/docs/get-started/install)
-- Firebase account: [Create a Firebase project](https://firebase.google.com/)
-- Supabase account: [Create a Supabase project](https://supabase.io/)
+Before you begin, ensure you have:
+
+- 📱 Flutter SDK installed ([Install Flutter](https://flutter.dev/docs/get-started/install))
+- 🔥 Firebase account ([Create Firebase Project](https://firebase.google.com/))
+- 🗄️ Supabase account ([Create Supabase Project](https://supabase.io/))
 
 ### Installation
 
-1. Clone the repository:
-
+1. **Clone the repository**
    ```bash
-   git clone https://github.com/your-username/CanteenAppV1.git
+   git clone https://github.com/hack-STACK/CanteenAppV1.git
    cd CanteenAppV1
    ```
 
-2. Install dependencies:
-
+2. **Install dependencies**
    ```bash
    flutter pub get
    ```
 
-3. Configure Firebase:
+3. **Configure Firebase**
+   - Add `google-services.json` to `android/app/`
+   - Add `GoogleService-Info.plist` to `ios/Runner/`
 
-   - Follow the instructions to add Firebase to your Flutter app: [Add Firebase to your Flutter app](https://firebase.google.com/docs/flutter/setup)
-   - Place the `google-services.json` file in the `android/app` directory.
-   - Place the `GoogleService-Info.plist` file in the `ios/Runner` directory.
-
-4. Configure Supabase:
-
-   - Create a `.env` file in the root directory and add your Supabase URL and API key:
-
-     ```env
-     SUPABASE_URL=https://your-supabase-url.supabase.co
-     SUPABASE_API_KEY=your-supabase-api-key
-     ```
-
-### Running the App
-
-1. Run the app on an emulator or physical device:
-
-   ```bash
-   flutter run
+4. **Setup Supabase**
+   ```env
+   SUPABASE_URL=your_supabase_url
+   SUPABASE_API_KEY=your_api_key
    ```
 
-## Usage
+## 📱 App Structure
 
-### User Registration
+```
+lib/
+├── Models/         # Data models
+├── Services/       # Business logic & API services
+├── pages/         # UI screens
+└── Components/    # Reusable widgets
+```
 
-- Users can register as either students or stall owners.
-- After registration, users need to complete their profile information.
+## 🛠️ Built With
 
-### Profile Management
+- [Flutter](https://flutter.dev/) - UI Framework
+- [Firebase](https://firebase.google.com/) - Authentication & Cloud Services
+- [Supabase](https://supabase.io/) - Backend Database
 
-- Students can update their personal information, including name, address, and phone number.
-- Stall owners can manage their stall information, including name, owner name, phone number, and description.
+## 📸 Screenshots
 
-### Order Management
+<div align="center">
+  <img src="screenshots/login.png" width="200" alt="Login Screen"/>
+  <img src="screenshots/dashboard.png" width="200" alt="Dashboard"/>
+  <img src="screenshots/orders.png" width="200" alt="Orders"/>
+</div>
 
-- Stall owners can view and manage active orders.
-- Orders can be tracked and updated as needed.
+## 🤝 Contributing
 
-## Contributing
+1. Fork the repo
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit changes (`git commit -m 'Add amazing feature'`)
+4. Push to branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
-Contributions are welcome! Please follow these steps to contribute:
-
-1. Fork the repository.
-2. Create a new branch: `git checkout -b feature/your-feature-name`
-3. Make your changes and commit them: `git commit -m 'Add some feature'`
-4. Push to the branch: `git push origin feature/your-feature-name`
-5. Open a pull request.
-
-## License
+## 📝 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Acknowledgements
+## 🙏 Acknowledgments
 
-- [Flutter](https://flutter.dev/)
-- [Firebase](https://firebase.google.com/)
-- [Supabase](https://supabase.io/)
+- Flutter Team
+- Firebase
+- Supabase
+- All contributors
+
+## 📞 Contact
+
+Project Link: [https://github.com/hack-STACK/CanteenAppV1](https://github.com/hack-STACK/CanteenAppV1)
+
+---
+
+<div align="center">
+  Made with ❤️ by hack-STACK
+</div>

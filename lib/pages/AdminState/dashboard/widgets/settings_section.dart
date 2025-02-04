@@ -10,8 +10,8 @@ import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:kantin/pages/User/login_page.dart';
 
 class SettingsSection extends StatefulWidget {
-  final int? standId;
   const SettingsSection({super.key, this.standId});
+  final int? standId;
 
   @override
   _SettingsSectionState createState() => _SettingsSectionState();
@@ -52,7 +52,7 @@ class _SettingsSectionState extends State<SettingsSection> {
     if (shouldLogout == true) {
       try {
         // Show loading indicator
-        final loadingOverlay = showDialog(
+        showDialog(
           context: context,
           barrierDismissible: false,
           builder: (context) => const Center(
@@ -60,44 +60,30 @@ class _SettingsSectionState extends State<SettingsSection> {
           ),
         );
 
-        // Add timeout to the signOut operation
-        await Future.wait([
-          authService.signOut(),
-          Future.delayed(const Duration(seconds: 2)), // Minimum loading time
-        ]).timeout(
-          const Duration(seconds: 5), // Maximum wait time
-          onTimeout: () {
-            throw TimeoutException('Logout is taking too long');
-          },
-        );
+        // Perform logout
+        await authService.signOut();
 
         // Close loading indicator
         if (mounted) {
-          Navigator.of(context).pop(); // Remove loading dialog
+          Navigator.of(context, rootNavigator: true).pop();
         }
 
-        // Immediate navigation after successful logoutR
+        // Navigate to login page
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(builder: (context) => LoginOrRegister()),
+            );
+          }
+        });
+      } catch (e) {
+        // Handle error
         if (mounted) {
-          Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(builder: (context) => const LoginOrRegister()),
-            (route) => false,
+          Navigator.of(context, rootNavigator: true).pop();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Logout failed: $e')),
           );
         }
-      } catch (e) {
-        // Close loading indicator if it's showing
-        if (mounted) {
-          Navigator.of(context).pop(); // Remove loading dialog
-        }
-
-        // Show error message
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e is TimeoutException
-                ? 'Logout timed out. Please try again.'
-                : 'Failed to logout: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
       }
     }
   }
@@ -120,54 +106,85 @@ class _SettingsSectionState extends State<SettingsSection> {
     );
 
     if (shouldDelete == true) {
-      try {
-        // Show a loading indicator (this dialog will be popped later)
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) => const Center(
-            child: CircularProgressIndicator(),
-          ),
-        );
+      final password = await _showPasswordDialog(context);
 
-        // 1. Retrieve Supabase user record using the Firebase UID.
-        final firebaseUid = firebaseUser.uid;
-        final user = await userService.getUserByFirebaseUid(firebaseUid);
-        if (user == null) {
-          throw Exception(
-              'Supabase user not found for Firebase UID: $firebaseUid');
-        }
-        final int supabaseUserId = user.id!;
-
-        // 2. Delete dependent stalls.
-        await stallService.deleteStallsByUserId(supabaseUserId);
-
-        // 3. Delete the user record from Supabase.
-        await userService.deleteUser(supabaseUserId);
-
-        // 4. Delete the Firebase account.
-        await authService.deleteAccount();
-
-        // Close loading indicator
-        if (mounted) {
-          Navigator.of(context).pop();
-        }
-
-        // Navigate to the login page by replacing the entire route stack.
-        if (mounted) {
-          Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(builder: (context) => const LoginOrRegister()),
-            (route) => false,
+      if (password != null) {
+        try {
+          // Show loading indicator
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => const Center(
+              child: CircularProgressIndicator(),
+            ),
           );
+
+          // Delete account operations
+          final firebaseUid = firebaseUser.uid;
+          final user = await userService.getUserByFirebaseUid(firebaseUid);
+
+          if (user == null) {
+            throw Exception(
+                'Supabase user not found for Firebase UID: $firebaseUid');
+          }
+
+          final int supabaseUserId = user.id!;
+          await stallService.deleteStallsByUserId(supabaseUserId);
+          await userService.deleteUser(supabaseUserId);
+          await authService.deleteUserAccount(password);
+
+          // Close loading indicator safely
+          if (mounted) {
+            Navigator.of(context, rootNavigator: true).pop();
+          }
+
+          // Delay navigation to avoid assertion error
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute(builder: (context) => LoginOrRegister()),
+                (route) => false,
+              );
+            }
+          });
+        } catch (e) {
+          // Handle error
+          if (mounted) {
+            Navigator.of(context, rootNavigator: true).pop();
+            _showErrorDialog(
+                context, 'Failed to delete account: ${e.toString()}');
+          }
         }
-      } catch (e) {
-        // Close loading indicator if it's showing
-        if (mounted) {
-          Navigator.of(context).pop();
-        }
-        _showErrorDialog(context, 'Failed to delete account: ${e.toString()}');
       }
     }
+  }
+
+  Future<String?> _showPasswordDialog(BuildContext context) {
+    final passwordController = TextEditingController();
+
+    return showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirm Password'),
+        content: TextField(
+          controller: passwordController,
+          obscureText: true,
+          decoration: const InputDecoration(
+            hintText: 'Enter your password',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(passwordController.text),
+            child: const Text('Confirm'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<bool?> _showConfirmationDialog(

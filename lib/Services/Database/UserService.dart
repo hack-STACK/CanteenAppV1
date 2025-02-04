@@ -134,13 +134,23 @@ class UserService {
     }
   }
 
-  Future<void> deleteUser(int id) async {
+  Future<void> deleteUser(int userId) async {
     try {
-      final result = await _supabaseClient.from('users').delete().eq('id', id);
+      // Check if the user exists before deleting
+      final userExists = await _supabaseClient
+          .from('users')
+          .select()
+          .eq('id', userId)
+          .single()
+          .then((_) => true)
+          .catchError((_) => false);
 
-      if (result == null) {
-        throw Exception('User not found');
+      if (!userExists) {
+        throw Exception('User not found in Supabase.');
       }
+
+      // Delete the user
+      await _supabaseClient.from('users').delete().eq('id', userId);
     } catch (e) {
       print('Error deleting user: $e');
       throw Exception('Failed to delete user: $e');
@@ -158,18 +168,19 @@ class UserService {
       throw Exception('Failed to check email: $e');
     }
   }
-  Future <UserModel> getUserByFirebaseUid(String uid) async {
-    try{
-      final Response = await _supabaseClient
-      .from('users')
-      .select()
-      .eq('firebase_uid', uid)
-      .single();
-      return UserModel.fromMap(Response);
 
-    }catch(e){
-      print('Error getting user by firebase uid: $e');
-      throw Exception('Failed to fetch user: $e');
+  Future<UserModel?> getUserByFirebaseUid(String firebaseUid) async {
+    try {
+      final response = await _supabaseClient
+          .from('users')
+          .select()
+          .eq('firebase_uid', firebaseUid)
+          .single();
+
+      return UserModel.fromMap(response);
+    } catch (e) {
+      print('Error fetching user by Firebase UID: $e');
+      return null; // Return null if user not found
     }
   }
 }

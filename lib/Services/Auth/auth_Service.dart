@@ -101,21 +101,47 @@ class AuthService {
     }
   }
 
-  Future<void> deleteAccount() async {
-    User? user = _firebaseAuth.currentUser;
-
-    if (user != null) {
-      try {
-        // Delete the user document from Firestore
-        await _firestore.collection('users').doc(user.uid).delete();
-
-        // Delete the user from Firebase Authentication
-        await user.delete();
-      } catch (e) {
-        throw Exception('Failed to delete account: ${e.toString()}');
+  Future<void> deleteUserAccount(String password) async {
+    try {
+      // Reauthenticate the user before deleting the account
+      await _reauthenticateAndDelete(password);
+    } on FirebaseAuthException catch (e) {
+      if (e.code == "requires-recent-login") {
+        // If reauthentication is required, prompt the user to sign in again
+        throw Exception('Please sign in again to delete your account.');
+      } else {
+        // Handle other Firebase exceptions
+        throw Exception('Failed to delete account: ${e.message}');
       }
-    } else {
-      throw Exception('No user is currently signed in.');
+    } catch (e) {
+      // Handle general exceptions
+      throw Exception('Failed to delete account: ${e.toString()}');
+    }
+  }
+
+  Future<void> _reauthenticateAndDelete(String password) async {
+    try {
+      User? user = _firebaseAuth.currentUser;
+
+      if (user != null && user.email != null) {
+        // Create an AuthCredential using the user's email and password
+        AuthCredential credential = EmailAuthProvider.credential(
+          email: user.email!,
+          password: password,
+        );
+
+        // Reauthenticate the user
+        await user.reauthenticateWithCredential(credential);
+
+        // Delete the user account
+        await user.delete();
+      } else {
+        throw Exception('No user is currently signed in.');
+      }
+    } catch (e) {
+      // Handle exceptions during reauthentication or deletion
+      throw Exception(
+          'Failed to reauthenticate and delete account: ${e.toString()}');
     }
   }
 }

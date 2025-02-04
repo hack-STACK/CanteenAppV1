@@ -1,26 +1,54 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:kantin/pages/AdminState/dashboard/widgets/Navigation_bar.dart';
 
-class DashboardScreen extends StatelessWidget {
+class DashboardScreen extends StatefulWidget {
   final StatefulNavigationShell navigationShell;
 
   const DashboardScreen({super.key, required this.navigationShell});
+
+  @override
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> {
+  final ImagePicker _picker = ImagePicker();
+  XFile? _image;
+
+  Future<void> _pickImage(ImageSource source, BuildContext context) async {
+    try {
+      final XFile? image = await _picker.pickImage(source: source);
+      if (image != null) {
+        setState(() {
+          _image = image;
+        });
+        Navigator.pop(context); // Close bottom sheet
+        // TODO: Navigate to form page with image
+        // context.push('/add-menu', extra: {'image': image});
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error picking image: $e')),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Stack(
         children: [
-          navigationShell,
+          widget.navigationShell,
           Align(
             alignment: Alignment.bottomCenter,
             child: CustomNavigationBar(
-              navigationShell: navigationShell,
-              onAddPressed: () {
-                _showAddMenu(context);
-              },
+              navigationShell: widget.navigationShell,
+              onAddPressed: () => _showAddMenu(context),
             ),
           ),
         ],
@@ -37,12 +65,12 @@ class DashboardScreen extends StatelessWidget {
           color: Colors.white,
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
-        child: _buildAddMenuBottomSheet(),
+        child: _buildAddMenuBottomSheet(context),
       ),
     );
   }
 
-  Widget _buildAddMenuBottomSheet() {
+  Widget _buildAddMenuBottomSheet(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -71,22 +99,20 @@ class DashboardScreen extends StatelessWidget {
               _buildAddOption(
                 icon: Icons.camera_alt_outlined,
                 label: 'Camera',
-                onTap: () {
-                  // Handle Camera action
-                },
+                onTap: () => _pickImage(ImageSource.camera, context),
               ),
               _buildAddOption(
                 icon: Icons.photo_library_outlined,
                 label: 'Gallery',
-                onTap: () {
-                  // Handle Gallery action
-                },
+                onTap: () => _pickImage(ImageSource.gallery, context),
               ),
               _buildAddOption(
                 icon: Icons.description_outlined,
                 label: 'Manual',
                 onTap: () {
-                  // Handle Manual action
+                  Navigator.pop(context);
+                  // TODO: Navigate to manual form
+                  // context.push('/add-menu');
                 },
               ),
             ],

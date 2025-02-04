@@ -51,11 +51,13 @@ class AppNavigationBar {
                     if (standId == null) {
                       print('Stand ID is not available.');
                       return const Center(
-                        child: Text('Stand ID is not available.')
-                      );
+                          child: Text('Stand ID is not available.'));
                     }
-                    print('Navigating to TrackerScreen with standId: $standId'); // Debugging print
-                    return TrackerScreen(stanId: standId,); // Pass standId here
+                    print(
+                        'Navigating to TrackerScreen with standId: $standId'); // Debugging print
+                    return TrackerScreen(
+                      stanId: standId,
+                    ); // Pass standId here
                   },
                 ),
               ],
@@ -69,11 +71,12 @@ class AppNavigationBar {
                     if (standId == null) {
                       print('Stand ID is not available.'); // Debugging print
                       return const Center(
-                        child: Text('Stand ID is not available.')
-                      );
+                          child: Text('Stand ID is not available.'));
                     }
                     print("Navigating to order with stanId: $standId");
-                    return OrdersScreen(stanId: standId,);// Pass standId here
+                    return OrdersScreen(
+                      stanId: standId,
+                    ); // Pass standId here
                   },
                 ),
               ],
@@ -87,11 +90,13 @@ class AppNavigationBar {
                     if (standId == null) {
                       print('Stand ID is not available.'); // Debugging print
                       return const Center(
-                        child: Text('Stand ID is not available.')
-                      );
+                          child: Text('Stand ID is not available.'));
                     }
-                    print('Navigating to SettingsScreen with standId: $standId'); // Debugging print
-                    return SettingsScreen(standId: standId,); // Pass standId here
+                    print(
+                        'Navigating to SettingsScreen with standId: $standId'); // Debugging print
+                    return SettingsScreen(
+                      standId: standId,
+                    ); // Pass standId here
                   },
                 ),
               ],

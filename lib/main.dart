@@ -20,7 +20,7 @@ void main() async {
     print("Error initializing Firebase: $e");
     return; // Exit if Firebase initialization fails
   }
-    // Initialize App Check
+  // Initialize App Check
   await FirebaseAppCheck.instance.activate(
     androidProvider: AndroidProvider.playIntegrity, // For Android
     appleProvider: AppleProvider.appAttest, // For iOS
@@ -31,7 +31,7 @@ void main() async {
     await Supabase.initialize(
       url: 'https://hmmahzohkafghtdjbkqi.supabase.co',
       anonKey:
-          'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhtbWFoem9oa2FmZ2h0ZGpia3FpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzcwOTk4NjMsImV4cCI6MjA1MjY3NTg2M30.mbmgey9hVH4l2f_NpnFv5sgC8mo5dp70qX5avlJ8Jgw', // Use a secure method to manage this
+          'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhtbWFoem9oa2FmZ2h0ZGpia3FpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzcwOTk4NjMsImV4cCI6MjA1MjY3NTg2M30.mbmgey9hVH4l2f_NpnFv5sgC8mo5dp70qX5avlJ8Jgw',
     );
   } catch (e) {
     print("Error initializing Supabase: $e");

@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'dart:typed_data';
-import 'dart:ui';
 import 'package:crop_your_image/crop_your_image.dart';
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
@@ -150,18 +149,17 @@ class _ImageCropperWidgetState extends State<ImageCropperWidget> {
     );
   }
 
-Future<void> _rotateImage(bool left) async {
-  print("Rotating image ${left ? 'left' : 'right'}");
-  final imageBytes = await widget.imageFile.readAsBytes();
-  img.Image original = img.decodeImage(imageBytes)!;
-  img.Image rotated = left
-      ? img.copyRotate(original, angle: -90)
-      : img.copyRotate(original, angle: 90);
+  Future<void> _rotateImage(bool left) async {
+    print("Rotating image ${left ? 'left' : 'right'}");
+    final imageBytes = await widget.imageFile.readAsBytes();
+    img.Image original = img.decodeImage(imageBytes)!;
+    img.Image rotated = left
+        ? img.copyRotate(original, angle: -90)
+        : img.copyRotate(original, angle: 90);
 
-  final rotatedBytes = img.encodePng(rotated);
-  setState(() {
-    _imageBytes = Uint8List.fromList(rotatedBytes);
-  });
-}
-
+    final rotatedBytes = img.encodePng(rotated);
+    setState(() {
+      _imageBytes = Uint8List.fromList(rotatedBytes);
+    });
+  }
 }

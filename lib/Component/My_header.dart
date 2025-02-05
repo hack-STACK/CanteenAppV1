@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 class HeaderSection extends StatelessWidget {
-  const HeaderSection({Key? key}) : super(key: key);
+  const HeaderSection({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -26,7 +26,7 @@ class HeaderSection extends StatelessWidget {
         Expanded(
           child: Text(
             'Personal\nInformation',
-       style: Theme.of(context).textTheme.titleLarge?.copyWith(
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.bold,
                   fontFamily: 'Inter',
                 ),

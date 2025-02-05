@@ -68,8 +68,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       builder: (context) => Container(
         decoration: const BoxDecoration(
           color: Colors.white,
-          borderRadius:
-              BorderRadius.vertical(top: Radius.circular(20)),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
         child: _buildAddMenuBottomSheet(context),
       ),
@@ -157,7 +156,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }) {
     return GestureDetector(
       onTap: onTap,
-      child: Container(
+      child: SizedBox(
         width: 100,
         child: Column(
           mainAxisSize: MainAxisSize.min,

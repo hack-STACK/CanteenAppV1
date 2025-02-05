@@ -7,7 +7,6 @@ import 'package:kantin/Services/Database/Stan_service.dart';
 import 'package:kantin/Services/Database/UserService.dart';
 import 'package:kantin/pages/AdminState/dashboard/widgets/settings_tile.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
-import 'package:kantin/pages/User/login_page.dart';
 
 class SettingsSection extends StatefulWidget {
   const SettingsSection({super.key, this.standId});

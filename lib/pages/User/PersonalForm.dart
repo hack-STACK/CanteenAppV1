@@ -2,15 +2,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:kantin/Component/My_header.dart';
 import 'package:kantin/Models/Stan_model.dart';
-import 'package:kantin/Models/UsersModels.dart';
 import 'package:kantin/Models/student_models.dart';
-import 'package:kantin/Services/Auth/role_provider.dart';
 import 'package:kantin/Services/Database/Stan_service.dart';
 import 'package:kantin/Services/Database/UserService.dart';
 import 'package:kantin/Services/Database/studentService.dart';
 import 'package:kantin/pages/AdminState/AdminPage.dart';
 import 'package:kantin/pages/StudentState/StudentPage.dart';
-import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 

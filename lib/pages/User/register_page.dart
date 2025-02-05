@@ -79,7 +79,7 @@ class _RegisterPageState extends State<RegisterPage> {
           hasCompletedForm: false,
           createdAt: DateTime.now(),
         );
-        print(' newUser: ' + newUser.toString());
+        print(' newUser: $newUser');
         print('Created User: $newUser');
 
         // Save user data to Supabase

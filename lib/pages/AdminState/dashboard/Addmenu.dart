@@ -3,20 +3,21 @@ import 'package:crop_your_image/crop_your_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:kantin/Services/feature/cropImage.dart';  
-
-// Define filter options.
-enum FilterType { none, grayscale, sepia }
+import 'package:kantin/Services/Database/foodService.dart';
+import 'package:kantin/Services/feature/cropImage.dart';
+import 'package:kantin/Models/menus.dart'; // Import the Menu model
+import 'package:supabase_flutter/supabase_flutter.dart'; // For Supabase Storage
 
 class AddMenuScreen extends StatefulWidget {
-  const AddMenuScreen({Key? key, required this.standId, this.initialImage})
-      : super(key: key);
+  const AddMenuScreen({super.key, required this.standId, this.initialImage});
   final int standId;
   final XFile? initialImage;
 
   @override
   _AddMenuScreenState createState() => _AddMenuScreenState();
 }
+
+enum FilterType { none, grayscale, sepia }
 
 class _AddMenuScreenState extends State<AddMenuScreen> {
   final _formKey = GlobalKey<FormState>();
@@ -29,6 +30,9 @@ class _AddMenuScreenState extends State<AddMenuScreen> {
   XFile? _selectedImage;
   // Current filter selection.
   FilterType _selectedFilter = FilterType.none;
+
+  // FoodService instance
+  final FoodService _foodService = FoodService();
 
   @override
   void initState() {
@@ -151,27 +155,26 @@ class _AddMenuScreenState extends State<AddMenuScreen> {
   }
 
   /// Crop image using image_cropper.
-Future<void> _cropImage() async {
-  if (_selectedImage == null) return;
+  Future<void> _cropImage() async {
+    if (_selectedImage == null) return;
 
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (context) => ImageCropperWidget(
-        imageFile: File(_selectedImage!.path),
-        onImageCropped: (croppedFile) {
-          if (croppedFile != null) {
-            setState(() {
-              _selectedImage = XFile(croppedFile.path);
-              _selectedFilter = FilterType.none;
-            });
-          }
-        },
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ImageCropperWidget(
+          imageFile: File(_selectedImage!.path),
+          onImageCropped: (croppedFile) {
+            if (croppedFile != null) {
+              setState(() {
+                _selectedImage = XFile(croppedFile.path);
+                _selectedFilter = FilterType.none;
+              });
+            }
+          },
+        ),
       ),
-    ),
-  );
-}
-
+    );
+  }
 
   /// Opens a bottom sheet to choose a filter.
   void _showFilterOptions() {
@@ -226,26 +229,165 @@ Future<void> _cropImage() async {
     switch (_selectedFilter) {
       case FilterType.grayscale:
         return const ColorFilter.matrix(<double>[
-          0.2126, 0.7152, 0.0722, 0, 0,
-          0.2126, 0.7152, 0.0722, 0, 0,
-          0.2126, 0.7152, 0.0722, 0, 0,
-          0, 0, 0, 1, 0,
+          0.2126,
+          0.7152,
+          0.0722,
+          0,
+          0,
+          0.2126,
+          0.7152,
+          0.0722,
+          0,
+          0,
+          0.2126,
+          0.7152,
+          0.0722,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
         ]);
       case FilterType.sepia:
         return const ColorFilter.matrix(<double>[
-          0.393, 0.769, 0.189, 0, 0,
-          0.349, 0.686, 0.168, 0, 0,
-          0.272, 0.534, 0.131, 0, 0,
-          0, 0, 0, 1, 0,
+          0.393,
+          0.769,
+          0.189,
+          0,
+          0,
+          0.349,
+          0.686,
+          0.168,
+          0,
+          0,
+          0.272,
+          0.534,
+          0.131,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
         ]);
       case FilterType.none:
       default:
         return const ColorFilter.matrix(<double>[
-          1, 0, 0, 0, 0,
-          0, 1, 0, 0, 0,
-          0, 0, 1, 0, 0,
-          0, 0, 0, 1, 0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
         ]);
+    }
+  }
+
+  /// Upload image to Supabase Storage and return the URL.
+  Future<String?> _uploadImage() async {
+    if (_selectedImage == null) return null;
+
+    final file = File(_selectedImage!.path);
+    final fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
+
+    try {
+      final response = await Supabase.instance.client.storage
+          .from('menu_images') // Replace with your bucket name
+          .upload(fileName, file);
+
+      // ✅ Fix: Don't treat a non-null response as an error
+      if (response == null) {
+        throw Exception('Upload failed: No response from Supabase');
+      }
+
+      // ✅ Correct way to get the public URL
+      final imageUrl = Supabase.instance.client.storage
+          .from('menu_images')
+          .getPublicUrl(fileName);
+
+      print('Image uploaded successfully: $imageUrl'); // Debug log
+      return imageUrl;
+    } catch (e) {
+      print('Error uploading image: $e');
+      return null;
+    }
+  }
+
+  /// Handle form submission.
+  Future<void> _submitForm() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    // Show loading indicator
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+          content: Text('Uploading image...'), duration: Duration(seconds: 1)),
+    );
+
+    try {
+      // Upload the image
+      final imageUrl = await _uploadImage();
+
+      if (imageUrl == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Failed to upload image. Please try again.')),
+        );
+        return;
+      }
+
+      // Create a Menu object
+      final menu = Menu(
+        id: null,
+        foodName: _nameController.text.trim(),
+        price: double.tryParse(_priceController.text.trim()) ?? 0.0,
+        type: _categoryController.text.trim(),
+        photo: imageUrl,
+        description: _descriptionController.text.trim(),
+        stallId: widget.standId,
+      );
+
+      // Show progress message
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Saving menu item...')),
+      );
+
+      // Save the menu item using FoodService
+      await _foodService.createMenu(menu);
+
+      // Show success message
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Menu item added successfully!')),
+      );
+
+      // Clear the form for next input
+      _nameController.clear();
+      _priceController.clear();
+      _categoryController.clear();
+      _descriptionController.clear();
+      setState(() {
+        _selectedImage = null;
+      });
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: ${e.toString()}')),
+      );
     }
   }
 
@@ -268,8 +410,7 @@ Future<void> _cropImage() async {
       body: SafeArea(
         child: SingleChildScrollView(
           child: Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
             child: Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 600),
@@ -292,10 +433,7 @@ Future<void> _cropImage() async {
                       const SizedBox(height: 8),
                       Text(
                         'Fill in the details below to add a new menu item',
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodyLarge
-                            ?.copyWith(
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                               color: Colors.black54,
                             ),
                       ),
@@ -312,8 +450,7 @@ Future<void> _cropImage() async {
                               decoration: BoxDecoration(
                                 color: Colors.white,
                                 borderRadius: BorderRadius.circular(16),
-                                border:
-                                    Border.all(color: Colors.grey.shade300),
+                                border: Border.all(color: Colors.grey.shade300),
                                 boxShadow: [
                                   BoxShadow(
                                     color: Colors.black.withOpacity(0.05),
@@ -387,12 +524,13 @@ Future<void> _cropImage() async {
                         label: 'Price',
                         hint: 'Enter price',
                         keyboardType: TextInputType.number,
-                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly
+                        ],
                         validator: _validatePrice,
                         icon: Icons.attach_money,
                         prefix: Text('\$ ',
-                            style:
-                                TextStyle(color: Colors.grey.shade700)),
+                            style: TextStyle(color: Colors.grey.shade700)),
                       ),
                       const SizedBox(height: 16),
                       _buildTextField(
@@ -437,11 +575,7 @@ Future<void> _cropImage() async {
                       const SizedBox(height: 32),
                       // Submit Button
                       ElevatedButton(
-                        onPressed: () {
-                          if (_formKey.currentState!.validate()) {
-                            // Handle form submission
-                          }
-                        },
+                        onPressed: _submitForm,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFFFF542D),
                           foregroundColor: Colors.white,

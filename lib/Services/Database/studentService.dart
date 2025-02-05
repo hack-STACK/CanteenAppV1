@@ -149,9 +149,7 @@ class StudentService {
           .from('student-images')
           .upload(fileName, File(filePath));
 
-      if (response != null) {
-        throw response;
-      }
+      throw response;
 
       // Get the public URL of the uploaded image
       final imageUrl =

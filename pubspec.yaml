@@ -27,6 +27,7 @@ dependencies:
   supabase_flutter: ^2.8.3
   image_cropper: ^9.0.0
   dotted_border: ^2.1.0
+  image: ^3.0.1
 
 dev_dependencies:
   flutter_test:

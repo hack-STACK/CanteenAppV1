@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:kantin/pages/AdminState/dashboard/Addmenu.dart';
 import 'package:kantin/pages/AdminState/dashboard/DashboardScreen.dart';
 import 'package:kantin/pages/AdminState/dashboard/Order_page.dart';
 import 'package:kantin/pages/AdminState/dashboard/TrackerPage.dart';
@@ -28,16 +30,12 @@ class AppNavigationBar {
                   path: '/Home',
                   name: 'Home',
                   builder: (context, state) {
-                    // Handle null standId case
                     if (standId == null) {
-                      print('Stand ID is not available.'); // Debugging print
-                      return const Center(
-                          child: Text('Stand ID is not available.'));
+                      print('Stand ID is not available.');
+                      return const Center(child: Text('Stand ID is not available.'));
                     }
-                    print(
-                        'Navigating to AdminDashboardScreen with standId: $standId'); // Debugging print
-                    return AdminDashboardScreen(
-                        standId: standId); // Pass standId here
+                    print('Navigating to AdminDashboardScreen with standId: $standId');
+                    return AdminDashboardScreen(standId: standId);
                   },
                 ),
               ],
@@ -50,14 +48,10 @@ class AppNavigationBar {
                   builder: (context, state) {
                     if (standId == null) {
                       print('Stand ID is not available.');
-                      return const Center(
-                          child: Text('Stand ID is not available.'));
+                      return const Center(child: Text('Stand ID is not available.'));
                     }
-                    print(
-                        'Navigating to TrackerScreen with standId: $standId'); // Debugging print
-                    return TrackerScreen(
-                      stanId: standId,
-                    ); // Pass standId here
+                    print('Navigating to TrackerScreen with standId: $standId');
+                    return TrackerScreen(stanId: standId);
                   },
                 ),
               ],
@@ -69,14 +63,11 @@ class AppNavigationBar {
                   name: 'Notifications',
                   builder: (context, state) {
                     if (standId == null) {
-                      print('Stand ID is not available.'); // Debugging print
-                      return const Center(
-                          child: Text('Stand ID is not available.'));
+                      print('Stand ID is not available.');
+                      return const Center(child: Text('Stand ID is not available.'));
                     }
                     print("Navigating to order with stanId: $standId");
-                    return OrdersScreen(
-                      stanId: standId,
-                    ); // Pass standId here
+                    return OrdersScreen(stanId: standId);
                   },
                 ),
               ],
@@ -88,20 +79,35 @@ class AppNavigationBar {
                   name: 'Settings',
                   builder: (context, state) {
                     if (standId == null) {
-                      print('Stand ID is not available.'); // Debugging print
-                      return const Center(
-                          child: Text('Stand ID is not available.'));
+                      print('Stand ID is not available.');
+                      return const Center(child: Text('Stand ID is not available.'));
                     }
-                    print(
-                        'Navigating to SettingsScreen with standId: $standId'); // Debugging print
-                    return SettingsScreen(
-                      standId: standId,
-                    ); // Pass standId here
+                    print('Navigating to SettingsScreen with standId: $standId');
+                    return SettingsScreen(standId: standId);
                   },
                 ),
               ],
             ),
           ],
+        ),
+        // Add Menu Route - Outside the StatefulShellRoute
+        GoRoute(
+          path: '/add-menu',
+          name: 'AddMenu',
+          parentNavigatorKey: _rootNavigatorKey, // Use root navigator
+          builder: (context, state) {
+            if (standId == null) {
+              return const Center(child: Text('Stand ID is not available.'));
+            }
+            
+            final extra = state.extra as Map<String, dynamic>?;
+            final XFile? image = extra?['image'] as XFile?;
+            
+            return AddMenuScreen(
+              standId: standId,
+              initialImage: image,
+            );
+          },
         ),
       ],
     );

@@ -1,16 +1,62 @@
-# sql_editor_app
+# Canteen Management App
 
-A new Flutter project.
+A Flutter application for managing canteen operations with Firebase and Supabase integration.
 
-## Getting Started
+## Setup Instructions
 
-This project is a starting point for a Flutter application.
+1. **Environment Variables**
+   Create a `.env` file in the root directory with the following variables:
+   ```
+   SUPABASE_URL=your_supabase_url
+   SUPABASE_ANON_KEY=your_supabase_anon_key
+   ```
 
-A few resources to get you started if this is your first Flutter project:
+2. **Firebase Setup**
+   - Ensure you have Firebase configuration files:
+     - For Android: `google-services.json`
+     - For iOS: `GoogleService-Info.plist`
+   - Follow Firebase setup instructions in the Firebase console
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+3. **Dependencies**
+   Run the following command to install dependencies:
+   ```bash
+   flutter pub get
+   ```
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## Features
+
+- User Authentication
+- Role-based Access Control (Student/Admin)
+- Theme Customization
+- Restaurant Management
+- Firebase App Check Integration
+- Supabase Data Management
+
+## Tech Stack
+
+- Flutter
+- Firebase
+- Supabase
+- Provider State Management
+
+## Development
+
+To run the project in development mode:
+```bash
+flutter run
+```
+
+## Building for Production
+
+```bash
+flutter build apk --release  # For Android
+flutter build ios --release  # For iOS
+```
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request

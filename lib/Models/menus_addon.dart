@@ -1,15 +1,17 @@
 class FoodAddon {
-  final int id;
+  final int? id;
   final int menuId;
   final String addonName;
   final double price;
+  final bool isRequired;
   final String? description;
 
   FoodAddon({
-    required this.id,
+    this.id,
     required this.menuId,
     required this.addonName,
     required this.price,
+    this.isRequired = false,
     this.description,
   });
 
@@ -20,6 +22,7 @@ class FoodAddon {
       menuId: json['menu_id'],
       addonName: json['addon_name'],
       price: json['price'].toDouble(),
+      isRequired: json['is_required'] ?? false,
       description: json['description'],
     );
   }
@@ -31,6 +34,7 @@ class FoodAddon {
       'menu_id': menuId,
       'addon_name': addonName,
       'price': price,
+      'is_required': isRequired,
       'description': description,
     };
   }

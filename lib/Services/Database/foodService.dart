@@ -30,14 +30,6 @@ class FoodService {
     }
   }
 
-  /// **🔵 Create: Insert a new food add-on**
-  Future<void> createFoodAddon(FoodAddon addon) async {
-    final response = await _supabase.from('food_addons').insert(addon.toJson());
-    if (response.error != null) {
-      throw Exception('Failed to insert addon: ${response.error!.message}');
-    }
-  }
-
   /// **🟢 Read: Get all menu items**
   Future<List<Menu>> getAllMenuItems() async {
     final response = await _supabase.from('menu').select();
@@ -51,24 +43,9 @@ class FoodService {
     return response != null ? Menu.fromJson(response) : null;
   }
 
-  /// **🟢 Read: Get all food add-ons for a specific menu**
-  Future<List<FoodAddon>> getAddonsForMenu(int menuId) async {
-    final response =
-        await _supabase.from('food_addons').select().eq('menu_id', menuId);
-    return response.map<FoodAddon>((json) => FoodAddon.fromJson(json)).toList();
-  }
-
   /// **🟡 Update: Update a menu item**
   Future<void> updateMenu(Menu menu) async {
     await _supabase.from('menu').update(menu.toJson()).eq('id', menu.id!);
-  }
-
-  /// **🟡 Update: Update a food add-on**
-  Future<void> updateFoodAddon(FoodAddon addon) async {
-    await _supabase
-        .from('food_addons')
-        .update(addon.toJson())
-        .eq('id', addon.id);
   }
 
   /// **🔴 Delete: Remove a menu item**
@@ -76,8 +53,40 @@ class FoodService {
     await _supabase.from('menu').delete().eq('id', id);
   }
 
+  /// **🔵 Create: Insert a new food add-on**
+  Future<void> createFoodAddon(FoodAddon addon) async {
+    final response = await _supabase.from('food_addons').insert(addon.toJson());
+    if (response.error != null) {
+      throw Exception('Failed to insert addon: ${response.error!.message}');
+    }
+  }
+
+  /// **🟢 Read: Get all food add-ons for a specific menu**
+  Future<List<FoodAddon>> getAddonsForMenu(int menuId) async {
+    final response = await _supabase
+        .from('food_addons')
+        .select()
+        .eq('menu_id', menuId)
+        .order('id', ascending: true);
+    return response.map<FoodAddon>((json) => FoodAddon.fromJson(json)).toList();
+  }
+
+  /// **🟡 Update: Update a food add-on**
+  Future<void> updateFoodAddon(FoodAddon addon) async {
+    final response = await _supabase
+        .from('food_addons')
+        .update(addon.toJson())
+        .eq('id', addon.id!);
+    if (response.error != null) {
+      throw Exception('Failed to update addon: ${response.error!.message}');
+    }
+  }
+
   /// **🔴 Delete: Remove a food add-on**
   Future<void> deleteFoodAddon(int id) async {
-    await _supabase.from('food_addons').delete().eq('id', id);
+    final response = await _supabase.from('food_addons').delete().eq('id', id);
+    if (response.error != null) {
+      throw Exception('Failed to delete addon: ${response.error!.message}');
+    }
   }
 }

@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:kantin/Services/Database/foodService.dart';
 import 'package:kantin/Services/feature/cropImage.dart';
 import 'package:kantin/Models/menus.dart'; // Import the Menu model
+import 'package:kantin/pages/AdminState/dashboard/addonsPage.dart';
 import 'package:supabase_flutter/supabase_flutter.dart'; // For Supabase Storage
 
 class AddMenuScreen extends StatefulWidget {
@@ -352,6 +353,7 @@ class _AddMenuScreenState extends State<AddMenuScreen> {
         return;
       }
 
+
       // Create a Menu object
       final menu = Menu(
         id: null,
@@ -369,7 +371,7 @@ class _AddMenuScreenState extends State<AddMenuScreen> {
       );
 
       // Save the menu item using FoodService
-      await _foodService.createMenu(menu);
+      final createdMenu = await _foodService.createMenu(menu);
 
       // Show success message
       ScaffoldMessenger.of(context).showSnackBar(
@@ -568,7 +570,8 @@ class _AddMenuScreenState extends State<AddMenuScreen> {
                             size: 16,
                           ),
                           onTap: () {
-                            // Handle add-ons
+                            //Still error
+                            MenuAddonsScreen(menuId: 0 , foodService: _foodService);
                           },
                         ),
                       ),
@@ -606,7 +609,7 @@ class _AddMenuScreenState extends State<AddMenuScreen> {
     );
   }
 
-  Widget _buildTextField({
+  Widget _buildTextField ({
     required TextEditingController controller,
     required String label,
     required String hint,

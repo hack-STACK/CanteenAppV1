@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:kantin/Services/Database/foodService.dart';
 import 'package:kantin/pages/AdminState/dashboard/TrackerPage.dart';
 import 'widgets/balance_card.dart';
 import 'widgets/category_scroll.dart';
@@ -11,6 +12,7 @@ class AdminDashboardScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final foodService = FoodService();
     // Get the screen width
     final screenWidth = MediaQuery.of(context).size.width;
 
@@ -53,20 +55,12 @@ class AdminDashboardScreen extends StatelessWidget {
                   },
                 ),
                 const SizedBox(height: 20),
+
                 TopMenuSection(
-                  title: 'Featured Menus',
-                  filterOptions: [
-                    'Latest',
-                    'Popular',
-                    'Trending',
-                    'Recommended'
-                  ],
-                  itemCount: 4,
-                  accentColor: const Color(0xFFFF542D),
-                  onSeeAllTap: () {
-                    // Handle see all tap
-                  },
-                ),
+                  foodService: foodService,
+                  title: 'Featured Menu',
+                  itemCount: 5,
+                )
               ],
             ),
           ),

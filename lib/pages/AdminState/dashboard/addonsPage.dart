@@ -1,16 +1,25 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:flutter/material.dart' as material show Text;
 import 'package:flutter/services.dart';
+import 'package:kantin/Models/addon_template.dart';
 import 'package:kantin/Models/menus_addon.dart';
 import 'package:kantin/Services/Database/foodService.dart';
+import 'dart:async';
+
+import 'package:kantin/widgets/AddonTemplateSelector.dart';
 
 class MenuAddonsScreen extends StatefulWidget {
-  final int menuId;
+  final int? menuId; // Make menuId optional
+  final List<FoodAddon>? tempAddons; // Add tempAddons parameter
   final FoodService foodService;
+  final bool isTemporary; // Add flag for temporary mode
 
   const MenuAddonsScreen({
     super.key,
-    required this.menuId,
+    this.menuId,
+    this.tempAddons,
     required this.foodService,
+    this.isTemporary = false,
   });
 
   @override
@@ -18,27 +27,68 @@ class MenuAddonsScreen extends StatefulWidget {
 }
 
 class _MenuAddonsScreenState extends State<MenuAddonsScreen> {
-  final List<FoodAddon> _addons = [];
+  // Cache addons to avoid unnecessary rebuilds
+  final ValueNotifier<List<FoodAddon>> _addonsNotifier =
+      ValueNotifier<List<FoodAddon>>([]);
+
+  // Debounce search
+  Timer? _debouncer;
+  final TextEditingController _searchController = TextEditingController();
+  List<AddonTemplate> _templates = [];
+
+  @override
+  void dispose() {
+    _debouncer?.cancel();
+    _searchController.dispose();
+    _addonsNotifier.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged(String query) {
+    if (_debouncer?.isActive ?? false) _debouncer!.cancel();
+    _debouncer = Timer(const Duration(milliseconds: 500), () {
+      // Implement search logic
+    });
+  }
+
   bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _loadAddons();
+    _loadTemplates();
+    if (widget.isTemporary) {
+      setState(() {
+        _addonsNotifier.value = widget.tempAddons ?? [];
+        _isLoading = false;
+      });
+    } else {
+      _loadAddons();
+    }
+  }
+
+  Future<void> _loadTemplates() async {
+    try {
+      final templates = await widget.foodService.getAddonTemplates();
+      setState(() {
+        _templates = templates;
+      });
+    } catch (e) {
+      print('Error loading templates: $e');
+    }
   }
 
   Future<void> _loadAddons() async {
     try {
       setState(() => _isLoading = true);
-      final addons = await widget.foodService.getAddonsForMenu(widget.menuId);
+      final addons = await widget.foodService.getAddonsForMenu(widget.menuId!);
       setState(() {
-        _addons.clear();
-        _addons.addAll(addons);
+        _addonsNotifier.value = addons;
         _isLoading = false;
       });
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error loading add-ons: $e')),
+        SnackBar(content: material.Text('Error loading add-ons: $e')),
       );
       setState(() => _isLoading = false);
     }
@@ -63,24 +113,54 @@ class _MenuAddonsScreenState extends State<MenuAddonsScreen> {
     if (result != null) {
       try {
         final addon = FoodAddon(
-          id: existing!.id,
-          menuId: widget.menuId,
+          id: existing?.id, // Make it nullable here
+          menuId: widget.menuId ?? 0, // Use 0 for temporary addons
           addonName: result['name'],
           price: result['price'],
           isRequired: result['isRequired'],
         );
 
-        if (existing != null) {
-          await widget.foodService.updateFoodAddon(addon);
+        if (widget.isTemporary) {
+          // Just update the local list for temporary mode
+          setState(() {
+            if (existing != null) {
+              final index = _addonsNotifier.value
+                  .indexWhere((a) => a.addonName == existing.addonName);
+              if (index != -1) {
+                _addonsNotifier.value[index] = addon;
+              }
+            } else {
+              _addonsNotifier.value = [..._addonsNotifier.value, addon];
+            }
+          });
         } else {
-          await widget.foodService.createFoodAddon(addon);
+          // Update database for permanent mode
+          if (existing != null) {
+            await widget.foodService.updateFoodAddon(addon);
+          } else {
+            await widget.foodService.createFoodAddon(addon);
+          }
+          await _loadAddons();
         }
 
-        await _loadAddons();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: material.Text(
+                  existing != null ? 'Add-on updated!' : 'Add-on created!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
       } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error saving add-on: $e')),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: material.Text('Error saving add-on: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       }
     }
   }
@@ -89,17 +169,18 @@ class _MenuAddonsScreenState extends State<MenuAddonsScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Add-on'),
-        content: Text('Are you sure you want to delete "${addon.addonName}"?'),
+        title: const material.Text('Delete Add-on'),
+        content: material.Text(
+            'Are you sure you want to delete "${addon.addonName}"?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: const material.Text('Cancel'),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete'),
+            child: const material.Text('Delete'),
           ),
         ],
       ),
@@ -111,9 +192,50 @@ class _MenuAddonsScreenState extends State<MenuAddonsScreen> {
         await _loadAddons();
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error deleting add-on: $e')),
+          SnackBar(content: material.Text('Error deleting add-on: $e')),
         );
       }
+    }
+  }
+
+  void _showTemplateSelector() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        height: MediaQuery.of(context).size.height * 0.6,
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            material.Text(
+              'Popular Add-ons',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: AddonTemplateSelector(
+                templates: _templates,
+                onSelect: _useTemplate,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _useTemplate(AddonTemplate template) {
+    if (widget.isTemporary) {
+      setState(() {
+        _addonsNotifier.value = [
+          ..._addonsNotifier.value,
+          template.toFoodAddon(widget.menuId ?? 0),
+        ];
+      });
     }
   }
 
@@ -129,7 +251,7 @@ class _MenuAddonsScreenState extends State<MenuAddonsScreen> {
           color: const Color(0xFFFF542D),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
+        title: const material.Text(
           'Manage Add-ons',
           style: TextStyle(
             color: Colors.black87,
@@ -137,58 +259,72 @@ class _MenuAddonsScreenState extends State<MenuAddonsScreen> {
             fontWeight: FontWeight.w600,
           ),
         ),
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : CustomScrollView(
-              slivers: [
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Add-ons',
-                          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                fontWeight: FontWeight.w700,
-                                color: Colors.black87,
-                              ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Customize your menu item with optional add-ons',
-                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                color: Colors.black54,
-                              ),
-                        ),
-                        const SizedBox(height: 16),
-                      ],
-                    ),
-                  ),
-                ),
-                SliverPadding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  sliver: SliverList(
-                    delegate: SliverChildBuilderDelegate(
-                      (context, index) {
-                        if (index >= _addons.length) return null;
-                        final addon = _addons[index];
-                        return AddonCard(
-                          addon: addon,
-                          onEdit: () => _showAddAddonDialog(addon),
-                          onDelete: () => _deleteAddon(addon),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-              ],
+        actions: [
+          if (widget.isTemporary)
+            IconButton(
+              icon: const Icon(Icons.check),
+              onPressed: () => Navigator.pop(context, _addonsNotifier.value),
             ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showAddAddonDialog(),
-        backgroundColor: const Color(0xFFFF542D),
-        child: const Icon(Icons.add),
+        ],
+      ),
+      body: Column(
+        children: [
+          // Add search bar
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'Search add-ons...',
+                prefixIcon: const Icon(Icons.search),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onChanged: _onSearchChanged,
+            ),
+          ),
+          // Use ValueListenableBuilder for efficient updates
+          Expanded(
+            child: ValueListenableBuilder<List<FoodAddon>>(
+              valueListenable: _addonsNotifier,
+              builder: (context, addons, _) {
+                if (_isLoading) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                return ListView.builder(
+                  itemCount: addons.length,
+                  itemBuilder: (context, index) => AddonCard(
+                    addon: addons[index],
+                    onEdit: () => _showAddAddonDialog(addons[index]),
+                    onDelete: () => _deleteAddon(addons[index]),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+      floatingActionButton: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          // Template button
+          FloatingActionButton.extended(
+            heroTag: 'templates',
+            onPressed: _showTemplateSelector,
+            label: const material.Text('Templates'),
+            icon: const Icon(Icons.copy),
+            backgroundColor: Colors.blue,
+          ),
+          const SizedBox(width: 16),
+          // Existing add button
+          FloatingActionButton(
+            heroTag: 'add',
+            onPressed: () => _showAddAddonDialog(),
+            backgroundColor: const Color(0xFFFF542D),
+            child: const Icon(Icons.add),
+          ),
+        ],
       ),
     );
   }
@@ -219,7 +355,7 @@ class AddonCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
+                  material.Text(
                     addon.addonName,
                     style: const TextStyle(
                       fontSize: 16,
@@ -227,7 +363,7 @@ class AddonCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 4),
-                  Text(
+                  material.Text(
                     'Rp ${addon.price.toStringAsFixed(0)}',
                     style: TextStyle(
                       fontSize: 14,
@@ -245,7 +381,7 @@ class AddonCard extends StatelessWidget {
                         color: Colors.blue[50],
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Text(
+                      child: material.Text(
                         'Required',
                         style: TextStyle(
                           fontSize: 12,
@@ -275,7 +411,7 @@ class AddonCard extends StatelessWidget {
                     children: [
                       Icon(Icons.edit, size: 20),
                       SizedBox(width: 8),
-                      Text('Edit'),
+                      material.Text('Edit'),
                     ],
                   ),
                 ),
@@ -285,7 +421,8 @@ class AddonCard extends StatelessWidget {
                     children: [
                       Icon(Icons.delete, size: 20, color: Colors.red),
                       SizedBox(width: 8),
-                      Text('Delete', style: TextStyle(color: Colors.red)),
+                      material.Text('Delete',
+                          style: TextStyle(color: Colors.red)),
                     ],
                   ),
                 ),
@@ -327,7 +464,7 @@ class _AddonDialogState extends State<AddonDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(
+      title: material.Text(
         widget.nameController.text.isEmpty ? 'Add New Add-on' : 'Edit Add-on',
       ),
       content: Form(
@@ -370,8 +507,9 @@ class _AddonDialogState extends State<AddonDialog> {
             ),
             const SizedBox(height: 16),
             SwitchListTile(
-              title: const Text('Required'),
-              subtitle: const Text('Customers must select this add-on'),
+              title: const material.Text('Required'),
+              subtitle:
+                  const material.Text('Customers must select this add-on'),
               value: _isRequired,
               onChanged: (value) => setState(() => _isRequired = value),
             ),
@@ -381,7 +519,7 @@ class _AddonDialogState extends State<AddonDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
+          child: const material.Text('Cancel'),
         ),
         TextButton(
           onPressed: () {
@@ -393,7 +531,7 @@ class _AddonDialogState extends State<AddonDialog> {
               });
             }
           },
-          child: const Text('Save'),
+          child: const material.Text('Save'),
         ),
       ],
     );

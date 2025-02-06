@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:kantin/Models/menus.dart';
 import 'package:kantin/Services/Database/foodService.dart';
 import 'package:kantin/pages/AdminState/dashboard/TrackerPage.dart';
 import 'widgets/balance_card.dart';
@@ -8,7 +9,8 @@ import 'widgets/search_bar.dart';
 import 'widgets/top_menu_section.dart';
 
 class AdminDashboardScreen extends StatelessWidget {
-  const AdminDashboardScreen({super.key, int? standId});
+  final int? standId;
+  AdminDashboardScreen({super.key, required this.standId});
 
   @override
   Widget build(BuildContext context) {
@@ -56,11 +58,25 @@ class AdminDashboardScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 20),
 
-                TopMenuSection(
-                  foodService: foodService,
-                  title: 'Featured Menu',
-                  itemCount: 5,
-                )
+                FutureBuilder<List<Menu>>(
+                  future: foodService.getMenuByStanId(standId!),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const CircularProgressIndicator();
+                    } else if (snapshot.hasError) {
+                      return Text('Error: ${snapshot.error}');
+                    } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                      return const Text('No menus available.');
+                    } else {
+                      return TopMenuSection(
+                        foodService: foodService,
+                        title: 'Featured Menu',
+                        itemCount: snapshot.data!.length,
+                        menus: snapshot.data!,
+                      );
+                    }
+                  },
+                ),
               ],
             ),
           ),

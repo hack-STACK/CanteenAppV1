@@ -11,26 +11,13 @@ class FoodAddon {
     required this.menuId,
     required this.addonName,
     required this.price,
-    this.isRequired = false,
+    this.isRequired = false, // Default to false as per DB schema
     this.description,
   });
 
-  // Convert from JSON (fetch from Supabase)
-  factory FoodAddon.fromJson(Map<String, dynamic> json) {
-    return FoodAddon(
-      id: json['id'],
-      menuId: json['menu_id'],
-      addonName: json['addon_name'],
-      price: json['price'].toDouble(),
-      isRequired: json['is_required'] ?? false,
-      description: json['description'],
-    );
-  }
-
-  // Convert to JSON (insert to Supabase)
-  Map<String, dynamic> toJson() {
+  Map<String, dynamic> toMap() {
     return {
-      'id': id,
+      if (id != null) 'id': id,
       'menu_id': menuId,
       'addon_name': addonName,
       'price': price,
@@ -38,4 +25,20 @@ class FoodAddon {
       'description': description,
     };
   }
+
+  factory FoodAddon.fromMap(Map<String, dynamic> map) {
+    return FoodAddon(
+      id: map['id'] as int?,
+      menuId: map['menu_id'] as int,
+      addonName: map['addon_name'] as String,
+      price: (map['price'] as num).toDouble(),
+      isRequired: map['is_required'] as bool? ?? false,
+      description: map['description'] as String?,
+    );
+  }
+
+  // These methods can just use toMap/fromMap since the structure is the same
+  factory FoodAddon.fromJson(Map<String, dynamic> json) =>
+      FoodAddon.fromMap(json);
+  Map<String, dynamic> toJson() => toMap();
 }

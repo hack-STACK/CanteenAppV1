@@ -1,13 +1,17 @@
 import 'dart:io';
 import 'package:crop_your_image/crop_your_image.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text; // Add hide Text
+import 'package:flutter/material.dart' as material show Text; // Add this
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:kantin/Models/Food.dart';
+import 'package:kantin/Models/menus_addon.dart';
 import 'package:kantin/Services/Database/foodService.dart';
 import 'package:kantin/Services/feature/cropImage.dart';
 import 'package:kantin/Models/menus.dart'; // Import the Menu model
 import 'package:kantin/pages/AdminState/dashboard/addonsPage.dart';
 import 'package:supabase_flutter/supabase_flutter.dart'; // For Supabase Storage
+import 'package:kantin/widgets/CategorySelector.dart';
 
 class AddMenuScreen extends StatefulWidget {
   const AddMenuScreen({super.key, required this.standId, this.initialImage});
@@ -26,6 +30,11 @@ class _AddMenuScreenState extends State<AddMenuScreen> {
   final _priceController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _categoryController = TextEditingController();
+  int? _createdMenuId;
+  List<FoodAddon> _addons = [];
+  List<FoodAddon> _tempAddons = []; // New field for temporary add-ons
+  bool _isLoading = false;
+  final _scrollController = ScrollController();
 
   // Store the image locally.
   XFile? _selectedImage;
@@ -74,7 +83,7 @@ class _AddMenuScreenState extends State<AddMenuScreen> {
             children: [
               ListTile(
                 leading: const Icon(Icons.camera_alt_outlined),
-                title: const Text("Camera"),
+                title: const material.Text("Camera"),
                 onTap: () async {
                   Navigator.pop(context);
                   final XFile? image = await ImagePicker().pickImage(
@@ -91,7 +100,7 @@ class _AddMenuScreenState extends State<AddMenuScreen> {
               ),
               ListTile(
                 leading: const Icon(Icons.photo_library_outlined),
-                title: const Text("Gallery"),
+                title: const material.Text("Gallery"),
                 onTap: () async {
                   Navigator.pop(context);
                   final XFile? image = await ImagePicker().pickImage(
@@ -126,7 +135,7 @@ class _AddMenuScreenState extends State<AddMenuScreen> {
             children: [
               ListTile(
                 leading: const Icon(Icons.crop),
-                title: const Text("Crop / Resize"),
+                title: const material.Text("Crop / Resize"),
                 onTap: () async {
                   Navigator.pop(context);
                   await _cropImage();
@@ -134,7 +143,7 @@ class _AddMenuScreenState extends State<AddMenuScreen> {
               ),
               ListTile(
                 leading: const Icon(Icons.filter),
-                title: const Text("Apply Filter"),
+                title: const material.Text("Apply Filter"),
                 onTap: () {
                   Navigator.pop(context);
                   _showFilterOptions();
@@ -142,7 +151,7 @@ class _AddMenuScreenState extends State<AddMenuScreen> {
               ),
               ListTile(
                 leading: const Icon(Icons.photo_library_outlined),
-                title: const Text("Change Image"),
+                title: const material.Text("Change Image"),
                 onTap: () {
                   Navigator.pop(context);
                   _showImagePickerOptions();
@@ -190,7 +199,7 @@ class _AddMenuScreenState extends State<AddMenuScreen> {
             children: [
               ListTile(
                 leading: const Icon(Icons.filter_none),
-                title: const Text("No Filter"),
+                title: const material.Text("No Filter"),
                 onTap: () {
                   setState(() {
                     _selectedFilter = FilterType.none;
@@ -200,7 +209,7 @@ class _AddMenuScreenState extends State<AddMenuScreen> {
               ),
               ListTile(
                 leading: const Icon(Icons.filter_b_and_w),
-                title: const Text("Grayscale"),
+                title: const material.Text("Grayscale"),
                 onTap: () {
                   setState(() {
                     _selectedFilter = FilterType.grayscale;
@@ -210,7 +219,7 @@ class _AddMenuScreenState extends State<AddMenuScreen> {
               ),
               ListTile(
                 leading: const Icon(Icons.filter_vintage),
-                title: const Text("Sepia"),
+                title: const material.Text("Sepia"),
                 onTap: () {
                   setState(() {
                     _selectedFilter = FilterType.sepia;
@@ -331,15 +340,44 @@ class _AddMenuScreenState extends State<AddMenuScreen> {
     }
   }
 
-  /// Handle form submission.
-  Future<void> _submitForm() async {
-    if (!_formKey.currentState!.validate()) return;
-
-    // Show loading indicator
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-          content: Text('Uploading image...'), duration: Duration(seconds: 1)),
+  Future<void> _navigateToAddons() async {
+    final result = await Navigator.push<List<FoodAddon>>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => MenuAddonsScreen(
+          tempAddons: _tempAddons, // Pass temporary addons instead of menuId
+          foodService: _foodService,
+          isTemporary: true, // New flag to indicate temporary mode
+        ),
+      ),
     );
+
+    if (result != null) {
+      setState(() {
+        _tempAddons = result;
+      });
+    }
+  }
+
+  // Load existing add-ons if menu exists
+  Future<void> _loadAddonsIfMenuExists() async {
+    if (_createdMenuId != null) {
+      try {
+        final addons = await _foodService.getAddonsForMenu(_createdMenuId!);
+        setState(() {
+          _addons = addons;
+        });
+      } catch (e) {
+        print('Error loading add-ons: $e');
+      }
+    }
+  }
+
+  /// Handle form submission.
+  Future<bool> _submitForm() async {
+    if (!_formKey.currentState!.validate()) return false;
+
+    setState(() => _isLoading = true);
 
     try {
       // Upload the image
@@ -348,11 +386,11 @@ class _AddMenuScreenState extends State<AddMenuScreen> {
       if (imageUrl == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-              content: Text('Failed to upload image. Please try again.')),
+              content:
+                  material.Text('Failed to upload image. Please try again.')),
         );
-        return;
+        return false;
       }
-
 
       // Create a Menu object
       final menu = Menu(
@@ -367,249 +405,423 @@ class _AddMenuScreenState extends State<AddMenuScreen> {
 
       // Show progress message
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Saving menu item...')),
+        const SnackBar(content: material.Text('Saving menu item...')),
       );
 
       // Save the menu item using FoodService
       final createdMenu = await _foodService.createMenu(menu);
 
-      // Show success message
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Menu item added successfully!')),
-      );
+      if (createdMenu != null) {
+        // Save all temporary add-ons with the new menu ID
+        for (var addon in _tempAddons) {
+          final newAddon = FoodAddon(
+            menuId: createdMenu.id!,
+            addonName: addon.addonName,
+            price: addon.price,
+            isRequired: addon.isRequired,
+            description: addon.description,
+          );
+          await _foodService.createFoodAddon(newAddon);
+        }
 
-      // Clear the form for next input
-      _nameController.clear();
-      _priceController.clear();
-      _categoryController.clear();
-      _descriptionController.clear();
-      setState(() {
-        _selectedImage = null;
-      });
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: material.Text('Menu item added successfully!'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+
+        // Wait for snackbar to show before navigation
+        await Future.delayed(const Duration(seconds: 1));
+
+        if (mounted) {
+          // Pop back to dashboard with success result
+          Navigator.pop(context, true);
+        }
+        return true;
+      }
+
+      setState(() => _isLoading = false);
+      return false;
     } catch (e) {
+      setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: ${e.toString()}')),
+        SnackBar(content: material.Text('Error: ${e.toString()}')),
       );
+      print('Error: ${e.toString()}');
+      return false;
     }
+  }
+
+  Future<bool> _onWillPop() async {
+    if (_hasUnsavedChanges()) {
+      return await showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const material.Text('Discard Changes?'),
+              content: const material.Text(
+                  'You have unsaved changes. Do you want to discard them?'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const material.Text('Cancel'),
+                ),
+                TextButton(
+                  style: TextButton.styleFrom(foregroundColor: Colors.red),
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const material.Text('Discard'),
+                ),
+              ],
+            ),
+          ) ??
+          false;
+    }
+    return true;
+  }
+
+  bool _hasUnsavedChanges() {
+    return _nameController.text.isNotEmpty ||
+        _priceController.text.isNotEmpty ||
+        _descriptionController.text.isNotEmpty ||
+        _selectedImage != null ||
+        _tempAddons.isNotEmpty;
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new),
-            color: const Color(0xFFFF542D),
-            onPressed: () => Navigator.pop(context),
-          ),
-        ),
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 600),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Add Menu Item',
-                        style: Theme.of(context)
-                            .textTheme
-                            .headlineMedium
-                            ?.copyWith(
-                              fontWeight: FontWeight.w700,
-                              color: Colors.black87,
-                              fontSize: 28,
-                            ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Fill in the details below to add a new menu item',
-                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                              color: Colors.black54,
-                            ),
-                      ),
-                      const SizedBox(height: 24),
-                      // Image Upload Section with edit overlay.
-                      GestureDetector(
-                        onTap: _selectedImage == null
-                            ? _showImagePickerOptions
-                            : _showImageEditOptions,
-                        child: Stack(
-                          children: [
-                            Container(
-                              height: 240,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: Colors.grey.shade300),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.05),
-                                    blurRadius: 10,
-                                    offset: const Offset(0, 4),
-                                  ),
-                                ],
-                              ),
-                              child: _selectedImage != null
-                                  ? ClipRRect(
-                                      borderRadius: BorderRadius.circular(16),
-                                      child: ColorFiltered(
-                                        colorFilter: _getColorFilter(),
-                                        child: Image.file(
-                                          File(_selectedImage!.path),
-                                          width: double.infinity,
-                                          height: double.infinity,
-                                          fit: BoxFit.cover,
-                                        ),
-                                      ),
-                                    )
-                                  : Column(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: [
-                                        Icon(
-                                          Icons.add_photo_alternate_outlined,
-                                          size: 48,
-                                          color: Colors.grey,
-                                        ),
-                                        const SizedBox(height: 12),
-                                        Text(
-                                          'Upload Image',
-                                          style: TextStyle(
-                                            color: Colors.grey,
-                                            fontSize: 16,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                            ),
-                            // Show an edit icon if an image is selected.
-                            if (_selectedImage != null)
-                              Positioned(
-                                bottom: 8,
-                                right: 8,
-                                child: FloatingActionButton.small(
-                                  backgroundColor: Colors.white,
-                                  onPressed: _showImageEditOptions,
-                                  child: const Icon(
-                                    Icons.edit,
-                                    color: Color(0xFFFF542D),
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      // Form Fields
-                      _buildTextField(
-                        controller: _nameController,
-                        label: 'Item Name',
-                        hint: 'Enter item name',
-                        validator: _validateRequired,
-                        icon: Icons.restaurant_menu,
-                      ),
-                      const SizedBox(height: 16),
-                      _buildTextField(
-                        controller: _priceController,
-                        label: 'Price',
-                        hint: 'Enter price',
-                        keyboardType: TextInputType.number,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly
-                        ],
-                        validator: _validatePrice,
-                        icon: Icons.attach_money,
-                        prefix: Text('\$ ',
-                            style: TextStyle(color: Colors.grey.shade700)),
-                      ),
-                      const SizedBox(height: 16),
-                      _buildTextField(
-                        controller: _descriptionController,
-                        label: 'Description',
-                        hint: 'Enter item description',
-                        maxLines: 4,
-                        validator: _validateRequired,
-                        icon: Icons.description,
-                      ),
-                      const SizedBox(height: 16),
-                      _buildTextField(
-                        controller: _categoryController,
-                        label: 'Category',
-                        hint: 'Select or enter category',
-                        validator: _validateRequired,
-                        icon: Icons.category,
-                      ),
-                      const SizedBox(height: 24),
-                      // Add-ons Section
-                      Container(
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: Colors.grey.shade300),
-                        ),
-                        child: ListTile(
-                          leading: const Icon(
-                            Icons.add_circle_outline,
-                            color: Color(0xFFFF542D),
-                          ),
-                          title: const Text('Add Optional Add-ons'),
-                          trailing: const Icon(
-                            Icons.arrow_forward_ios,
-                            size: 16,
-                          ),
-                          onTap: () {
-                            //Still error
-                            MenuAddonsScreen(menuId: 0 , foodService: _foodService);
-                          },
-                        ),
-                      ),
-                      const SizedBox(height: 32),
-                      // Submit Button
-                      ElevatedButton(
-                        onPressed: _submitForm,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFFF542D),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          minimumSize: const Size(double.infinity, 54),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          elevation: 2,
-                        ),
-                        child: const Text(
-                          'Add to Menu',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 32),
-                    ],
-                  ),
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (bool didPop) async {
+        if (didPop) return;
+        final bool shouldPop = await _onWillPop();
+        if (shouldPop) {
+          if (context.mounted) {
+            Navigator.pop(context);
+          }
+        }
+      },
+      child: Stack(
+        children: [
+          Scaffold(
+            backgroundColor: const Color(0xFFF5F5F5),
+            appBar: AppBar(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              leading: Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: IconButton(
+                  icon: const Icon(Icons.arrow_back_ios_new),
+                  color: const Color(0xFFFF542D),
+                  onPressed: () => Navigator.pop(context),
                 ),
               ),
             ),
+            body: SafeArea(
+              child: Column(
+                children: [
+                  // Progress Indicator
+                  LinearProgressIndicator(
+                    value: _calculateProgress(),
+                    backgroundColor: Colors.grey.shade200,
+                    valueColor:
+                        const AlwaysStoppedAnimation<Color>(Color(0xFFFF542D)),
+                  ),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      controller: _scrollController,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 24, vertical: 16),
+                        child: Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 600),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                material.Text(
+                                  'Add Menu Item',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .headlineMedium
+                                      ?.copyWith(
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.black87,
+                                        fontSize: 28,
+                                      ),
+                                ),
+                                const SizedBox(height: 8),
+                                material.Text(
+                                  'Fill in the details below to add a new menu item',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodyLarge
+                                      ?.copyWith(
+                                        color: Colors.black54,
+                                      ),
+                                ),
+                                const SizedBox(height: 24),
+                                // Image Section with Preview
+                                _buildImageSection(),
+                                // Form Fields
+                                Form(
+                                  key: _formKey,
+                                  onChanged: () => setState(() {}),
+                                  child: Column(
+                                    children: [
+                                      _buildTextField(
+                                        controller: _nameController,
+                                        label: 'Item Name',
+                                        hint: 'Enter item name',
+                                        validator: _validateRequired,
+                                        icon: Icons.restaurant_menu,
+                                      ),
+                                      const SizedBox(height: 16),
+                                      _buildTextField(
+                                        controller: _priceController,
+                                        label: 'Price',
+                                        hint: 'Enter price',
+                                        keyboardType: TextInputType.number,
+                                        inputFormatters: [
+                                          FilteringTextInputFormatter.digitsOnly
+                                        ],
+                                        validator: _validatePrice,
+                                        icon: Icons.attach_money,
+                                        prefix: material.Text('\$ ',
+                                            style: TextStyle(
+                                                color: Colors.grey.shade700)),
+                                      ),
+                                      const SizedBox(height: 16),
+                                      CategorySelector(
+                                        selectedCategory:
+                                            _categoryController.text,
+                                        onSelect: (category) {
+                                          setState(() {
+                                            _categoryController.text = category;
+                                          });
+                                        },
+                                      ),
+                                      const SizedBox(height: 16),
+                                      _buildTextField(
+                                        controller: _descriptionController,
+                                        label: 'Description',
+                                        hint: 'Enter item description',
+                                        maxLines: 4,
+                                        validator: _validateRequired,
+                                        icon: Icons.description,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                // Add-ons Section with Preview
+                                if (_tempAddons.isNotEmpty)
+                                  _buildAddonsPreview(),
+                                // Add-ons Button
+                                _buildAddonsButton(),
+                                const SizedBox(height: 32),
+                                // Submit Button
+                                _buildSubmitButton(),
+                                const SizedBox(height: 32),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
+          if (_isLoading)
+            Container(
+              color: Colors.black54,
+              child: const Center(child: CircularProgressIndicator()),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAddonsPreview() {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          material.Text(
+            'Add-ons (${_tempAddons.length})',
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...List.generate(
+            _tempAddons.length > 3 ? 3 : _tempAddons.length,
+            (index) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  material.Text(_tempAddons[index].addonName),
+                  material.Text(
+                      'Rp ${_tempAddons[index].price.toStringAsFixed(0)}'),
+                ],
+              ),
+            ),
+          ),
+          if (_tempAddons.length > 3)
+            Center(
+              child: TextButton(
+                onPressed: _navigateToAddons,
+                child: material.Text('+ ${_tempAddons.length - 3} more'),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  double _calculateProgress() {
+    int steps = 0;
+    final totalSteps = 5;
+
+    if (_selectedImage != null) steps++;
+    if (_nameController.text.isNotEmpty) steps++;
+    if (_priceController.text.isNotEmpty) steps++;
+    if (_categoryController.text.isNotEmpty) steps++;
+    if (_descriptionController.text.isNotEmpty) steps++;
+
+    return steps / totalSteps;
+  }
+
+  Widget _buildImageSection() {
+    return GestureDetector(
+      onTap: _selectedImage == null
+          ? _showImagePickerOptions
+          : _showImageEditOptions,
+      child: Stack(
+        children: [
+          Container(
+            height: 240,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.grey.shade300),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: _selectedImage != null
+                ? ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: ColorFiltered(
+                      colorFilter: _getColorFilter(),
+                      child: Image.file(
+                        File(_selectedImage!.path),
+                        width: double.infinity,
+                        height: double.infinity,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                  )
+                : Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.add_photo_alternate_outlined,
+                        size: 48,
+                        color: Colors.grey,
+                      ),
+                      const SizedBox(height: 12),
+                      material.Text(
+                        'Upload Image',
+                        style: TextStyle(
+                          color: Colors.grey,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+          // Show an edit icon if an image is selected.
+          if (_selectedImage != null)
+            Positioned(
+              bottom: 8,
+              right: 8,
+              child: FloatingActionButton.small(
+                backgroundColor: Colors.white,
+                onPressed: _showImageEditOptions,
+                child: const Icon(
+                  Icons.edit,
+                  color: Color(0xFFFF542D),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAddonsButton() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: ListTile(
+        leading: const Icon(
+          Icons.add_circle_outline,
+          color: Color(0xFFFF542D),
+        ),
+        title: const material.Text('Add Optional Add-ons'),
+        trailing: const Icon(
+          Icons.arrow_forward_ios,
+          size: 16,
+        ),
+        onTap: () {
+          _navigateToAddons();
+        },
+      ),
+    );
+  }
+
+  Widget _buildSubmitButton() {
+    return ElevatedButton(
+      onPressed: _submitForm,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: const Color(0xFFFF542D),
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        minimumSize: const Size(double.infinity, 54),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        elevation: 2,
+      ),
+      child: const material.Text(
+        'Add to Menu',
+        style: TextStyle(
+          fontSize: 18,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );
   }
 
-  Widget _buildTextField ({
+  Widget _buildTextField({
     required TextEditingController controller,
     required String label,
     required String hint,
@@ -623,7 +835,7 @@ class _AddMenuScreenState extends State<AddMenuScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
+        material.Text(
           label,
           style: const TextStyle(
             fontSize: 16,
@@ -671,6 +883,7 @@ class _AddMenuScreenState extends State<AddMenuScreen> {
 
   @override
   void dispose() {
+    _scrollController.dispose();
     _nameController.dispose();
     _priceController.dispose();
     _descriptionController.dispose();

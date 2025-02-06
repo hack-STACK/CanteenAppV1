@@ -19,6 +19,7 @@ class TopMenuSection extends StatefulWidget {
     this.accentColor = const Color(0xFFFF542D),
     this.onSeeAllTap,
     required this.foodService,
+    required List<Menu> menus,
   });
 
   @override
@@ -39,7 +40,7 @@ class _TopMenuSectionState extends State<TopMenuSection> {
     _isExpanded = ValueNotifier(false);
     _isLoading = ValueNotifier(true);
     _menus = ValueNotifier([]);
-    
+
     _fetchMenus();
   }
 
@@ -56,7 +57,7 @@ class _TopMenuSectionState extends State<TopMenuSection> {
     try {
       _isLoading.value = true;
       final menus = await widget.foodService.getAllMenuItems();
-      
+
       final sortedMenus = _sortMenus(menus);
       final limitedMenus = _limitMenus(sortedMenus);
       await _fetchAddons(limitedMenus);
@@ -85,15 +86,14 @@ class _TopMenuSectionState extends State<TopMenuSection> {
   }
 
   List<Menu> _limitMenus(List<Menu> menus) {
-    return widget.itemCount > 0 
-        ? menus.take(widget.itemCount).toList()
-        : menus;
+    return widget.itemCount > 0 ? menus.take(widget.itemCount).toList() : menus;
   }
 
   Future<void> _fetchAddons(List<Menu> menus) async {
     for (final menu in menus) {
       if (menu.id != null) {
-        _menuAddons[menu.id!] = await widget.foodService.getAddonsForMenu(menu.id!);
+        _menuAddons[menu.id!] =
+            await widget.foodService.getAddonsForMenu(menu.id!);
       }
     }
   }
@@ -175,7 +175,7 @@ class _TopMenuHeader extends StatelessWidget {
                   style: const TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.w600,
-                    fontFamily: 'Figtree',
+                    fontFamily: 'Roboto',
                     letterSpacing: -0.5,
                   ),
                 ),
@@ -240,14 +240,15 @@ class _FilterDropdown extends StatelessWidget {
                   minHeight: 36,
                 ),
                 decoration: BoxDecoration(
-                  color: accentColor.withOpacity(0.08),
+                  color: accentColor.withAlpha((0.08 * 255).toInt()),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: InkWell(
                   borderRadius: BorderRadius.circular(12),
                   onTap: () => isExpanded.value = !expanded,
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -262,7 +263,9 @@ class _FilterDropdown extends StatelessWidget {
                         ),
                         const SizedBox(width: 4),
                         Icon(
-                          expanded ? Icons.arrow_drop_up : Icons.arrow_drop_down,
+                          expanded
+                              ? Icons.arrow_drop_up
+                              : Icons.arrow_drop_down,
                           size: 20,
                           color: accentColor,
                         ),
@@ -338,12 +341,12 @@ class _TopMenuContent extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: accentColor.withOpacity(0.15),
+          color: accentColor.withAlpha((0.15 * 255).toInt()),
           width: 1,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withAlpha((0.03 * 255).toInt()),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -368,14 +371,14 @@ class _TopMenuContent extends StatelessWidget {
                   if (loading) {
                     return const Center(child: CircularProgressIndicator());
                   }
-                  
+
                   return ValueListenableBuilder<List<Menu>>(
                     valueListenable: menus,
                     builder: (context, menuList, _) {
                       if (menuList.isEmpty) {
                         return const Center(child: Text('No menus found'));
                       }
-                      
+
                       return ListView.separated(
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
@@ -421,7 +424,7 @@ class _MenuCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withAlpha((0.05 * 255).toInt()),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -507,7 +510,7 @@ class _MenuDetails extends StatelessWidget {
                 menu.foodName,
                 style: const TextStyle(
                   fontSize: 16,
-fontWeight: FontWeight.bold,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
             ),
@@ -517,7 +520,7 @@ fontWeight: FontWeight.bold,
                 vertical: 4,
               ),
               decoration: BoxDecoration(
-                color: typeColor.withOpacity(0.1),
+                color: typeColor.withAlpha((0.1 * 255).toInt()),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
@@ -553,8 +556,7 @@ fontWeight: FontWeight.bold,
                 color: accentColor,
               ),
             ),
-            if (addons.isNotEmpty)
-              _AddonsChip(count: addons.length),
+            if (addons.isNotEmpty) _AddonsChip(count: addons.length),
           ],
         ),
       ],
@@ -635,7 +637,9 @@ class _FilterOptions extends StatelessWidget {
                     horizontal: 12,
                   ),
                   decoration: BoxDecoration(
-                    color: isSelected ? accentColor.withOpacity(0.08) : null,
+                    color: isSelected
+                        ? accentColor.withAlpha((0.08 * 255).toInt())
+                        : null,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
@@ -643,7 +647,8 @@ class _FilterOptions extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 14,
                       color: isSelected ? accentColor : Colors.grey[700],
-                      fontWeight: isSelected ? FontWeight.w500 : FontWeight.normal,
+                      fontWeight:
+                          isSelected ? FontWeight.w500 : FontWeight.normal,
                     ),
                   ),
                 ),

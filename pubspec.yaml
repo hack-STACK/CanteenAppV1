@@ -28,7 +28,7 @@ dependencies:
   image_cropper: ^9.0.0
   dotted_border: ^2.1.0
   image: ^4.0.17
-
+  flutter_dotenv: ^5.0.2
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -37,3 +37,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - .env

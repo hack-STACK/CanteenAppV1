@@ -8,34 +8,37 @@ import 'package:provider/provider.dart';
 import 'package:kantin/Themes/theme_providers.dart';
 import 'package:kantin/Models/Restaurant.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:kantin/services/supabase_config.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Load environment variables first
+  await dotenv.load();
+
+  if (dotenv.env['SUPABASE_URL'] == null ||
+      dotenv.env['SUPABASE_ANON_KEY'] == null) {
+    throw Exception('Environment variables for Supabase are not set');
+  }
+
+  // Initialize Supabase
+  await initializeSupabase(
+    dotenv.env['SUPABASE_URL']!,
+    dotenv.env['SUPABASE_ANON_KEY']!,
+  );
 
   // Initialize Firebase
   try {
     await Firebase.initializeApp(
         options: DefaultFirebaseOptions.currentPlatform);
-  } catch (e) {
-    print("Error initializing Firebase: $e");
-    return; // Exit if Firebase initialization fails
-  }
-  // Initialize App Check
-  await FirebaseAppCheck.instance.activate(
-    androidProvider: AndroidProvider.playIntegrity, // For Android
-    appleProvider: AppleProvider.appAttest, // For iOS
-  );
-
-  // Initialize Supabase
-  try {
-    await Supabase.initialize(
-      url: 'https://hmmahzohkafghtdjbkqi.supabase.co',
-      anonKey:
-          'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhtbWFoem9oa2FmZ2h0ZGpia3FpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzcwOTk4NjMsImV4cCI6MjA1MjY3NTg2M30.mbmgey9hVH4l2f_NpnFv5sgC8mo5dp70qX5avlJ8Jgw',
+    await FirebaseAppCheck.instance.activate(
+      androidProvider: AndroidProvider.playIntegrity,
+      appleProvider: AppleProvider.appAttest,
     );
   } catch (e) {
-    print("Error initializing Supabase: $e");
-    return; // Exit if Supabase initialization fails
+    print("Error initializing Firebase: $e");
+    return;
   }
 
   runApp(

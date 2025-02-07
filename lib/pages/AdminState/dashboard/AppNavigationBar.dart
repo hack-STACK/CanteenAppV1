@@ -8,16 +8,24 @@ import 'package:kantin/pages/AdminState/dashboard/TrackerPage.dart';
 import 'package:kantin/pages/AdminState/dashboard/Homepage.dart';
 import 'package:kantin/pages/AdminState/dashboard/settings_screen.dart';
 
-class AppNavigationBar {
+class AppNavigationBar extends ChangeNotifier {
   AppNavigationBar._();
 
   static final GlobalKey<NavigatorState> _rootNavigatorKey =
       GlobalKey<NavigatorState>();
 
+  static final AppNavigationBar _instance = AppNavigationBar._();
+
+  /// Method to trigger refresh
+  void refresh() {
+    notifyListeners(); // Notify GoRouter to refresh pages
+  }
+
   static GoRouter configureRouter(int? standId) {
     return GoRouter(
       navigatorKey: _rootNavigatorKey,
       initialLocation: '/Home',
+      refreshListenable: _instance, // Enables refresh when notifyListeners() is called
       routes: [
         StatefulShellRoute.indexedStack(
           builder: (context, state, navigationShell) {
@@ -31,10 +39,8 @@ class AppNavigationBar {
                   name: 'Home',
                   builder: (context, state) {
                     if (standId == null) {
-                      print('Stand ID is not available.');
                       return const Center(child: Text('Stand ID is not available.'));
                     }
-                    print('Navigating to AdminDashboardScreen with standId: $standId');
                     return AdminDashboardScreen(standId: standId);
                   },
                 ),
@@ -47,10 +53,8 @@ class AppNavigationBar {
                   name: 'Tracker',
                   builder: (context, state) {
                     if (standId == null) {
-                      print('Stand ID is not available.');
                       return const Center(child: Text('Stand ID is not available.'));
                     }
-                    print('Navigating to TrackerScreen with standId: $standId');
                     return TrackerScreen(stanId: standId);
                   },
                 ),
@@ -63,10 +67,8 @@ class AppNavigationBar {
                   name: 'Notifications',
                   builder: (context, state) {
                     if (standId == null) {
-                      print('Stand ID is not available.');
                       return const Center(child: Text('Stand ID is not available.'));
                     }
-                    print("Navigating to order with stanId: $standId");
                     return OrdersScreen(stanId: standId);
                   },
                 ),
@@ -79,10 +81,8 @@ class AppNavigationBar {
                   name: 'Settings',
                   builder: (context, state) {
                     if (standId == null) {
-                      print('Stand ID is not available.');
                       return const Center(child: Text('Stand ID is not available.'));
                     }
-                    print('Navigating to SettingsScreen with standId: $standId');
                     return SettingsScreen(standId: standId);
                   },
                 ),
@@ -90,19 +90,18 @@ class AppNavigationBar {
             ),
           ],
         ),
-        // Add Menu Route - Outside the StatefulShellRoute
         GoRoute(
           path: '/add-menu',
           name: 'AddMenu',
-          parentNavigatorKey: _rootNavigatorKey, // Use root navigator
+          parentNavigatorKey: _rootNavigatorKey,
           builder: (context, state) {
             if (standId == null) {
               return const Center(child: Text('Stand ID is not available.'));
             }
-            
+
             final extra = state.extra as Map<String, dynamic>?;
             final XFile? image = extra?['image'] as XFile?;
-            
+
             return AddMenuScreen(
               standId: standId,
               initialImage: image,

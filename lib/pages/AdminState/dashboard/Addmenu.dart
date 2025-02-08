@@ -1,10 +1,8 @@
 import 'dart:io';
-import 'package:crop_your_image/crop_your_image.dart';
 import 'package:flutter/material.dart' hide Text; // Add hide Text
 import 'package:flutter/material.dart' as material show Text; // Add this
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:kantin/Models/Food.dart';
 import 'package:kantin/Models/menus_addon.dart';
 import 'package:kantin/Services/Database/foodService.dart';
 import 'package:kantin/Services/feature/cropImage.dart';
@@ -322,11 +320,6 @@ class _AddMenuScreenState extends State<AddMenuScreen> {
           .from('menu_images') // Replace with your bucket name
           .upload(fileName, file);
 
-      // ✅ Fix: Don't treat a non-null response as an error
-      if (response == null) {
-        throw Exception('Upload failed: No response from Supabase');
-      }
-
       // ✅ Correct way to get the public URL
       final imageUrl = Supabase.instance.client.storage
           .from('menu_images')
@@ -411,36 +404,34 @@ class _AddMenuScreenState extends State<AddMenuScreen> {
       // Save the menu item using FoodService
       final createdMenu = await _foodService.createMenu(menu);
 
-      if (createdMenu != null) {
-        // Save all temporary add-ons with the new menu ID
-        for (var addon in _tempAddons) {
-          final newAddon = FoodAddon(
-            menuId: createdMenu.id!,
-            addonName: addon.addonName,
-            price: addon.price,
-            isRequired: addon.isRequired,
-            description: addon.description,
-          );
-          await _foodService.createFoodAddon(newAddon);
-        }
-
-        // Show success message
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: material.Text('Menu item added successfully!'),
-            duration: Duration(seconds: 2),
-          ),
+      // Save all temporary add-ons with the new menu ID
+      for (var addon in _tempAddons) {
+        final newAddon = FoodAddon(
+          menuId: createdMenu.id!,
+          addonName: addon.addonName,
+          price: addon.price,
+          isRequired: addon.isRequired,
+          description: addon.description,
         );
-
-        // Wait for snackbar to show before navigation
-        await Future.delayed(const Duration(seconds: 1));
-
-        if (mounted) {
-          // Pop back to dashboard with success result
-          Navigator.pop(context, true);
-        }
-        return true;
+        await _foodService.createFoodAddon(newAddon);
       }
+
+      // Show success message
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: material.Text('Menu item added successfully!'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      // Wait for snackbar to show before navigation
+      await Future.delayed(const Duration(seconds: 1));
+
+      if (mounted) {
+        // Pop back to dashboard with success result
+        Navigator.pop(context, true);
+      }
+      return true;
 
       setState(() => _isLoading = false);
       return false;

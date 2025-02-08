@@ -1,22 +1,40 @@
 import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:kantin/Services/Auth/auth_Service.dart';
 import 'package:kantin/Services/Auth/login_or_register.dart';
 import 'package:kantin/Services/Database/Stan_service.dart';
 import 'package:kantin/Services/Database/UserService.dart';
-import 'package:kantin/pages/AdminState/dashboard/widgets/settings_tile.dart';
+import 'package:kantin/pages/AdminState/dashboard/Setting%20section/Page/profile_screen/profile_screen.dart';
+import 'package:kantin/pages/AdminState/dashboard/Setting%20section/Widget/settings_tile.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 
 class SettingsSection extends StatefulWidget {
-  const SettingsSection({super.key, this.standId});
   final int? standId;
 
+  const SettingsSection({super.key, required this.standId});
+
   @override
-  _SettingsSectionState createState() => _SettingsSectionState();
+  State<SettingsSection> createState() => _SettingsSectionState();
 }
 
 class _SettingsSectionState extends State<SettingsSection> {
+  void _navigateToProfile(BuildContext context) {
+    debugPrint('Navigating to profile with standId: ${widget.standId}');
+    if (widget.standId != null) {
+      Navigator.of(context, rootNavigator: true).push(
+        // Use rootNavigator: true
+        MaterialPageRoute(
+          fullscreenDialog: true, // Add this
+          builder: (context) => ProfileScreen(standId: widget.standId!),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Stand ID not available')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -68,13 +86,15 @@ class _SettingsSectionState extends State<SettingsSection> {
         }
 
         // Navigate to login page
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            Navigator.of(context).pushReplacement(
-              MaterialPageRoute(builder: (context) => LoginOrRegister()),
-            );
-          }
-        });
+        if (mounted) {
+          Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+            MaterialPageRoute(
+              builder: (context) => LoginOrRegister(),
+              fullscreenDialog: true,
+            ),
+            (route) => false,
+          );
+        }
       } catch (e) {
         // Handle error
         if (mounted) {
@@ -140,8 +160,11 @@ class _SettingsSectionState extends State<SettingsSection> {
           // Delay navigation to avoid assertion error
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
-              Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute(builder: (context) => LoginOrRegister()),
+              Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+                MaterialPageRoute(
+                  builder: (context) => LoginOrRegister(),
+                  fullscreenDialog: true,
+                ),
                 (route) => false,
               );
             }
@@ -229,7 +252,7 @@ class _SettingsSectionState extends State<SettingsSection> {
         icon: Icons.account_circle,
         title: 'Account',
         onTap: () {
-          // Handle account action
+          _navigateToProfile(context);
         },
       ),
       const SizedBox(height: 20),

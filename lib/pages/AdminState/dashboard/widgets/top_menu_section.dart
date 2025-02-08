@@ -10,17 +10,18 @@ class TopMenuSection extends StatefulWidget {
   final Color accentColor;
   final VoidCallback? onSeeAllTap;
   final FoodService foodService;
+  final int? stanid;
 
-  const TopMenuSection({
-    super.key,
-    this.title = 'Top menus',
-    this.filterOptions = const ['Latest', 'Popular', 'Trending'],
-    this.itemCount = 3,
-    this.accentColor = const Color(0xFFFF542D),
-    this.onSeeAllTap,
-    required this.foodService,
-    required List<Menu> menus,
-  });
+  const TopMenuSection(
+      {super.key,
+      this.title = 'Top menus',
+      this.filterOptions = const ['Latest', 'Popular', 'Trending'],
+      this.itemCount = 3,
+      this.accentColor = const Color(0xFFFF542D),
+      this.onSeeAllTap,
+      required this.foodService,
+      required List<Menu> menus,
+      required this.stanid});
 
   @override
   State<TopMenuSection> createState() => _TopMenuSectionState();
@@ -56,7 +57,8 @@ class _TopMenuSectionState extends State<TopMenuSection> {
   Future<void> _fetchMenus() async {
     try {
       _isLoading.value = true;
-      final menus = await widget.foodService.getAllMenuItems();
+      // Use the stan_id to fetch menus
+      final menus = await widget.foodService.getMenuByStanId(widget.stanid);
 
       final sortedMenus = _sortMenus(menus);
       final limitedMenus = _limitMenus(sortedMenus);
@@ -65,6 +67,7 @@ class _TopMenuSectionState extends State<TopMenuSection> {
       _menus.value = limitedMenus;
     } catch (e) {
       debugPrint('Error fetching menus: $e');
+      _menus.value = [];
     } finally {
       _isLoading.value = false;
     }

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:kantin/Models/Food.dart';
 import 'package:kantin/Models/addon_template.dart';
 import 'package:kantin/Models/menus.dart';
@@ -55,10 +56,22 @@ class FoodService {
   }
 
   /// **🟢 Read: Get menu items by stall ID**
-  Future<List<Menu>> getMenuByStanId(int stanId) async {
-    final response =
-        await _supabase.from('menu').select().eq('stall_id', stanId);
-    return response.map<Menu>((json) => Menu.fromJson(json)).toList();
+  Future<List<Menu>> getMenuByStanId(int? stanId) async {
+    if (stanId == null) return [];
+
+    try {
+      final response = await _supabase
+          .from('menu')
+          .select()
+          .eq('stall_id', stanId); // Changed from 'stan_id' to 'stall_id'
+
+      return (response as List<dynamic>)
+          .map((menu) => Menu.fromJson(menu))
+          .toList();
+    } catch (e) {
+      debugPrint('Error fetching menus for stan $stanId: $e');
+      return [];
+    }
   }
 
   /// **🟡 Update: Update a menu item**

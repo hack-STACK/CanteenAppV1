@@ -6,7 +6,7 @@ import 'package:kantin/pages/AdminState/dashboard/DashboardScreen.dart';
 import 'package:kantin/pages/AdminState/dashboard/Order_page.dart';
 import 'package:kantin/pages/AdminState/dashboard/TrackerPage.dart';
 import 'package:kantin/pages/AdminState/dashboard/Homepage.dart';
-import 'package:kantin/pages/AdminState/dashboard/settings_screen.dart';
+import 'package:kantin/pages/AdminState/dashboard/Setting%20section/settings_screen.dart';
 
 class AppNavigationBar extends ChangeNotifier {
   AppNavigationBar._();
@@ -25,7 +25,8 @@ class AppNavigationBar extends ChangeNotifier {
     return GoRouter(
       navigatorKey: _rootNavigatorKey,
       initialLocation: '/Home',
-      refreshListenable: _instance, // Enables refresh when notifyListeners() is called
+      refreshListenable:
+          _instance, // Enables refresh when notifyListeners() is called
       routes: [
         StatefulShellRoute.indexedStack(
           builder: (context, state, navigationShell) {
@@ -39,7 +40,8 @@ class AppNavigationBar extends ChangeNotifier {
                   name: 'Home',
                   builder: (context, state) {
                     if (standId == null) {
-                      return const Center(child: Text('Stand ID is not available.'));
+                      return const Center(
+                          child: Text('Stand ID is not available.'));
                     }
                     return AdminDashboardScreen(standId: standId);
                   },
@@ -53,7 +55,8 @@ class AppNavigationBar extends ChangeNotifier {
                   name: 'Tracker',
                   builder: (context, state) {
                     if (standId == null) {
-                      return const Center(child: Text('Stand ID is not available.'));
+                      return const Center(
+                          child: Text('Stand ID is not available.'));
                     }
                     return TrackerScreen(stanId: standId);
                   },
@@ -67,7 +70,8 @@ class AppNavigationBar extends ChangeNotifier {
                   name: 'Notifications',
                   builder: (context, state) {
                     if (standId == null) {
-                      return const Center(child: Text('Stand ID is not available.'));
+                      return const Center(
+                          child: Text('Stand ID is not available.'));
                     }
                     return OrdersScreen(stanId: standId);
                   },
@@ -81,7 +85,8 @@ class AppNavigationBar extends ChangeNotifier {
                   name: 'Settings',
                   builder: (context, state) {
                     if (standId == null) {
-                      return const Center(child: Text('Stand ID is not available.'));
+                      return const Center(
+                          child: Text('Stand ID is not available.'));
                     }
                     return SettingsScreen(standId: standId);
                   },

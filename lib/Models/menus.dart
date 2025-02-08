@@ -21,7 +21,7 @@ class Menu {
     required this.description,
     required this.stallId,
     this.addons = const [], // Default to empty list
-  }) : this.type = type.toLowerCase() {
+  }) : type = type.toLowerCase() {
     // Normalize type to lowercase
     if (!validTypes.contains(this.type)) {
       throw ArgumentError(

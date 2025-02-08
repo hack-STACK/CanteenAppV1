@@ -1,44 +1,47 @@
 class Stan {
-  final int? id; // Make id nullable for new entries
+  final int? id;
   final String stanName;
   final String ownerName;
   final String phone;
   final int userId;
   final String description;
-  final String slot; // Add slot field
+  final String slot;
+  final String? imageUrl;
 
   Stan({
-    this.id, // Now this can be null for new entries
+    this.id,
     required this.stanName,
     required this.ownerName,
     required this.phone,
     required this.userId,
     required this.description,
-    required this.slot, // Include slot in the constructor
+    required this.slot,
+    this.imageUrl,
   });
-
-  Map<String, dynamic> toMap() {
-    return {
-      'id': id, // This can be null
-      'nama_stan': stanName,
-      'nama_pemilik': ownerName,
-      'telp': phone,
-      'id_user': userId,
-      'deskripsi': description,
-      'slot': slot, // Include slot in the map
-    };
-  }
 
   factory Stan.fromMap(Map<String, dynamic> map) {
     return Stan(
-      id: map['id'], // This can be null
-      stanName: map['nama_stan'] ?? '', // Provide a default value if null
-      ownerName: map['nama_pemilik'] ?? '', // Provide a default value if null
-      phone: map['telp'] ?? '', // Provide a default value if null
-      userId: map['id_user'] ??
-          0, // Provide a default value if null (assuming userId should not be null)
-      description: map['deskripsi'] ?? '', // Provide a default value if null
-      slot: map['slot'] ?? '', // Provide a default value if null
+      id: map['id'],
+      stanName: map['nama_stalls'],
+      ownerName: map['nama_pemilik'],
+      phone: map['no_telp'],
+      userId: map['id_user'],
+      description: map['deskripsi'],
+      slot: map['slot'],
+      imageUrl: map['image_url'],
     );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'nama_stalls': stanName,
+      'nama_pemilik': ownerName,
+      'no_telp': phone,
+      'id_user': userId,
+      'deskripsi': description,
+      'slot': slot,
+      'image_url': imageUrl,
+    };
   }
 }

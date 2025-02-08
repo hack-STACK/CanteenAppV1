@@ -1,14 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:kantin/Component/my_Description_Box.dart';
 import 'package:kantin/Component/my_Silver_App_Bar.dart';
-import 'package:kantin/Component/my_Tab_Bar.dart';
 import 'package:kantin/Component/my_current_location.dart';
 import 'package:kantin/Component/my_drawer.dart';
-import 'package:kantin/Component/my_food_tile.dart';
-import 'package:kantin/Models/Food.dart';
-import 'package:kantin/Models/Restaurant.dart';
-import 'package:kantin/pages/StudentState/food_page.dart';
-import 'package:provider/provider.dart';
+import 'package:kantin/Component/my_stall_tile.dart';
+import 'package:kantin/Models/Stan_model.dart';
+import 'package:kantin/Services/Database/Stan_service.dart';
 
 class StudentPage extends StatefulWidget {
   const StudentPage({super.key});
@@ -17,55 +14,41 @@ class StudentPage extends StatefulWidget {
   _HomepageState createState() => _HomepageState();
 }
 
-class _HomepageState extends State<StudentPage>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+class _HomepageState extends State<StudentPage> {
+  final StanService _stanService = StanService();
+  List<Stan> _stalls = [];
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _tabController =
-        TabController(length: foodCategory.values.length, vsync: this);
+    _loadStalls();
   }
 
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
-
-  List<Food> _filterMenuByCategory(foodCategory category, List<Food> fullMenu) {
-    return fullMenu.where((food) => food.category == category).toList();
-  }
-
-  List<Widget> getFoodInThisCategory(List<Food> fullMenu) {
-    return foodCategory.values.map((category) {
-      List<Food> categoryMenu = _filterMenuByCategory(category, fullMenu);
-      return ListView.builder(
-        itemCount: categoryMenu.length,
-        physics: const NeverScrollableScrollPhysics(),
-        padding: EdgeInsets.zero,
-        itemBuilder: (BuildContext context, int index) {
-          final food = categoryMenu[index];
-          return MyFoodTile(
-              onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (context) => FoodPage(food: food))),
-              food: food);
-        },
+  Future<void> _loadStalls() async {
+    try {
+      setState(() => _isLoading = true);
+      final stalls = await _stanService.getAllStans();
+      setState(() {
+        _stalls = stalls;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error loading stalls: $e')),
       );
-    }).toList();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      drawer: MyDrawer(),
+      drawer: const MyDrawer(),
       body: NestedScrollView(
         headerSliverBuilder: (context, innerBoxIsScrolled) => [
           MySilverAppBar(
-            title: MyTabBar(tabController: _tabController),
+            title: const Text('Available Stalls'),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
@@ -74,18 +57,55 @@ class _HomepageState extends State<StudentPage>
                   endIndent: 25,
                   color: Theme.of(context).colorScheme.secondary,
                 ),
-                MyCurrentLocation(),
-                MyDescriptionBox(),
+                const MyCurrentLocation(),
+                const MyDescriptionBox(),
               ],
             ),
           ),
         ],
-        body: Consumer<Restaurant>(
-          builder: (context, restaurant, child) => TabBarView(
-            controller: _tabController,
-            children: getFoodInThisCategory(restaurant.menu),
-          ),
-        ),
+        body: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : RefreshIndicator(
+                onRefresh: _loadStalls,
+                child: _stalls.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.store_mall_directory_rounded,
+                              size: 64,
+                              color: Theme.of(context).disabledColor,
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'No stalls available',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        itemCount: _stalls.length,
+                        padding: const EdgeInsets.all(16),
+                        itemBuilder: (context, index) {
+                          return AnimatedStallTile(
+                            stall: _stalls[index],
+                            onTap: () {
+                              // TODO: Navigate to stall detail page
+                              // Navigator.push(
+                              //   context,
+                              //   MaterialPageRoute(
+                              //     builder: (context) => StallDetailPage(
+                              //       stall: _stalls[index],
+                              //     ),
+                              //   ),
+                              // );
+                            },
+                          );
+                        },
+                      ),
+              ),
       ),
     );
   }

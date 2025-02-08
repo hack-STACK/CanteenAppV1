@@ -7,7 +7,6 @@ import 'package:kantin/firebase_options.dart';
 import 'package:provider/provider.dart';
 import 'package:kantin/Themes/theme_providers.dart';
 import 'package:kantin/Models/Restaurant.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:kantin/services/supabase_config.dart';
 

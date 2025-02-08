@@ -52,7 +52,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         },
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.only(bottom: 80), // Agar konten tidak ketutupan navbar
+          padding: const EdgeInsets.only(
+              bottom: 80), // Agar konten tidak ketutupan navbar
           child: SafeArea(
             child: Container(
               width: screenWidth * 0.9,
@@ -94,17 +95,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     },
                   ),
                   const SizedBox(height: 20),
-
                   if (widget.standId == null)
                     const Text(
                       'Stand ID is missing. Please select a valid stand.',
-                      style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                          color: Colors.red, fontWeight: FontWeight.bold),
                     )
                   else
                     FutureBuilder<List<Menu>>(
                       future: menuFuture,
                       builder: (context, snapshot) {
-                        if (snapshot.connectionState == ConnectionState.waiting) {
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
                           return const Center(
                             child: Padding(
                               padding: EdgeInsets.all(16.0),
@@ -119,13 +121,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                             'Error: ${snapshot.error}',
                             style: const TextStyle(color: Colors.red),
                           );
-                        } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                        } else if (!snapshot.hasData ||
+                            snapshot.data!.isEmpty) {
                           return const Text(
                             'No menus available.',
                             style: TextStyle(color: Colors.grey),
                           );
                         } else {
                           return TopMenuSection(
+                            stanid: widget.standId,
                             foodService: foodService,
                             title: 'Featured Menu',
                             itemCount: snapshot.data!.length,

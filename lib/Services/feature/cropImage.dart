@@ -9,10 +9,10 @@ class ImageCropperWidget extends StatefulWidget {
   final Function(File?) onImageCropped;
 
   const ImageCropperWidget({
-    Key? key,
+    super.key,
     required this.imageFile,
     required this.onImageCropped,
-  }) : super(key: key);
+  });
 
   @override
   _ImageCropperWidgetState createState() => _ImageCropperWidgetState();

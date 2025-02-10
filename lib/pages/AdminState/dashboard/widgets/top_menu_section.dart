@@ -58,7 +58,7 @@ class _TopMenuSectionState extends State<TopMenuSection> {
     try {
       _isLoading.value = true;
       // Use the stan_id to fetch menus
-      final menus = await widget.foodService.getMenuByStanId(widget.stanid);
+      final menus = await widget.foodService.getMenuByStanId(widget.stanid!);
 
       final sortedMenus = _sortMenus(menus);
       final limitedMenus = _limitMenus(sortedMenus);
@@ -438,7 +438,7 @@ class _MenuCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _MenuImage(
-              imageUrl: menu.photo,
+              imageUrl: menu.photo!,
               type: menu.type,
             ),
             const SizedBox(width: 12),

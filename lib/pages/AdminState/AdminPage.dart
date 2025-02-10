@@ -18,7 +18,8 @@ class _MainAdminState extends State<MainAdmin> {
       builder: (context, themeProvider, child) {
         return MaterialApp.router(
           debugShowCheckedModeBanner: false,
-          routerConfig: AppNavigationBar.configureRouter(widget.stanId), // Use widget.stanId
+          routerConfig: AppNavigationBar.configureRouter(
+              widget.stanId), // Use widget.stanId
           theme: themeProvider.themeData,
         );
       },

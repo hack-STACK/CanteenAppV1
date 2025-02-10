@@ -185,6 +185,7 @@ class _AdaptiveRegistrationFormState extends State<AdaptiveRegistrationForm> {
 
         // Create a new stall
         final newStan = Stan(
+          id: 0, // Provide a valid id here
           stanName: _canteenNameController.text.trim(),
           ownerName: _nameController.text.trim(),
           phone: _phoneController.text.trim(),
@@ -195,10 +196,6 @@ class _AdaptiveRegistrationFormState extends State<AdaptiveRegistrationForm> {
         );
 
         final createdStan = await stanService.createStan(newStan);
-
-        if (createdStan.id == null) {
-          throw Exception('Failed to create stall.');
-        }
 
         if (mounted) {
           // Show success message
@@ -214,7 +211,7 @@ class _AdaptiveRegistrationFormState extends State<AdaptiveRegistrationForm> {
           Navigator.pushAndRemoveUntil(
               context,
               MaterialPageRoute(
-                builder: (context) => MainAdmin(stanId: createdStan.id!),
+                builder: (context) => MainAdmin(stanId: createdStan.id),
               ),
               (Route) => false);
         }

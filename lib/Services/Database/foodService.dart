@@ -1,17 +1,16 @@
 import 'package:flutter/foundation.dart';
-import 'package:kantin/Models/Food.dart';
 import 'package:kantin/Models/addon_template.dart';
 import 'package:kantin/Models/menus.dart';
 import 'package:kantin/Models/menus_addon.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class FoodService {
-  final SupabaseClient _supabase = Supabase.instance.client;
+  final SupabaseClient _client = Supabase.instance.client;
 
   /// **🔵 Create: Insert or update a menu item**
   Future<Menu> createMenu(Menu menu) async {
     try {
-      final existingMenu = await _supabase
+      final existingMenu = await _client
           .from('menu')
           .select()
           .eq('food_name', menu.foodName)
@@ -19,7 +18,7 @@ class FoodService {
 
       if (existingMenu != null) {
         // Update existing menu
-        final response = await _supabase
+        final response = await _client
             .from('menu')
             .update(menu.toJson(excludeId: true))
             .eq('food_name', menu.foodName)
@@ -29,7 +28,7 @@ class FoodService {
         return Menu.fromJson(response ?? existingMenu);
       } else {
         // Insert new menu
-        final response = await _supabase
+        final response = await _client
             .from('menu')
             .insert(menu.toJson(excludeId: true))
             .select()
@@ -44,40 +43,49 @@ class FoodService {
 
   /// **🟢 Read: Get all menu items**
   Future<List<Menu>> getAllMenuItems() async {
-    final response = await _supabase.from('menu').select();
+    final response = await _client.from('menu').select();
     return response.map<Menu>((json) => Menu.fromJson(json)).toList();
   }
 
   /// **🟢 Read: Get menu item by ID**
   Future<Menu?> getMenuById(int id) async {
     final response =
-        await _supabase.from('menu').select().eq('id', id).maybeSingle();
+        await _client.from('menu').select().eq('id', id).maybeSingle();
     return response != null ? Menu.fromJson(response) : null;
   }
 
   /// **🟢 Read: Get menu items by stall ID**
-  Future<List<Menu>> getMenuByStanId(int? stanId) async {
-    if (stanId == null) return [];
-
+  Future<List<Menu>> getMenuByStanId(int stallId) async {
     try {
-      final response = await _supabase
-          .from('menu')
-          .select()
-          .eq('stall_id', stanId); // Changed from 'stan_id' to 'stall_id'
+      print('Fetching menus for stall ID: $stallId');
 
-      return (response as List<dynamic>)
-          .map((menu) => Menu.fromJson(menu))
-          .toList();
+      final response = await _client
+          .from(
+              'menu') // Changed from 'menus' to 'menu' to match database table name
+          .select()
+          .eq('stall_id', stallId)
+          .order('id');
+
+      print('Menu Response: $response');
+
+      if (response == null) {
+        return [];
+      }
+
+      return (response as List).map((menuData) {
+        print('Processing menu map: $menuData');
+        return Menu.fromMap(menuData);
+      }).toList();
     } catch (e) {
-      debugPrint('Error fetching menus for stan $stanId: $e');
-      return [];
+      print('Error fetching menus: $e');
+      throw 'Failed to load menus: ${e.toString()}';
     }
   }
 
   /// **🟡 Update: Update a menu item**
   Future<void> updateMenu(Menu menu) async {
     try {
-      await _supabase
+      await _client
           .from('menu')
           .update(menu.toJson(excludeId: true))
           .eq('id', menu.id!)
@@ -91,7 +99,7 @@ class FoodService {
   /// **🔴 Delete: Remove a menu item**
   Future<void> deleteMenu(int id) async {
     try {
-      await _supabase.from('menu').delete().eq('id', id);
+      await _client.from('menu').delete().eq('id', id);
     } catch (e) {
       throw Exception('Failed to delete menu: $e');
     }
@@ -105,7 +113,7 @@ class FoodService {
         throw Exception('Price must be greater than or equal to 0');
       }
 
-      final response = await _supabase
+      final response = await _client
           .from('food_addons')
           .insert(addon.toMap())
           .select()
@@ -125,7 +133,7 @@ class FoodService {
   /// **🟢 Read: Get all food add-ons for a specific menu**
   Future<List<FoodAddon>> getAddonsForMenu(int menuId) async {
     try {
-      final response = await _supabase
+      final response = await _client
           .from('food_addons')
           .select()
           .eq('menu_id', menuId) // Changed from 'id_menu' to 'menu_id'
@@ -145,7 +153,7 @@ class FoodService {
         throw Exception('Addon ID is required for update');
       }
 
-      await _supabase
+      await _client
           .from('food_addons') // Changed from 'addons' to 'food_addons'
           .update(addon.toMap())
           .eq('id', addon.id!);
@@ -158,7 +166,7 @@ class FoodService {
   /// **🔴 Delete: Remove a food add-on**
   Future<void> deleteFoodAddon(int id) async {
     try {
-      await _supabase
+      await _client
           .from('food_addons') // Changed from 'addons' to 'food_addons'
           .delete()
           .eq('id', id);
@@ -171,7 +179,7 @@ class FoodService {
   // Optimize fetching menu with addons in a single query
   Future<Menu> getMenuWithAddons(int menuId) async {
     try {
-      final response = await _supabase.from('menu').select('''
+      final response = await _client.from('menu').select('''
             *,
             food_addons (
               *
@@ -195,7 +203,7 @@ class FoodService {
     try {
       if (addons.isEmpty) return;
 
-      await _supabase
+      await _client
           .from('food_addons')
           .insert(addons.map((addon) => addon.toMap()).toList());
     } catch (e) {
@@ -206,7 +214,7 @@ class FoodService {
   /// Get all available add-on templates
   Future<List<AddonTemplate>> getAddonTemplates() async {
     try {
-      final response = await _supabase
+      final response = await _client
           .from('addon_templates')
           .select()
           .order('use_count', ascending: false);

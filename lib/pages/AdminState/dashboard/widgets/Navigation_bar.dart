@@ -14,7 +14,7 @@ class CustomNavigationBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-      print('Primary Color: ${Theme.of(context).colorScheme.primary}');
+    print('Primary Color: ${Theme.of(context).colorScheme.primary}');
     return Stack(
       clipBehavior: Clip.none,
       alignment: Alignment.bottomCenter,
@@ -80,7 +80,6 @@ class CustomNavigationBar extends StatelessWidget {
       ],
     ).animate().fadeIn(duration: 300.ms).slideY(begin: 0.1);
   }
-  
 
   Widget _buildNavigationItem({
     required BuildContext context,

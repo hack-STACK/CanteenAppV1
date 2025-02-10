@@ -3,21 +3,21 @@ import 'package:kantin/Models/menus_addon.dart';
 class Menu {
   static const validTypes = {'food', 'drink'};
 
-  final int? id;
+  final int? id; // Make id nullable
   final String foodName;
   final double price;
   final String type; // "food" or "drink"
-  final String photo;
+  final String? photo;
   final String description;
   final int stallId;
   final List<FoodAddon> addons; // New field for add-ons
 
   Menu({
-    required this.id,
+    this.id, // Make id optional
     required this.foodName,
     required this.price,
-    required String type, // Add validation here
-    required this.photo,
+    required String type,
+    this.photo,
     required this.description,
     required this.stallId,
     this.addons = const [], // Default to empty list
@@ -52,7 +52,7 @@ class Menu {
       id: json['id'],
       foodName: json['food_name'],
       price: json['price'].toDouble(),
-      type: json['type'],
+      type: json['type'] as String,
       photo: json['photo'],
       description: json['description'],
       stallId: json['stall_id'],
@@ -78,7 +78,7 @@ class Menu {
     };
 
     if (!excludeId && id != null) {
-      data['id'] = id!;
+      data['id'] = id;
     }
 
     return data;
@@ -137,4 +137,34 @@ class Menu {
 
   @override
   int get hashCode => id.hashCode ^ foodName.hashCode;
+
+  factory Menu.fromMap(Map<String, dynamic> map) {
+    print('Processing menu map: $map'); // Debug print
+    return Menu(
+      id: map['id'] as int?, // Handle nullable id
+      foodName: map['food_name'] as String,
+      price: (map['price'] as num).toDouble(),
+      type: map['type'] as String,
+      photo: map['photo'] as String?,
+      description: map['description'] as String? ?? '',
+      stallId: map['stall_id'] as int,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'food_name': foodName,
+      'price': price,
+      'type': type,
+      'photo': photo,
+      'description': description,
+      'stall_id': stallId,
+    };
+  }
+
+  @override
+  String toString() {
+    return 'Menu{id: $id, foodName: $foodName, price: $price, type: $type, photo: $photo, description: $description, stallId: $stallId}';
+  }
 }

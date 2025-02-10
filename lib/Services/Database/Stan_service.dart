@@ -2,7 +2,7 @@ import 'package:kantin/Models/Stan_model.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class StanService {
-  final _supabaseClient = Supabase.instance.client;
+  final SupabaseClient _client = Supabase.instance.client;
 
   Future<Stan> createStan(Stan newStan) async {
     try {
@@ -23,12 +23,12 @@ class StanService {
       print('Stan Name: ${newStan.stanName}');
       print('Owner Name: ${newStan.ownerName}');
       print('Phone: ${newStan.phone}');
-      print('User  ID: ${newStan.userId}');
+      print('User ID: ${newStan.userId}');
       print('Description: ${newStan.description}');
       print('Slot: ${newStan.slot}');
 
       // Insert the new stall into the database
-      final response = await _supabaseClient
+      final response = await _client
           .from('stalls')
           .insert({
             'nama_stalls': newStan.stanName,
@@ -60,10 +60,8 @@ class StanService {
 
   Future<List<Stan>> getAllStans() async {
     try {
-      final response = await _supabaseClient
-          .from('stalls')
-          .select()
-          .order('id', ascending: true);
+      final response =
+          await _client.from('stalls').select().order('id', ascending: true);
 
       return (response as List)
           .map((stanMap) => Stan.fromMap(stanMap))
@@ -76,7 +74,7 @@ class StanService {
 
   Future<Stan?> getStanById(String id) async {
     try {
-      final response = await _supabaseClient
+      final response = await _client
           .from('stalls')
           .select()
           .eq('firebase_uid', id) // Use a column that stores Firebase UIDs
@@ -99,7 +97,7 @@ class StanService {
         throw Exception('Stan name and owner name are required');
       }
 
-      final response = await _supabaseClient
+      final response = await _client
           .from('stalls')
           .update({
             'nama_stalls': updatedStan.stanName,
@@ -109,7 +107,7 @@ class StanService {
             'deskripsi': updatedStan.description,
             'slot': updatedStan.slot,
           })
-          .eq('id', updatedStan.id!)
+          .eq('id', updatedStan.id)
           .select()
           .single();
 
@@ -127,32 +125,26 @@ class StanService {
     }
   }
 
-Future<Stan?> deleteStallsByUserId(int userId) async {
-  try {
-    final response = await _supabaseClient
-        .from('stalls')
-        .delete()
-        .eq('id_user', userId)
-        .maybeSingle();
-    // maybeSingle() returns null if no record was deleted
-    if (response == null) return null;
-    return Stan.fromMap(response);
-  } catch (e) {
-    throw Exception('Failed to delete stall for user: $e');
+  Future<Stan?> deleteStallsByUserId(int userId) async {
+    try {
+      final response = await _client
+          .from('stalls')
+          .delete()
+          .eq('id_user', userId)
+          .maybeSingle();
+      // maybeSingle() returns null if no record was deleted
+      if (response == null) return null;
+      return Stan.fromMap(response);
+    } catch (e) {
+      throw Exception('Failed to delete stall for user: $e');
+    }
   }
-}
-
-
-
-
 
   // New method to check if a stall name exists
   Future<bool> checkStanNameExists(String stanName) async {
     try {
-      final response = await _supabaseClient
-          .from('stalls')
-          .select('id')
-          .eq('nama_stalls', stanName);
+      final response =
+          await _client.from('stalls').select('id').eq('nama_stalls', stanName);
 
       return (response as List).isNotEmpty;
     } catch (e) {
@@ -161,21 +153,33 @@ Future<Stan?> deleteStallsByUserId(int userId) async {
     }
   }
 
-  // New method to get stalls by user ID
-  Future<List<Stan>> getStansByUserId(int userId) async {
+  Future<Stan> getStallByUserId(int userId) async {
     try {
-      final response = await _supabaseClient
-          .from('stalls')
-          .select()
-          .eq('id_user', userId)
-          .order('id', ascending: true);
+      print('Fetching stall with ID: $userId');
 
-      return (response as List)
-          .map((stanMap) => Stan.fromMap(stanMap))
-          .toList();
+      // First try to get stall directly by ID
+      final stallResponse =
+          await _client.from('stalls').select().eq('id', userId).single();
+
+      print('Direct stall response: $stallResponse');
+      return Stan.fromMap(stallResponse);
     } catch (e) {
-      print('Error getting stans by user ID: $e');
-      throw Exception('Failed to fetch user stalls: $e');
+      print('Failed to get stall by ID, trying user_id: $e');
+
+      // If that fails, try by id_user
+      try {
+        final userStallResponse = await _client
+            .from('stalls')
+            .select()
+            .eq('id_user', userId)
+            .single();
+
+        print('User stall response: $userStallResponse');
+        return Stan.fromMap(userStallResponse);
+      } catch (e2) {
+        print('Both queries failed. Final error: $e2');
+        throw 'Failed to load stall: No stall found for ID $userId';
+      }
     }
   }
 }

@@ -30,63 +30,43 @@ class _LoginPageState extends State<LoginPage> {
   bool isLoading = false;
 
   Future<void> login() async {
-    final authService = AuthService();
-    final stanService = StanService(); // Create an instance of StanService
-    final userService = UserService(); // Create an instance of UserService
+    if (!mounted) return;
+
     setState(() {
       isLoading = true;
       errorMessage = '';
     });
 
     try {
-      // Sign in with Firebase
-      UserCredential userCredential = await authService.signInWithEmailPassword(
+      final authService = AuthService();
+      final userCredential = await authService.signInWithEmailPassword(
         emailController.text,
         passwordController.text,
       );
 
-      // Fetch user data from Supabase using Firebase UID
-      final user = await _supabaseClient
+      // Get user data with all needed fields
+      final userData = await _supabaseClient
           .from('users')
-          .select()
+          .select('id, role, "has_completed_Profile", "Email"')
           .eq('firebase_uid', userCredential.user!.uid)
           .single();
 
-      String role = user['role'] ?? 'student'; // Default to 'student'
-      bool hasCompletedProfile = user['has_completed_form'] ?? false;
-      int userId = user['id']; // Fetch user ID from Supabase
+      print('Full user data: $userData'); // Debug log
 
-      // Navigate based on role and profile completion status
-      if (hasCompletedProfile) {
-        if (role == 'student') {
-          // Fetch student data
-          final studentResponse = await _supabaseClient
-              .from('students')
-              .select()
-              .eq('id_user', userId)
-              .single();
+      if (userData == null) {
+        throw 'User data not found';
+      }
 
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => StudentPage()),
-          );
-        } else if (role == 'admin') {
-          // Fetch stall data
-          final stallResponse = await _supabaseClient
-              .from('stalls')
-              .select()
-              .eq('id_user', userId)
-              .single();
+      final int userId = userData['id'];
+      final String role = userData['role'] ?? 'student';
+      final bool hasCompletedProfile =
+          userData['has_completed_Profile'] ?? false;
 
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => MainAdmin(stanId: stallResponse['id']),
-            ),
-          );
-        }
-      } else {
-        // Redirect to PersonalInfoScreen if the profile is not completed
+      print(
+          'Parsed user data - ID: $userId, Role: $role, Profile completed: $hasCompletedProfile');
+
+      if (!hasCompletedProfile) {
+        if (!mounted) return;
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
@@ -96,15 +76,55 @@ class _LoginPageState extends State<LoginPage> {
             ),
           ),
         );
+        return;
+      }
+
+      // Profile is completed, proceed with role-based navigation
+      if (role == 'student') {
+        print('Navigating as student');
+        if (!mounted) return;
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const StudentPage()),
+        );
+      } else if (role == 'admin_stalls') {
+        // Changed from 'admin' to 'admin_stalls'
+        print('Navigating as admin');
+        try {
+          final stallData = await _supabaseClient
+              .from('stalls')
+              .select()
+              .eq('id_user', userId)
+              .single();
+
+          print('Stall data: $stallData'); // Debug log
+
+          if (!mounted) return;
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => MainAdmin(stanId: stallData['id']),
+            ),
+          );
+        } catch (e) {
+          print('Error fetching stall data: $e');
+          throw 'Stall data not found';
+        }
+      } else {
+        throw 'Invalid role: $role';
       }
     } catch (e) {
+      print('Login error: $e'); // Debug log
+      if (!mounted) return;
       setState(() {
         errorMessage = 'Login failed: ${e.toString()}';
       });
     } finally {
-      setState(() {
-        isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
+      }
     }
   }
 

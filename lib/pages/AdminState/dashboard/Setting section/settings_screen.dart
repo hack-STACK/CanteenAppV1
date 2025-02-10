@@ -5,30 +5,39 @@ import 'package:kantin/pages/AdminState/dashboard/Setting%20section/Widget/setti
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-class SettingsScreen extends StatelessWidget {
-  final int standId; // Remove nullable type
+class SettingsScreen extends StatefulWidget {
+  final int standId;
   const SettingsScreen({super.key, required this.standId});
 
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  late Future<Map<String, dynamic>> _userDataFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _userDataFuture = _fetchUserData();
+  }
+
   Future<Map<String, dynamic>> _fetchUserData() async {
-    debugPrint('SettingsScreen - Fetching user data with standId: $standId');
+    debugPrint(
+        'SettingsScreen - Fetching user data with standId: ${widget.standId}');
     final supabase = Supabase.instance.client;
     final user = FirebaseAuth.instance.currentUser;
-
     try {
       final List<dynamic> stallResponse = await supabase
           .from('stalls')
-          .select('*') // Select all fields
-          .eq('id', standId)
+          .select('*')
+          .eq('id', widget.standId)
           .limit(1);
-
-      debugPrint('Stall Response: $stallResponse'); // Debug print
-
+      debugPrint('Stall Response: $stallResponse');
       if (stallResponse.isEmpty) {
         throw Exception('No stall found');
       }
-
       final stall = stallResponse.first;
-
       return {
         'stallId': stall['id']?.toString() ?? '-',
         'stallName': stall['nama_stalls'] ?? '-',
@@ -37,20 +46,27 @@ class SettingsScreen extends StatelessWidget {
         'phone': stall['no_telp'] ?? '-',
         'description': stall['deskripsi'] ?? '-',
         'slot': stall['slot']?.toString() ?? '-',
-        'image_url': stall['image_url'], // Add this line
+        'image_url': stall['image_url'],
       };
     } catch (e) {
       debugPrint('Error fetching data: $e');
       return {
-        'stallId': standId.toString() ?? '-',
+        'stallId': widget.standId.toString(),
         'stallName': 'Unknown Stall',
         'email': user?.email ?? 'No email',
         'ownerName': 'Unknown',
         'phone': '-',
         'description': '-',
         'slot': '-',
+        'image_url': null,
       };
     }
+  }
+
+  Future<void> _refreshData() async {
+    setState(() {
+      _userDataFuture = _fetchUserData();
+    });
   }
 
   @override
@@ -63,44 +79,43 @@ class SettingsScreen extends StatelessWidget {
       child: Scaffold(
         backgroundColor: const Color(0xFFEFEFEF),
         body: SafeArea(
-          child: FutureBuilder<Map<String, dynamic>>(
-            future: _fetchUserData(),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-
-              if (snapshot.hasError) {
-                return Center(child: Text('Error: ${snapshot.error}'));
-              }
-
-              final userData = snapshot.data!;
-
-              return SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(30, 69, 30, 110),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 480),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Center(
-                        child: ProfileHeader(
-                          userName: userData['stallName'],
-                          email: userData['email'],
-                          imageUrl: userData['image_url'], // Add this line
+          child: RefreshIndicator(
+            onRefresh: _refreshData,
+            child: FutureBuilder<Map<String, dynamic>>(
+              future: _userDataFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return Center(child: Text('Error: ${snapshot.error}'));
+                }
+                final userData = snapshot.data!;
+                return SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(30, 69, 30, 110),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 480),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Center(
+                          child: ProfileHeader(
+                            userName: userData['stallName'],
+                            email: userData['email'],
+                            imageUrl: userData['image_url'],
+                          ),
                         ),
-                      ),
-
-                      const SizedBox(height: 27),
-                      SettingsSection(
-                          standId: standId), // Pass non-null standId
-                      const SizedBox(height: 48),
-                      const ReportSection(),
-                    ],
+                        const SizedBox(height: 27),
+                        SettingsSection(standId: widget.standId),
+                        const SizedBox(height: 48),
+                        const ReportSection(),
+                      ],
+                    ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
         ),
       ),

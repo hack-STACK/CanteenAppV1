@@ -4,6 +4,7 @@ import 'package:kantin/Services/Auth/auth_Service.dart';
 import 'package:kantin/Services/Auth/login_or_register.dart';
 import 'package:kantin/Services/Database/Stan_service.dart';
 import 'package:kantin/Services/Database/UserService.dart';
+import 'package:kantin/pages/AdminState/dashboard/Setting%20section/Page/Yourstore/my_Store.dart';
 import 'package:kantin/pages/AdminState/dashboard/Setting%20section/Page/profile_screen/profile_screen.dart';
 import 'package:kantin/pages/AdminState/dashboard/Setting%20section/Widget/settings_tile.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
@@ -269,6 +270,18 @@ class _SettingsSectionState extends State<SettingsSection> {
         title: 'Discount',
         onTap: () {
           // Handle discount action
+        },
+      ),
+      const SizedBox(height: 20),
+      SettingsTile(
+        icon: Icons.store_mall_directory_outlined,
+        title: 'Your store',
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => MyStorePage(userId: widget.standId!),
+            ),
+          );
         },
       ),
       const SizedBox(height: 20),

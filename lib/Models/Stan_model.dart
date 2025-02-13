@@ -7,6 +7,7 @@ class Stan {
   final String description;
   final String? imageUrl;
   final int userId;
+  final String? Banner_img;
 
   Stan({
     required this.id,
@@ -17,6 +18,7 @@ class Stan {
     required this.description,
     required this.userId,
     this.imageUrl,
+    this.Banner_img,
   });
 
   factory Stan.fromMap(Map<String, dynamic> map) {
@@ -29,6 +31,7 @@ class Stan {
       description: map['deskripsi'],
       imageUrl: map['image_url'],
       userId: map['id_user'],
+      Banner_img: map['Banner_img'],
     );
   }
 
@@ -42,11 +45,12 @@ class Stan {
       'deskripsi': description,
       'id_user': userId,
       'image_url': imageUrl,
+      'Banner_img': Banner_img,
     };
   }
 
   @override
   String toString() {
-    return 'Stan{id: $id, stanName: $stanName, ownerName: $ownerName, phone: $phone, slot: $slot, description: $description, userId: $userId, imageUrl: $imageUrl}';
+    return 'Stan{id: $id, stanName: $stanName, ownerName: $ownerName, phone: $phone, slot: $slot, description: $description, userId: $userId, imageUrl: $imageUrl, Banner_img: $Banner_img}';
   }
 }

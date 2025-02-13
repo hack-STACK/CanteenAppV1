@@ -192,7 +192,7 @@ class _AdaptiveRegistrationFormState extends State<AdaptiveRegistrationForm> {
           userId: userId,
           description: _descriptionController.text.trim(),
           slot:
-              'Slot${(await _supabase.from('stalls').select('id')).length + 1}', // Generate a unique slot
+              'Slot ${(await _supabase.from('stalls').select('id')).length + 1}', // Generate a unique slot
         );
 
         final createdStan = await stanService.createStan(newStan);

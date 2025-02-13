@@ -1,5 +1,7 @@
 // lib/widgets/admin/edit_store_form.dart
 import 'package:flutter/material.dart';
+import 'package:kantin/Models/Stall.dart';
+import 'package:kantin/Models/Stan_model.dart';
 import 'package:kantin/models/store.dart';
 
 class EditStoreForm extends StatefulWidget {
@@ -129,13 +131,12 @@ class _EditStoreFormState extends State<EditStoreForm> {
             Switch(
               value: widget.store.isOpen,
               onChanged: (value) {
-                final updatedStore = Store(
-                  name: widget.store.name,
+                final updatedStore = Stan(
+                  stanName: widget.store.name,
                   description: widget.store.description,
-                  location: widget.store.location,
-                  isOpen: value,
-                  id: '',
                   imageUrl: '',
+                  Banner_img: '',
+                  
                 );
                 widget.onUpdate(updatedStore);
               },

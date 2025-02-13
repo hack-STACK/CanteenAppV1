@@ -11,6 +11,8 @@ class Menu {
   final String description;
   final int stallId;
   final List<FoodAddon> addons; // New field for add-ons
+  bool isAvailable;
+  String? category;
 
   Menu({
     this.id, // Make id optional
@@ -21,6 +23,8 @@ class Menu {
     required this.description,
     required this.stallId,
     this.addons = const [], // Default to empty list
+    this.isAvailable = true,
+    this.category,
   }) : type = type.toLowerCase() {
     // Normalize type to lowercase
     if (!validTypes.contains(this.type)) {
@@ -54,9 +58,11 @@ class Menu {
       price: json['price'].toDouble(),
       type: json['type'] as String,
       photo: json['photo'],
-      description: json['description'],
+      description: json['description'] ?? '',
       stallId: json['stall_id'],
       addons: parsedAddons,
+      isAvailable: json['is_available'] ?? true, // Updated field name
+      category: json['category'],
     );
   }
 
@@ -74,6 +80,8 @@ class Menu {
       'photo': photo,
       'description': description,
       'stall_id': stallId,
+      'is_available': isAvailable, // Updated field name
+      'category': category,
       // Remove 'addons' from the main JSON data
     };
 
@@ -101,6 +109,8 @@ class Menu {
     String? description,
     int? stallId,
     List<FoodAddon>? addons,
+    bool? isAvailable,
+    String? category,
   }) {
     return Menu(
       id: id ?? this.id,
@@ -111,6 +121,8 @@ class Menu {
       description: description ?? this.description,
       stallId: stallId ?? this.stallId,
       addons: addons ?? this.addons,
+      isAvailable: isAvailable ?? this.isAvailable,
+      category: category ?? this.category,
     );
   }
 
@@ -139,7 +151,7 @@ class Menu {
   int get hashCode => id.hashCode ^ foodName.hashCode;
 
   factory Menu.fromMap(Map<String, dynamic> map) {
-    print('Processing menu map: $map'); // Debug print
+    print('Processing menu map: $map');
     return Menu(
       id: map['id'] as int?, // Handle nullable id
       foodName: map['food_name'] as String,
@@ -148,6 +160,8 @@ class Menu {
       photo: map['photo'] as String?,
       description: map['description'] as String? ?? '',
       stallId: map['stall_id'] as int,
+      isAvailable: map['is_available'] as bool? ?? true,
+      category: map['category'] as String?,
     );
   }
 
@@ -160,6 +174,8 @@ class Menu {
       'photo': photo,
       'description': description,
       'stall_id': stallId,
+      'is_available': isAvailable,
+      'category': category,
     };
   }
 

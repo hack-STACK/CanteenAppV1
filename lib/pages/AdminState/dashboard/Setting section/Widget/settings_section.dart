@@ -36,6 +36,22 @@ class _SettingsSectionState extends State<SettingsSection> {
     }
   }
 
+  void _navigateToStore(BuildContext context) {
+    debugPrint('Navigating to store with userId: ${widget.standId}');
+    if (widget.standId != null) {
+      Navigator.of(context, rootNavigator: true).push(
+        MaterialPageRoute(
+          fullscreenDialog: true,
+          builder: (context) => MyStorePage(userId: widget.standId!),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Store ID not available')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -276,13 +292,7 @@ class _SettingsSectionState extends State<SettingsSection> {
       SettingsTile(
         icon: Icons.store_mall_directory_outlined,
         title: 'Your store',
-        onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (context) => MyStorePage(userId: widget.standId!),
-            ),
-          );
-        },
+        onTap: () => _navigateToStore(context), // Updated navigation
       ),
       const SizedBox(height: 20),
       SettingsTile(

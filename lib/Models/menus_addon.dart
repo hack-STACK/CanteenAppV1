@@ -41,4 +41,23 @@ class FoodAddon {
   factory FoodAddon.fromJson(Map<String, dynamic> json) =>
       FoodAddon.fromMap(json);
   Map<String, dynamic> toJson() => toMap();
+
+  // Add copyWith method
+  FoodAddon copyWith({
+    int? id,
+    String? addonName,
+    double? price,
+    String? description,
+    int? menuId,
+    bool? isRequired,
+  }) {
+    return FoodAddon(
+      id: id ?? this.id,
+      addonName: addonName ?? this.addonName,
+      price: price ?? this.price,
+      description: description ?? this.description,
+      menuId: menuId ?? this.menuId,
+      isRequired: isRequired ?? this.isRequired,
+    );
+  }
 }

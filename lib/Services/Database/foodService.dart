@@ -96,6 +96,69 @@ class FoodService {
     }
   }
 
+  Future<void> updateMenuAvailability(int menuId, bool isAvailable) async {
+    try {
+      await _client
+          .from('menu')
+          .update({'is_available': isAvailable})
+          .match({'id': menuId});
+    } catch (e) {
+      throw Exception('Failed to update menu availability: $e');
+    }
+  }
+
+  Future<void> toggleMenuAvailability(int menuId, bool isAvailable) async {
+    try {
+      await _client
+          .from('menu')
+          .update({'is_available': isAvailable})
+          .eq('id', menuId);
+    } catch (e) {
+      throw Exception('Failed to toggle menu availability: $e');
+    }
+  }
+
+  Future<void> updateMenuPrice(int menuId, double newPrice) async {
+    try {
+      if (newPrice < 0) throw Exception('Price cannot be negative');
+      
+      await _client
+          .from('menu')
+          .update({'price': newPrice})
+          .eq('id', menuId);
+    } catch (e) {
+      throw Exception('Failed to update menu price: $e');
+    }
+  }
+
+  Future<void> duplicateMenu(int menuId) async {
+    try {
+      // Get original menu
+      final originalMenu = await getMenuById(menuId);
+      if (originalMenu == null) throw Exception('Menu not found');
+
+      // Create copy with new name
+      final copyMenu = originalMenu.copyWith(
+        id: null,
+        foodName: '${originalMenu.foodName} (Copy)',
+      );
+
+      // Insert copy
+      final newMenu = await createMenu(copyMenu);
+
+      // Copy addons if any
+      final addons = await getAddonsForMenu(menuId);
+      for (var addon in addons) {
+        await createFoodAddon(addon.copyWith(
+          id: null,
+          menuId: newMenu.id,
+        ));
+      }
+    } catch (e) {
+      throw Exception('Failed to duplicate menu: $e');
+    }
+  }
+
   /// **🔴 Delete: Remove a menu item**
   Future<void> deleteMenu(int id) async {
     try {
@@ -121,11 +184,6 @@ class FoodService {
 
       return FoodAddon.fromMap(response);
     } catch (e) {
-      if (e.toString().contains('unique_addon_per_menu')) {
-        throw Exception(
-            'An add-on with this name already exists for this menu');
-      }
-      print('Error creating addon: $e');
       throw Exception('Failed to create addon: $e');
     }
   }

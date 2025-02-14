@@ -49,6 +49,30 @@ class Stan {
     };
   }
 
+  Stan copyWith({
+    int? id,
+    String? stanName,
+    String? ownerName,
+    String? phone,
+    String? slot,
+    String? description,
+    String? imageUrl,
+    int? userId,
+    String? Banner_img,
+  }) {
+    return Stan(
+      id: id ?? this.id,
+      stanName: stanName ?? this.stanName,
+      ownerName: ownerName ?? this.ownerName,
+      phone: phone ?? this.phone,
+      slot: slot ?? this.slot,
+      description: description ?? this.description,
+      imageUrl: imageUrl ?? this.imageUrl,
+      userId: userId ?? this.userId,
+      Banner_img: Banner_img ?? this.Banner_img,
+    );
+  }
+
   @override
   String toString() {
     return 'Stan{id: $id, stanName: $stanName, ownerName: $ownerName, phone: $phone, slot: $slot, description: $description, userId: $userId, imageUrl: $imageUrl, Banner_img: $Banner_img}';

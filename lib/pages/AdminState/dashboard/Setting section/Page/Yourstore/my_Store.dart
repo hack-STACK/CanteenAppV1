@@ -7,6 +7,7 @@ import 'package:kantin/Services/Database/Stan_service.dart';
 import 'package:kantin/Services/Database/foodService.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
+import 'package:kantin/pages/AdminState/dashboard/Setting%20section/Page/profile_screen/edit_profile_screen.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -37,8 +38,7 @@ class _MyStorePageState extends State<MyStorePage> with TickerProviderStateMixin
   late TabController _menuTabController;
   final ScrollController _scrollController = ScrollController();
   bool _isCollapsed = false;
-  String _selectedCategory = 'All';
-  final List<String> _categories = ['All', 'Food', 'Drinks', 'Snacks'];
+  final List<String> _categories = ['All', 'food', 'drink', 'Snacks'];
 
   // Add theme colors
   final Color primaryColor = const Color(0xFFFF3D00);
@@ -48,6 +48,35 @@ class _MyStorePageState extends State<MyStorePage> with TickerProviderStateMixin
   final Color textColor = const Color(0xFF263238);
 
   final Map<int, List<FoodAddon>> _menuAddons = {};
+
+  // Add these variables
+  Map<String, dynamic>? userData;
+  int? stallId;
+
+  final GlobalKey<RefreshIndicatorState> _refreshIndicatorKey = GlobalKey<RefreshIndicatorState>();
+
+  Future<void> _handleRefresh() async {
+    try {
+      await _loadStallAndMenus();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Page refreshed'),
+            duration: Duration(seconds: 1),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error refreshing: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
 
   @override
   void initState() {
@@ -63,6 +92,79 @@ class _MyStorePageState extends State<MyStorePage> with TickerProviderStateMixin
     });
   }
 
+  Future<void> _navigateToEdit(BuildContext context) async {
+    if (_stall == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Store data not loaded'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Ensure userData is not null by creating a new map if needed
+    final Map<String, dynamic> editData = userData ?? {
+      'id': _stall!.id.toString(),
+      'name': _stall!.ownerName,
+      'stallName': _stall!.stanName,
+      'phone': _stall!.phone ?? '',
+      'description': _stall!.description ?? '',
+      'slot': _stall!.slot ?? '',
+      'imageUrl': _stall!.imageUrl ?? '',
+      'bannerUrl': _stall!.Banner_img ?? '',
+      'ownerName': _stall!.ownerName ?? '',
+      'email': '', // Add default value if needed
+      'address': _stall!.slot ?? '', // Using slot as address
+      'role': 'owner', // Add default role
+      'status': 'active', // Add default status
+    };
+
+    try {
+      final result = await Navigator.of(context, rootNavigator: true).push(
+        MaterialPageRoute(
+          fullscreenDialog: true,
+          builder: (context) => EditProfileScreen(
+            initialData: editData,
+            stallId: _stall!.id.toString(),
+          ),
+        ),
+      );
+
+      if (result != null && result is Map<String, dynamic>) {
+        setState(() {
+          userData = result;
+          // Update _stall object with new data
+          _stall = _stall!.copyWith(
+            ownerName: result['name'] as String? ?? _stall!.ownerName,
+            stanName: result['stallName'] as String? ?? _stall!.stanName,
+            phone: result['phone'] as String? ?? _stall!.phone,
+            description: result['description'] as String? ?? _stall!.description,
+            slot: result['slot'] as String? ?? _stall!.slot,
+            imageUrl: result['imageUrl'] as String? ?? _stall!.imageUrl,
+            Banner_img: result['bannerUrl'] as String? ?? _stall!.Banner_img,
+          );
+        });
+
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Profile updated successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error navigating to edit screen: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error opening edit screen: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   Future<void> _loadStallAndMenus() async {
     try {
       setState(() => _isLoading = true);
@@ -70,6 +172,23 @@ class _MyStorePageState extends State<MyStorePage> with TickerProviderStateMixin
       // Load stall data
       final stall = await _stallService.getStallByUserId(widget.userId);
       
+      // Create userData map with required fields
+      final Map<String, dynamic> userDataMap = {
+        'id': stall.id.toString(),
+        'name': stall.ownerName,
+        'stallName': stall.stanName,
+        'phone': stall.phone ?? '',
+        'description': stall.description ?? '',
+        'slot': stall.slot ?? '',
+        'imageUrl': stall.imageUrl ?? '',
+        'bannerUrl': stall.Banner_img ?? '',
+        'ownerName': stall.ownerName ?? '',
+        'email': '', // Add default value if needed
+        'address': stall.slot ?? '', // Using slot as address
+        'role': 'owner', // Add default role
+        'status': 'active', // Add default status
+      };
+
       // Load menus
       final menus = await _foodService.getMenuByStanId(stall.id);
       
@@ -83,6 +202,7 @@ class _MyStorePageState extends State<MyStorePage> with TickerProviderStateMixin
       if (mounted) {
         setState(() {
           _stall = stall;
+          userData = userDataMap; // Set the userData
           _menus = menus;
           _foodMenus = menus.where((menu) => menu.type == 'food').toList();
           _drinkMenus = menus.where((menu) => menu.type == 'drink').toList();
@@ -124,28 +244,26 @@ class _MyStorePageState extends State<MyStorePage> with TickerProviderStateMixin
     }
 
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-      ),
+      // Remove the AppBar here
       extendBodyBehindAppBar: true,
-      body: CustomScrollView(
-        controller: _scrollController,
-        slivers: [
-          _buildHeader(),
-          _buildQuickActions(),
-          _buildStats(),
-          _buildMenuSection(),
-          SliverToBoxAdapter(
-            child: const SizedBox(
-              height: 80,
+      body: RefreshIndicator(
+        key: _refreshIndicatorKey,
+        onRefresh: _handleRefresh,
+        color: accentColor,
+        backgroundColor: Colors.white,
+        child: CustomScrollView(
+          controller: _scrollController,
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            _buildHeader(),
+            _buildQuickActions(),
+            _buildStats(),
+            _buildMenuSection(),
+            SliverToBoxAdapter(
+              child: const SizedBox(height: 80),
             ),
-          ),
-        ]
+          ]
+        ),
       ),
     );
   }
@@ -156,6 +274,10 @@ class _MyStorePageState extends State<MyStorePage> with TickerProviderStateMixin
       pinned: true,
       stretch: true,
       backgroundColor: Colors.white,
+      leading: IconButton( // Add the back button here with proper styling
+        icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
+        onPressed: () => Navigator.of(context).pop(),
+      ),
       flexibleSpace: FlexibleSpaceBar(
         background: Stack(
           fit: StackFit.expand,
@@ -360,7 +482,7 @@ class _MyStorePageState extends State<MyStorePage> with TickerProviderStateMixin
                     icon: Icons.edit_note,
                     label: 'Edit Store',
                     color: secondaryColor,
-                    onTap: () {/* TODO */},
+                    onTap: () => _navigateToEdit(context),
                   ),
                   _buildActionButton(
                     icon: Icons.insights,
@@ -491,9 +613,11 @@ class _MyStorePageState extends State<MyStorePage> with TickerProviderStateMixin
             labelColor: primaryColor,
             unselectedLabelColor: Colors.grey,
             indicatorColor: primaryColor,
-            tabs: _categories
-                .map((category) => Tab(text: category))
-                .toList(),
+            tabs: _categories.map((category) => Tab(
+              text: category == 'food' ? 'Food' : 
+                   category == 'drink' ? 'Drink' : 
+                   category
+            )).toList(),
           ),
           SizedBox(
             height: 400, // Adjust based on your needs
@@ -503,7 +627,7 @@ class _MyStorePageState extends State<MyStorePage> with TickerProviderStateMixin
                 final menuItems = category == 'All'
                     ? _menus
                     : _menus.where((menu) => 
-                        menu.type.toLowerCase() == category.toLowerCase())
+                        menu.type == category) // Remove toLowerCase()
                         .toList();
                 return _buildMenuGrid(menuItems);
               }).toList(),

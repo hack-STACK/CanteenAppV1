@@ -12,10 +12,10 @@ class EditProfileScreen extends StatefulWidget {
   final String stallId;
 
   const EditProfileScreen({
-    super.key,
+    Key? key,
     required this.initialData,
     required this.stallId,
-  });
+  }) : super(key: key);
 
   @override
   State<EditProfileScreen> createState() => _EditProfileScreenState();
@@ -27,9 +27,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> with SingleTicker
   late TextEditingController _ownerNameController;
   late TextEditingController _phoneController;
   late TextEditingController _descriptionController;
+  
+  // Remove duplicate declarations and consolidate image-related variables
   File? _imageFile;
   File? _bannerImageFile;
+  String? _currentProfileImage;
+  String? _currentBannerImage;
+  bool _hasExistingProfile = false;
+  bool _hasExistingBanner = false;
   bool _isLoading = false;
+
   late AnimationController _animationController;
   late Animation<double> _fadeInAnimation;
 
@@ -61,6 +68,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> with SingleTicker
     );
 
     _animationController.forward();
+
+    // Initialize existing images with proper URLs
+    _currentProfileImage = widget.initialData['imageUrl'] ?? widget.initialData['image_url'];
+    _currentBannerImage = widget.initialData['bannerUrl'] ?? widget.initialData['Banner_img'];
+    _hasExistingProfile = _currentProfileImage != null && _currentProfileImage!.isNotEmpty;
+    _hasExistingBanner = _currentBannerImage != null && _currentBannerImage!.isNotEmpty;
+
+    debugPrint('Profile Image URL: $_currentProfileImage'); // Debug line
+    debugPrint('Banner Image URL: $_currentBannerImage'); // Debug line
   }
 
   @override
@@ -443,9 +459,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> with SingleTicker
             Positioned.fill(
               child: _bannerImageFile != null
                   ? Image.file(_bannerImageFile!, fit: BoxFit.cover)
-                  : (widget.initialData['Banner_img'] != null
+                  : (_currentBannerImage != null && _currentBannerImage!.isNotEmpty
                       ? CachedNetworkImage(
-                          imageUrl: widget.initialData['Banner_img'],
+                          imageUrl: _currentBannerImage!,
                           fit: BoxFit.cover,
                           placeholder: (context, url) => Shimmer.fromColors(
                             baseColor: Colors.grey[300]!,
@@ -561,12 +577,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> with SingleTicker
                               backgroundColor: Colors.white,
                               backgroundImage: _imageFile != null
                                   ? FileImage(_imageFile!) as ImageProvider<Object>?
-                                  : (widget.initialData['image_url'] != null
-                                      ? NetworkImage(widget.initialData['image_url'])
-                                          as ImageProvider<Object>?
+                                  : (_currentProfileImage != null && _currentProfileImage!.isNotEmpty
+                                      ? NetworkImage(_currentProfileImage!)
                                       : null),
-                              child: _imageFile == null &&
-                                      widget.initialData['image_url'] == null
+                              child: _imageFile == null && 
+                                     (_currentProfileImage == null || _currentProfileImage!.isEmpty)
                                   ? Text(
                                       widget.initialData['ownerName'][0]
                                           .toUpperCase(),
@@ -801,5 +816,89 @@ class _EditProfileScreenState extends State<EditProfileScreen> with SingleTicker
         ),
       ),
     );
+  }
+
+  Widget _buildImagePreview(String? currentImage, File? imageFile, String placeholder) {
+    if (imageFile != null) {
+      return Image.file(
+        imageFile,
+        fit: BoxFit.cover,
+        width: double.infinity,
+        height: 200,
+      );
+    } else if (currentImage != null && currentImage.isNotEmpty) {
+      return CachedNetworkImage(
+        imageUrl: currentImage,
+        fit: BoxFit.cover,
+        width: double.infinity,
+        height: 200,
+        placeholder: (context, url) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+        errorWidget: (context, url, error) => Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.error, color: Colors.red),
+              Text('Error loading image'),
+            ],
+          ),
+        ),
+      );
+    } else {
+      return Container(
+        width: double.infinity,
+        height: 200,
+        color: Colors.grey[200],
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.image, size: 48, color: Colors.grey[400]),
+              const SizedBox(height: 8),
+              Text(placeholder),
+            ],
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _saveChanges() async {
+    try {
+      // Upload new images if selected
+      String? newProfileUrl = _currentProfileImage;
+      String? newBannerUrl = _currentBannerImage;
+
+      if (_imageFile != null) { // Changed from _profileImageFile to _imageFile
+        newProfileUrl = await _uploadImage(_imageFile!, 'profile');
+      }
+
+      if (_bannerImageFile != null) {
+        newBannerUrl = await _uploadImage(_bannerImageFile!, 'banner');
+      }
+
+      // Update the result data with new image URLs
+      final Map<String, dynamic> resultData = {
+        ...widget.initialData,
+        'imageUrl': newProfileUrl,
+        'bannerUrl': newBannerUrl,
+        // Add other updated fields...
+      };
+
+      // Return the updated data
+      Navigator.of(context).pop(resultData);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error saving changes: $e')),
+      );
+    }
+  }
+
+  Future<String> _uploadImage(File imageFile, String type) async {
+    // Implement your image upload logic here
+    // Return the URL of the uploaded image
+    // This is just a placeholder - replace with your actual upload code
+    return '';
   }
 }

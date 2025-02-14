@@ -182,4 +182,16 @@ class StanService {
       }
     }
   }
+
+  Future<void> updateStoreBanner(int stallId, String bannerUrl) async {
+    try {
+      await _client
+          .from('stan')
+          .update({'Banner_img': bannerUrl})
+          .eq('id', stallId);
+    } catch (e) {
+      print('Error updating store banner: $e');
+      throw 'Failed to update store banner';
+    }
+  }
 }

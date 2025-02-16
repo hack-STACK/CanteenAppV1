@@ -4,19 +4,21 @@ class FoodAddon {
   final String addonName;
   final double price;
   final bool isRequired;
-  final String? description;
-  final int? stockQuantity;
+  final int stockQuantity;
   final bool isAvailable;
+  final String? description;
+  final String? category; // Add this field
 
   FoodAddon({
     this.id,
     required this.menuId,
     required this.addonName,
     required this.price,
-    this.isRequired = false, // Default to false as per DB schema
-    this.description,
+    this.isRequired = false,
     this.stockQuantity = 0,
     this.isAvailable = true,
+    this.description,
+    this.category = 'Extras', // Default category
   }) {
     if (price <= 0) {
       throw ArgumentError('Price must be greater than 0');
@@ -27,7 +29,7 @@ class FoodAddon {
     if (addonName.length > 100) {
       throw ArgumentError('Addon name cannot exceed 100 characters');
     }
-    if (stockQuantity != null && stockQuantity! < 0) {
+    if (stockQuantity < 0) {
       throw ArgumentError('Stock quantity cannot be negative');
     }
   }
@@ -39,9 +41,10 @@ class FoodAddon {
       'addon_name': addonName,
       'price': price,
       'is_required': isRequired,
-      'description': description,
       'stock_quantity': stockQuantity,
       'is_available': isAvailable,
+      'Description': description,
+      'category': category, // Add this field
     };
   }
 
@@ -52,9 +55,10 @@ class FoodAddon {
       addonName: map['addon_name'] as String,
       price: (map['price'] as num).toDouble(),
       isRequired: map['is_required'] as bool? ?? false,
-      description: map['description'] as String?,
-      stockQuantity: map['stock_quantity'] as int?,
+      stockQuantity: map['stock_quantity'] as int? ?? 0,
       isAvailable: map['is_available'] as bool? ?? true,
+      description: map['Description'] as String?,
+      category: map['category'] as String?, // Add this field
     );
   }
 
@@ -69,6 +73,8 @@ class FoodAddon {
       'is_required': isRequired,
       'stock_quantity': stockQuantity,
       'is_available': isAvailable,
+      'Description': description,
+      'category': category, // Add this field
     };
 
     // Only include id if it's not null
@@ -81,23 +87,25 @@ class FoodAddon {
 
   FoodAddon copyWith({
     int? id,
+    int? menuId,
     String? addonName,
     double? price,
-    String? description,
-    int? menuId,
     bool? isRequired,
     int? stockQuantity,
     bool? isAvailable,
+    String? description,
+    String? category, // Add this field
   }) {
     return FoodAddon(
       id: id ?? this.id,
+      menuId: menuId ?? this.menuId,
       addonName: addonName ?? this.addonName,
       price: price ?? this.price,
-      description: description ?? this.description,
-      menuId: menuId ?? this.menuId,
       isRequired: isRequired ?? this.isRequired,
       stockQuantity: stockQuantity ?? this.stockQuantity,
       isAvailable: isAvailable ?? this.isAvailable,
+      description: description ?? this.description,
+      category: category ?? this.category, // Add this field
     );
   }
 }

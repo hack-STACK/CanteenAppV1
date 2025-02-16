@@ -9,7 +9,7 @@ class Menu {
   final String type; // "food" or "drink"
   final String? photo;
   final String description;
-  final int stallId;
+  final int? stallId;
   final List<FoodAddon> addons; // New field for add-ons
   bool isAvailable;
   String? category;
@@ -21,7 +21,7 @@ class Menu {
     required String type,
     this.photo,
     required this.description,
-    required this.stallId,
+    this.stallId,
     this.addons = const [], // Default to empty list
     this.isAvailable = true,
     this.category,
@@ -151,15 +151,19 @@ class Menu {
   int get hashCode => id.hashCode ^ foodName.hashCode;
 
   factory Menu.fromMap(Map<String, dynamic> map) {
-    print('Processing menu map: $map');
+    // Handle price conversion from various types
+    final dynamic rawPrice = map['price'];
+    final double price =
+        rawPrice is int ? rawPrice.toDouble() : rawPrice as double;
+
     return Menu(
       id: map['id'] as int?, // Handle nullable id
       foodName: map['food_name'] as String,
-      price: (map['price'] as num).toDouble(),
+      price: price,
       type: map['type'] as String,
       photo: map['photo'] as String?,
       description: map['description'] as String? ?? '',
-      stallId: map['stall_id'] as int,
+      stallId: map['stall_id'] as int?,
       isAvailable: map['is_available'] as bool? ?? true,
       category: map['category'] as String?,
     );

@@ -1,11 +1,13 @@
-import 'package:flutter/foundation.dart';
 import 'package:kantin/Models/addon_template.dart';
 import 'package:kantin/Models/menus.dart';
 import 'package:kantin/Models/menus_addon.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:kantin/utils/network_utils.dart';
+import 'package:kantin/retry_helper.dart';
 
 class FoodService {
   final SupabaseClient _client = Supabase.instance.client;
+  final _supabase = Supabase.instance.client;
 
   /// **🔵 Create: Insert or update a menu item**
   Future<Menu> createMenu(Menu menu) async {
@@ -55,30 +57,23 @@ class FoodService {
   }
 
   /// **🟢 Read: Get menu items by stall ID**
-  Future<List<Menu>> getMenuByStanId(int stallId) async {
+  Future<List<Menu>> getMenuByStanId(int stanId) async {
     try {
-      print('Fetching menus for stall ID: $stallId');
-
       final response = await _client
-          .from(
-              'menu') // Changed from 'menus' to 'menu' to match database table name
+          .from('menu')
           .select()
-          .eq('stall_id', stallId)
-          .order('id');
+          .eq('stall_id', stanId)
+          .order('id', ascending: false);
 
       print('Menu Response: $response');
 
-      if (response == null) {
-        return [];
-      }
-
-      return (response as List).map((menuData) {
-        print('Processing menu map: $menuData');
-        return Menu.fromMap(menuData);
+      return (response as List).map((map) {
+        print('Processing menu map: $map');
+        return Menu.fromMap(map);
       }).toList();
-    } catch (e) {
-      print('Error fetching menus: $e');
-      throw 'Failed to load menus: ${e.toString()}';
+    } catch (e, stackTrace) {
+      print('Error fetching menus: $e\n$stackTrace');
+      throw Exception('Failed to load menus: $e');
     }
   }
 
@@ -104,11 +99,6 @@ class FoodService {
           .eq('id', menuId.toString()) // Convert ID to string
           .select()
           .single();
-
-      if (response == null) {
-        throw Exception('Menu not found');
-      }
-
     } catch (e) {
       print('Error toggling menu availability: $e');
       if (e.toString().contains('not found')) {
@@ -121,11 +111,8 @@ class FoodService {
   Future<void> updateMenuPrice(int menuId, double newPrice) async {
     try {
       if (newPrice < 0) throw Exception('Price cannot be negative');
-      
-      await _client
-          .from('menu')
-          .update({'price': newPrice})
-          .eq('id', menuId);
+
+      await _client.from('menu').update({'price': newPrice}).eq('id', menuId);
     } catch (e) {
       throw 'Failed to update menu price: $e';
     }
@@ -134,23 +121,20 @@ class FoodService {
   Future<void> duplicateMenu(int menuId) async {
     try {
       // First get the menu to duplicate
-      final response = await _client
-          .from('menus')
-          .select()
-          .eq('id', menuId)
-          .single();
-      
+      final response =
+          await _client.from('menu').select().eq('id', menuId).single();
       final originalMenu = Menu.fromJson(response);
-      
+
       // Create new menu with copied data
       final newMenu = originalMenu.copyWith(
-        id: null, // Clear ID for new entry
-        foodName: '${originalMenu.foodName} (Copy)', // Add (Copy) to name
+        id: null,
+        foodName: '${originalMenu.foodName} (Copy)',
+        isAvailable: true, // Ensure the new menu is available
       );
 
       // Insert the new menu
       final insertedMenu = await _client
-          .from('menus')
+          .from('menu')
           .insert(newMenu.toJson(excludeId: true))
           .select()
           .single();
@@ -158,13 +142,16 @@ class FoodService {
       // Get original add-ons
       final addons = await getAddonsForMenu(menuId);
 
-      // Duplicate add-ons for new menu
-      for (var addon in addons) {
-        await createAddon(
-          insertedMenu['id'],
-          addon.copyWith(id: null), // Clear ID for new entry
+      // Duplicate add-ons for new menu in parallel
+      final addonFutures = addons.map((addon) {
+        final newAddon = addon.copyWith(
+          id: null,
+          menuId: insertedMenu['id'],
         );
-      }
+        return createFoodAddon(newAddon);
+      });
+
+      await Future.wait(addonFutures);
     } catch (e) {
       throw 'Failed to duplicate menu: $e';
     }
@@ -181,71 +168,104 @@ class FoodService {
 
   /// **🔵 Create: Insert a new food add-on**
   Future<FoodAddon> createFoodAddon(FoodAddon addon) async {
+    if (!await hasInternetConnection()) {
+      throw Exception('No internet connection');
+    }
+
     try {
-      // Validate price and quantity
-      if (addon.price <= 0) {
-        throw Exception('Price must be greater than 0');
-      }
-      if (addon.stockQuantity != null && addon.stockQuantity! < 0) {
-        throw Exception('Stock quantity cannot be negative');
-      }
+      final response = await retry(() async {
+        final data = {
+          'menu_id': addon.menuId,
+          'addon_name': addon.addonName,
+          'price': addon.price,
+          'is_required': addon.isRequired,
+          'stock_quantity': 0, // Default value
+          'is_available': true, // Default value
+          'Description': addon.description,
+        };
 
-      final response = await _client
-          .from('food_addons')
-          .insert(addon.toJson())
-          .select()
-          .single();
+        final result =
+            await _supabase.from('food_addons').insert(data).select().single();
 
-      return FoodAddon.fromJson(response);
+        return FoodAddon.fromMap(result);
+      });
+
+      return response;
     } catch (e) {
-      if (e.toString().contains('unique_addon_per_menu')) {
-        throw Exception('An addon with this name already exists for this menu');
+      if (e is PostgrestException) {
+        if (e.code == '23505') {
+          throw Exception(
+              'An add-on with this name already exists for this menu');
+        }
+        if (e.code == '23514') {
+          throw Exception('Price must be greater than 0');
+        }
       }
-      if (e.toString().contains('check_price_positive')) {
-        throw Exception('Price must be greater than 0');
-      }
-      throw Exception('Failed to create addon: $e');
+      throw Exception('Failed to create add-on: $e');
     }
   }
 
   /// **🟢 Read: Get all food add-ons for a specific menu**
   Future<List<FoodAddon>> getAddonsForMenu(int menuId) async {
+    if (!await hasInternetConnection()) {
+      throw Exception('No internet connection');
+    }
+
     try {
-      final response = await _client
-          .from('food_addons')
-          .select()
-          .eq('menu_id', menuId)
-          .order('addon_name');
-      
-      return (response as List)
-          .map((data) => FoodAddon.fromJson(data))
-          .toList();
+      final response = await retry(() async {
+        final result = await _supabase
+            .from('food_addons')
+            .select()
+            .eq('menu_id', menuId)
+            .order('addon_name');
+
+        return (result as List).map((data) => FoodAddon.fromMap(data)).toList();
+      });
+
+      return response;
     } catch (e) {
-      throw 'Failed to fetch menu add-ons: $e';
+      throw Exception('Failed to load add-ons: $e');
     }
   }
 
   /// **🟡 Update: Update a food add-on**
-  Future<void> updateFoodAddon(FoodAddon addon) async {
+  Future<FoodAddon> updateFoodAddon(FoodAddon addon) async {
+    if (!await hasInternetConnection()) {
+      throw Exception('No internet connection');
+    }
+
     try {
-      if (addon.id == null) {
-        throw Exception('Addon ID is required for update');
-      }
+      final response = await retry(() async {
+        final data = {
+          'addon_name': addon.addonName,
+          'price': addon.price,
+          'is_required': addon.isRequired,
+          'Description': addon.description,
+          // Don't update menu_id as it's part of a unique constraint
+        };
 
-      if (addon.price < 0) {
-        throw Exception('Price must be greater than or equal to 0');
-      }
+        final result = await _supabase
+            .from('food_addons')
+            .update(data)
+            .eq('id', addon.id!)
+            .select()
+            .single();
 
-      await _client
-          .from('food_addons')
-          .update(addon.toJson())
-          .eq('id', addon.id.toString());
+        return FoodAddon.fromMap(result);
+      });
+
+      return response;
     } catch (e) {
-      if (e.toString().contains('unique_addon_per_menu')) {
-        throw Exception('An addon with this name already exists for this menu');
+      if (e is PostgrestException) {
+        if (e.code == '23505') {
+          throw Exception(
+              'An add-on with this name already exists for this menu');
+        }
+        if (e.code == '23514') {
+          throw Exception('Price must be greater than 0');
+        }
       }
-      print('Error updating addon: $e');
-      throw Exception('Failed to update addon: $e');
+      throw Exception('Failed to update add-on: $e');
     }
   }
 
@@ -261,50 +281,55 @@ class FoodService {
   }
 
   Future<void> updateAddonStock(int addonId, int quantity) async {
-    try {
-      if (quantity < 0) {
-        throw Exception('Stock quantity cannot be negative');
-      }
+    if (!await hasInternetConnection()) {
+      throw Exception('No internet connection');
+    }
 
-      await _client
-          .from('food_addons')
-          .update({'stock_quantity': quantity})
-          .eq('id', addonId);
+    try {
+      await retry(() async {
+        await _supabase
+            .from('food_addons')
+            .update({'stock_quantity': quantity}).eq('id', addonId);
+      });
     } catch (e) {
-      throw Exception('Failed to update addon stock: $e');
+      throw Exception('Failed to update add-on stock: $e');
     }
   }
 
   Future<void> toggleAddonAvailability(int addonId, bool isAvailable) async {
+    if (!await hasInternetConnection()) {
+      throw Exception('No internet connection');
+    }
+
     try {
-      await _client
-          .from('food_addons')
-          .update({'is_available': isAvailable})
-          .eq('id', addonId);
+      await retry(() async {
+        await _supabase
+            .from('food_addons')
+            .update({'is_available': isAvailable}).eq('id', addonId);
+      });
     } catch (e) {
-      throw Exception('Failed to update addon availability: $e');
+      throw Exception('Failed to update add-on availability: $e');
     }
   }
 
   /// **🔴 Delete: Remove a food add-on**
   Future<void> deleteFoodAddon(int id) async {
+    if (!await hasInternetConnection()) {
+      throw Exception('No internet connection');
+    }
+
     try {
-      await _client
-          .from('food_addons')
-          .delete()
-          .eq('id', id);
+      await retry(() async {
+        await _supabase.from('food_addons').delete().eq('id', id);
+      });
     } catch (e) {
-      print('Error deleting addon: $e');
-      throw Exception('Failed to delete addon: $e');
+      throw Exception('Failed to delete add-on: $e');
     }
   }
 
   Future<void> deleteAddon(int addonId) async {
     try {
-      await _client
-          .from('menu_addons')
-          .delete()
-          .eq('id', addonId);
+      await _client.from('menu_addons').delete().eq('id', addonId);
     } catch (e) {
       throw 'Failed to delete add-on: $e';
     }
@@ -361,7 +386,7 @@ class FoodService {
           .insert(addon.toJson()..addAll({'menu_id': menuId}))
           .select()
           .single();
-      
+
       return FoodAddon.fromJson(response);
     } catch (e) {
       throw 'Failed to create add-on: $e';

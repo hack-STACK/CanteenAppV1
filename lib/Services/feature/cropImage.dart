@@ -25,7 +25,8 @@ class ImageCropperWidget extends StatefulWidget {
   _ImageCropperWidgetState createState() => _ImageCropperWidgetState();
 }
 
-class _ImageCropperWidgetState extends State<ImageCropperWidget> with SingleTickerProviderStateMixin {
+class _ImageCropperWidgetState extends State<ImageCropperWidget>
+    with SingleTickerProviderStateMixin {
   final CropController _cropController = CropController();
   Uint8List? _imageBytes;
   late double? _aspectRatio;
@@ -56,11 +57,12 @@ class _ImageCropperWidgetState extends State<ImageCropperWidget> with SingleTick
 
   // Add debounce timer
   Timer? _debounceTimer;
-  
+
   // Add adjustment limits and multipliers
   static const double _contrastMultiplier = 0.5;
   static const double _saturationMultiplier = 0.5;
-  static const double _brightnessMultiplier = 2.55; // Proper scaling for -100 to 100 range
+  static const double _brightnessMultiplier =
+      2.55; // Proper scaling for -100 to 100 range
 
   // Add new property to store working copy
   Uint8List? _workingImageBytes;
@@ -85,7 +87,7 @@ class _ImageCropperWidgetState extends State<ImageCropperWidget> with SingleTick
   bool _isCropValid = false;
   bool _isRotating = false;
   CropImageStatus _cropStatus = CropImageStatus.ready;
-  
+
   // Add crop state notifier
   final ValueNotifier<bool> _isCropReady = ValueNotifier<bool>(false);
 
@@ -109,7 +111,7 @@ class _ImageCropperWidgetState extends State<ImageCropperWidget> with SingleTick
     try {
       final bytes = await widget.imageFile.readAsBytes();
       if (!mounted) return;
-      
+
       setState(() {
         _imageBytes = bytes;
         _originalImageBytes = bytes;
@@ -146,7 +148,7 @@ class _ImageCropperWidgetState extends State<ImageCropperWidget> with SingleTick
 
       if (result is CropSuccess) {
         final Uint8List croppedData = result.croppedImage;
-        
+
         // Validate cropped image
         if (croppedData.isEmpty) {
           throw Exception('Invalid crop result');
@@ -154,7 +156,7 @@ class _ImageCropperWidgetState extends State<ImageCropperWidget> with SingleTick
 
         // Process the image with current settings
         var processedImage = await _processCroppedImage(croppedData);
-        
+
         // Create temp file
         final tempFile = await _saveToTempFile(processedImage);
 
@@ -162,7 +164,7 @@ class _ImageCropperWidgetState extends State<ImageCropperWidget> with SingleTick
         _updateImageStates(processedImage, croppedData);
 
         widget.onImageCropped(tempFile);
-        
+
         if (mounted) {
           Navigator.pop(context);
         }
@@ -193,9 +195,8 @@ class _ImageCropperWidgetState extends State<ImageCropperWidget> with SingleTick
     // Reapply active filter if exists
     if (_activeFilter != null && _activeFilter != 'None') {
       processed = await _applyFilterToImage(
-        Uint8List.fromList(img.encodeJpg(processed)),
-        _activeFilter!
-      ).then((bytes) => img.decodeImage(bytes)!);
+              Uint8List.fromList(img.encodeJpg(processed)), _activeFilter!)
+          .then((bytes) => img.decodeImage(bytes)!);
     }
 
     return Uint8List.fromList(img.encodeJpg(processed, quality: 90));
@@ -234,20 +235,21 @@ class _ImageCropperWidgetState extends State<ImageCropperWidget> with SingleTick
 
   Future<File> _saveToTempFile(Uint8List imageData) async {
     final tempDir = await getTemporaryDirectory();
-    final tempFile = File('${tempDir.path}/image_${DateTime.now().millisecondsSinceEpoch}.jpg');
+    final tempFile = File(
+        '${tempDir.path}/image_${DateTime.now().millisecondsSinceEpoch}.jpg');
     await tempFile.writeAsBytes(imageData);
     return tempFile;
   }
 
   Future<void> _applyImageAdjustments(Uint8List imageData) async {
     _debounceTimer?.cancel();
-    
+
     _debounceTimer = Timer(const Duration(milliseconds: 200), () async {
       if (_isFilterProcessing) return;
-      
+
       try {
         setState(() => _isFilterProcessing = true);
-        
+
         final sourceBytes = _isCropped ? _croppedImageBytes! : imageData;
         final image = img.decodeImage(sourceBytes);
         if (image == null) return;
@@ -263,7 +265,7 @@ class _ImageCropperWidgetState extends State<ImageCropperWidget> with SingleTick
             brightness: brightnessValue / 255, // Normalize to -1.0 to 1.0 range
           );
         }
-        
+
         if (_appliedAdjustments['contrast']! && _contrast != 1) {
           final scaledContrast = (_contrast - 1) * _contrastMultiplier + 1;
           adjustedImage = img.adjustColor(
@@ -271,12 +273,14 @@ class _ImageCropperWidgetState extends State<ImageCropperWidget> with SingleTick
             contrast: scaledContrast.clamp(0.5, 1.5), // Limit contrast range
           );
         }
-        
+
         if (_appliedAdjustments['saturation']! && _saturation != 1) {
-          final scaledSaturation = (_saturation - 1) * _saturationMultiplier + 1;
+          final scaledSaturation =
+              (_saturation - 1) * _saturationMultiplier + 1;
           adjustedImage = img.adjustColor(
             adjustedImage,
-            saturation: scaledSaturation.clamp(0.0, 2.0), // Limit saturation range
+            saturation:
+                scaledSaturation.clamp(0.0, 2.0), // Limit saturation range
           );
         }
 
@@ -285,9 +289,9 @@ class _ImageCropperWidgetState extends State<ImageCropperWidget> with SingleTick
           final filterValues = filters[_selectedFilter]!;
           adjustedImage = img.colorOffset(
             adjustedImage,
-            red: ((filterValues[0] - 1) * 64).round(),   // Reduced intensity
+            red: ((filterValues[0] - 1) * 64).round(), // Reduced intensity
             green: ((filterValues[1] - 1) * 64).round(), // Reduced intensity
-            blue: ((filterValues[2] - 1) * 64).round(),  // Reduced intensity
+            blue: ((filterValues[2] - 1) * 64).round(), // Reduced intensity
           );
         }
 
@@ -323,12 +327,13 @@ class _ImageCropperWidgetState extends State<ImageCropperWidget> with SingleTick
 
   Future<void> _applyFilter(String filterName) async {
     if (_isFilterProcessing) return;
-    
+
     try {
       setState(() => _isFilterProcessing = true);
-      
+
       // Always start from original or cropped image without filters
-      final sourceBytes = _isCropped ? _originalImageBytes! : _originalImageBytes!;
+      final sourceBytes =
+          _isCropped ? _originalImageBytes! : _originalImageBytes!;
       final processedBytes = await _applyFilterToImage(sourceBytes, filterName);
 
       if (mounted) {
@@ -350,13 +355,14 @@ class _ImageCropperWidgetState extends State<ImageCropperWidget> with SingleTick
     }
   }
 
-  Future<Uint8List> _applyFilterToImage(Uint8List imageData, String filterName) async {
+  Future<Uint8List> _applyFilterToImage(
+      Uint8List imageData, String filterName) async {
     final image = img.decodeImage(imageData);
     if (image == null) throw Exception('Failed to decode image');
 
     var filteredImage = image.clone();
     final filterValues = filters[filterName]!;
-    
+
     filteredImage = img.colorOffset(
       filteredImage,
       red: ((filterValues[0] - 1) * 64).round(),
@@ -370,19 +376,21 @@ class _ImageCropperWidgetState extends State<ImageCropperWidget> with SingleTick
   Future<void> _saveFinalImage() async {
     try {
       setState(() => _isSaving = true);
-      
+
       final tempDir = await getTemporaryDirectory();
-      final tempFile = File('${tempDir.path}/final_${DateTime.now().millisecondsSinceEpoch}.jpg');
-      
+      final tempFile = File(
+          '${tempDir.path}/final_${DateTime.now().millisecondsSinceEpoch}.jpg');
+
       // Use the most recent processed image
-      final finalImageBytes = _workingImageBytes ?? _imageBytes ?? _originalImageBytes;
+      final finalImageBytes =
+          _workingImageBytes ?? _imageBytes ?? _originalImageBytes;
       if (finalImageBytes == null) {
         throw Exception('No image data available');
       }
-      
+
       await tempFile.writeAsBytes(finalImageBytes);
       widget.onImageCropped(tempFile);
-      
+
       if (mounted) {
         Navigator.pop(context);
       }
@@ -405,7 +413,7 @@ class _ImageCropperWidgetState extends State<ImageCropperWidget> with SingleTick
 
   void _handleTabChange() {
     if (!_tabController.indexIsChanging) return;
-    
+
     setState(() {
       // Ensure filter is maintained when switching tabs
       _imageBytes = _workingImageBytes ?? _currentImage.value;
@@ -486,12 +494,12 @@ class _ImageCropperWidgetState extends State<ImageCropperWidget> with SingleTick
                 onCropped: _handleCrop,
                 maskColor: Colors.black.withOpacity(0.6),
                 baseColor: Colors.black,
-                cornerDotBuilder: (size, edgeAlignment) => 
-                  const DotControl(color: Colors.white),
+                cornerDotBuilder: (size, edgeAlignment) =>
+                    const DotControl(color: Colors.white),
                 interactive: !_isRotating,
                 withCircleUi: _isCircularCrop,
               ),
-              
+
               // Crop controls overlay
               Positioned(
                 bottom: 0,
@@ -532,8 +540,7 @@ class _ImageCropperWidgetState extends State<ImageCropperWidget> with SingleTick
     final minSize = 50.0; // Minimum crop size in pixels
 
     setState(() {
-      _isCropValid = cropRect.width >= minSize && 
-                     cropRect.height >= minSize;
+      _isCropValid = cropRect.width >= minSize && cropRect.height >= minSize;
     });
   }
 
@@ -596,7 +603,7 @@ class _ImageCropperWidgetState extends State<ImageCropperWidget> with SingleTick
   Uint8List _rotateImage(Uint8List imageBytes, int angle) {
     final image = img.decodeImage(imageBytes);
     if (image == null) return imageBytes;
-    
+
     final rotated = img.copyRotate(image, angle: angle);
     return Uint8List.fromList(img.encodeJpg(rotated, quality: 90));
   }
@@ -694,10 +701,12 @@ class _ImageCropperWidgetState extends State<ImageCropperWidget> with SingleTick
                 padding: const EdgeInsets.symmetric(horizontal: 8.0),
                 child: GestureDetector(
                   onTap: () => _applyFilter(filterName),
-                  child: SizedBox( // Added fixed size container
+                  child: SizedBox(
+                    // Added fixed size container
                     width: 80, // Fixed width
                     child: Column(
-                      mainAxisSize: MainAxisSize.min, // Added to prevent expansion
+                      mainAxisSize:
+                          MainAxisSize.min, // Added to prevent expansion
                       children: [
                         Container(
                           width: 70,
@@ -712,16 +721,33 @@ class _ImageCropperWidgetState extends State<ImageCropperWidget> with SingleTick
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Stack(
-                            fit: StackFit.expand, // Added to ensure proper fitting
+                            fit: StackFit
+                                .expand, // Added to ensure proper fitting
                             children: [
                               ClipRRect(
                                 borderRadius: BorderRadius.circular(6),
                                 child: ColorFiltered(
                                   colorFilter: ColorFilter.matrix([
-                                    filters[filterName]![0], 0, 0, 0, 0,
-                                    0, filters[filterName]![1], 0, 0, 0,
-                                    0, 0, filters[filterName]![2], 0, 0,
-                                    0, 0, 0, 1, 0,
+                                    filters[filterName]![0],
+                                    0,
+                                    0,
+                                    0,
+                                    0,
+                                    0,
+                                    filters[filterName]![1],
+                                    0,
+                                    0,
+                                    0,
+                                    0,
+                                    0,
+                                    filters[filterName]![2],
+                                    0,
+                                    0,
+                                    0,
+                                    0,
+                                    0,
+                                    1,
+                                    0,
                                   ]),
                                   child: Image.memory(
                                     _originalImageBytes!,
@@ -754,11 +780,16 @@ class _ImageCropperWidgetState extends State<ImageCropperWidget> with SingleTick
                           filterName,
                           style: TextStyle(
                             fontSize: 12, // Reduced font size
-                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                            color: isSelected ? Theme.of(context).primaryColor : null,
+                            fontWeight: isSelected
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                            color: isSelected
+                                ? Theme.of(context).primaryColor
+                                : null,
                           ),
                           maxLines: 1, // Limit to one line
-                          overflow: TextOverflow.ellipsis, // Handle overflow text
+                          overflow:
+                              TextOverflow.ellipsis, // Handle overflow text
                         ),
                       ],
                     ),
@@ -796,16 +827,16 @@ class _ImageCropperWidgetState extends State<ImageCropperWidget> with SingleTick
             ),
             IconButton(
               icon: Icon(
-                _appliedAdjustments[adjustmentType]! 
-                    ? Icons.check_circle 
+                _appliedAdjustments[adjustmentType]!
+                    ? Icons.check_circle
                     : Icons.check_circle_outline,
-                color: _appliedAdjustments[adjustmentType]! 
-                    ? Theme.of(context).primaryColor 
+                color: _appliedAdjustments[adjustmentType]!
+                    ? Theme.of(context).primaryColor
                     : Colors.grey,
               ),
               onPressed: () {
                 setState(() {
-                  _appliedAdjustments[adjustmentType] = 
+                  _appliedAdjustments[adjustmentType] =
                       !_appliedAdjustments[adjustmentType]!;
                 });
                 _applyImageAdjustments(_imageBytes!);
@@ -863,7 +894,8 @@ class _ImageCropperWidgetState extends State<ImageCropperWidget> with SingleTick
       _saturation = 1.0;
       _selectedFilter = 'None';
       _activeFilter = null; // Reset active filter
-      _workingImageBytes = _isCropped ? _croppedImageBytes : _originalImageBytes;
+      _workingImageBytes =
+          _isCropped ? _croppedImageBytes : _originalImageBytes;
       _imageBytes = _isCropped ? _croppedImageBytes : _originalImageBytes;
       _appliedAdjustments = {
         'brightness': false,

@@ -1,5 +1,8 @@
+import 'dart:io';
 import 'package:kantin/Models/UsersModels.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:kantin/retry_helper.dart';
+import 'package:kantin/utils/network_utils.dart';
 
 class UserService {
   final _supabaseClient = Supabase.instance.client;
@@ -52,15 +55,25 @@ class UserService {
   }
 
   Future<bool> checkFirebaseUidExists(String firebaseUid) async {
+    if (!await hasInternetConnection()) {
+      print('No internet connection');
+      throw Exception('No internet connection');
+    }
+
     try {
       print('Checking for Firebase UID: $firebaseUid');
-      final response = await _supabaseClient
-          .from('users')
-          .select('id')
-          .eq('firebase_uid', firebaseUid)
-          .maybeSingle();
+      final response = await retry(() async {
+        return await _supabaseClient
+            .from('users')
+            .select('id')
+            .eq('firebase_uid', firebaseUid)
+            .maybeSingle();
+      });
       print('Response data: $response');
       return response != null;
+    } on SocketException catch (e) {
+      print('Network error: $e');
+      throw Exception('Network error: $e');
     } catch (e) {
       print('Error checking Firebase UID: $e');
       throw Exception('Failed to check Firebase UID: $e');
@@ -170,14 +183,24 @@ class UserService {
   }
 
   Future<UserModel?> getUserByFirebaseUid(String firebaseUid) async {
+    if (!await hasInternetConnection()) {
+      print('No internet connection');
+      throw Exception('No internet connection');
+    }
+
     try {
-      final response = await _supabaseClient
-          .from('users')
-          .select()
-          .eq('firebase_uid', firebaseUid)
-          .single();
+      final response = await retry(() async {
+        return await _supabaseClient
+            .from('users')
+            .select()
+            .eq('firebase_uid', firebaseUid)
+            .single();
+      });
 
       return UserModel.fromMap(response);
+    } on SocketException catch (e) {
+      print('Network error: $e');
+      throw Exception('Network error: $e');
     } catch (e) {
       print('Error fetching user by Firebase UID: $e');
       return null; // Return null if user not found

@@ -1,10 +1,7 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:kantin/Component/my_button.dart';
 import 'package:kantin/Component/my_textfield.dart';
 import 'package:kantin/Services/Auth/auth_Service.dart';
-import 'package:kantin/Services/Database/Stan_service.dart';
-import 'package:kantin/Services/Database/UserService.dart';
 import 'package:kantin/pages/AdminState/AdminPage.dart';
 import 'package:kantin/pages/StudentState/StudentPage.dart';
 import 'package:kantin/pages/User/PersonalForm.dart';
@@ -51,11 +48,7 @@ class _LoginPageState extends State<LoginPage> {
           .eq('firebase_uid', userCredential.user!.uid)
           .single();
 
-      print('Full user data: $userData'); // Debug log
-
-      if (userData == null) {
-        throw 'User data not found';
-      }
+      print('Full user data: $userData');
 
       final int userId = userData['id'];
       final String role = userData['role'] ?? 'student';

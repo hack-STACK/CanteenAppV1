@@ -1,30 +1,47 @@
 import 'package:avatar_glow/avatar_glow.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
 import 'package:kantin/Models/Stan_model.dart';
+import 'package:kantin/Models/discount.dart';
 import 'package:kantin/Models/menus.dart';
-import 'package:kantin/Services/Database/StallService.dart';
 import 'package:kantin/Services/Database/Stan_service.dart';
 import 'package:kantin/Services/Database/foodService.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
+import 'package:kantin/pages/AdminState/dashboard/Addmenu.dart';
+import 'package:kantin/pages/AdminState/dashboard/Setting%20section/Page/apply_discount_screen.dart';
 import 'package:kantin/pages/AdminState/dashboard/Setting%20section/Page/profile_screen/edit_profile_screen.dart';
+import 'package:kantin/pages/menu/menu_details_screen.dart';
+import 'package:kantin/services/database/discountService.dart';
+import 'package:kantin/widgets/add_discount_form.dart';
+import 'package:kantin/widgets/edit_discount_dialog.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:kantin/Models/menus_addon.dart';
+import 'package:kantin/Services/store_service.dart';
+import 'package:kantin/widgets/loading_overlay.dart';
+import 'package:kantin/widgets/addon_dialog.dart';
+import 'package:kantin/widgets/addon_card.dart';
+import 'package:kantin/utils/menu_state_manager.dart';
+import 'package:kantin/widgets/optimized_addon_list.dart';
+import 'package:kantin/Models/discount_type.dart';
 
 class MyStorePage extends StatefulWidget {
   final int userId;
 
-  const MyStorePage({Key? key, required this.userId}) : super(key: key);
+  const MyStorePage({super.key, required this.userId});
 
   @override
   State<MyStorePage> createState() => _MyStorePageState();
 }
 
-class _MyStorePageState extends State<MyStorePage> with TickerProviderStateMixin {
+class _MyStorePageState extends State<MyStorePage>
+    with TickerProviderStateMixin {
+  late final StoreService _storeService;
   final StanService _stallService = StanService();
+  final DiscountService _discountService = DiscountService();
   final FoodService _foodService = FoodService();
   Stan? _stall;
   List<Menu> _menus = [];
@@ -32,7 +49,7 @@ class _MyStorePageState extends State<MyStorePage> with TickerProviderStateMixin
   List<Menu> _drinkMenus = [];
   bool _isLoading = true;
   String? _error;
-  int _currentIndex = 0;
+  final int _currentIndex = 0;
 
   // Add new properties for UI
   late TabController _menuTabController;
@@ -47,17 +64,23 @@ class _MyStorePageState extends State<MyStorePage> with TickerProviderStateMixin
   final Color backgroundColor = const Color(0xFFF5F5F5);
   final Color textColor = const Color(0xFF263238);
 
-  final Map<int, List<FoodAddon>> _menuAddons = {};
+  // Change from final to regular Map
+  Map<int, List<FoodAddon>> _menuAddons = {};
 
   // Add these variables
   Map<String, dynamic>? userData;
   int? stallId;
 
-  final GlobalKey<RefreshIndicatorState> _refreshIndicatorKey = GlobalKey<RefreshIndicatorState>();
+  final GlobalKey<RefreshIndicatorState> _refreshIndicatorKey =
+      GlobalKey<RefreshIndicatorState>();
+
+  bool _isProcessing = false; // Add this property
+
+  final MenuStateManager _menuStateManager = MenuStateManager();
 
   Future<void> _handleRefresh() async {
     try {
-      await _loadStallAndMenus();
+      await _initializeStore(); // Changed from _loadStallAndMenus
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -81,15 +104,76 @@ class _MyStorePageState extends State<MyStorePage> with TickerProviderStateMixin
   @override
   void initState() {
     super.initState();
+    _storeService = StoreService(FoodService());
     _menuTabController = TabController(length: _categories.length, vsync: this);
-    _loadStallAndMenus();
-    
+    _initializeStore();
+
     _scrollController.addListener(() {
       setState(() {
-        _isCollapsed = _scrollController.hasClients && 
-                       _scrollController.offset > 200;
+        _isCollapsed =
+            _scrollController.hasClients && _scrollController.offset > 200;
       });
     });
+
+    // Add loading stream listener
+    _storeService.loadingStream.listen((isLoading) {
+      if (mounted) {
+        setState(() => _isProcessing = isLoading);
+      }
+    });
+
+    // Add optimized state management
+    _storeService.menuStream.listen((menus) {
+      if (mounted) {
+        setState(() {
+          _menus = menus;
+          _menuStateManager.updateMenus(menus);
+        });
+      }
+    });
+
+    _storeService.addonStream.listen((addons) {
+      if (mounted) {
+        setState(() {
+          _menuAddons = addons;
+          _menuStateManager.updateAddons(addons);
+        });
+      }
+    });
+  }
+
+  final ImagePicker _picker = ImagePicker();
+  Future<void> _pickImage(ImageSource source, BuildContext context) async {
+    try {
+      final XFile? image = await _picker.pickImage(
+        source: source,
+        imageQuality: 80, // Image quality optimization
+      );
+
+      if (image != null && mounted) {
+        Navigator.pop(context); // Close bottom sheet
+        // Navigate to add menu screen with the image
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => AddMenuScreen(
+              standId: _stall?.id ?? 0,
+              initialImage: image,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error picking image: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _navigateToEdit(BuildContext context) async {
@@ -104,21 +188,22 @@ class _MyStorePageState extends State<MyStorePage> with TickerProviderStateMixin
     }
 
     // Ensure userData is not null by creating a new map if needed
-    final Map<String, dynamic> editData = userData ?? {
-      'id': _stall!.id.toString(),
-      'name': _stall!.ownerName,
-      'stallName': _stall!.stanName,
-      'phone': _stall!.phone ?? '',
-      'description': _stall!.description ?? '',
-      'slot': _stall!.slot ?? '',
-      'imageUrl': _stall!.imageUrl ?? '',
-      'bannerUrl': _stall!.Banner_img ?? '',
-      'ownerName': _stall!.ownerName ?? '',
-      'email': '', // Add default value if needed
-      'address': _stall!.slot ?? '', // Using slot as address
-      'role': 'owner', // Add default role
-      'status': 'active', // Add default status
-    };
+    final Map<String, dynamic> editData = userData ??
+        {
+          'id': _stall!.id.toString(),
+          'name': _stall!.ownerName,
+          'stallName': _stall!.stanName,
+          'phone': _stall!.phone ?? '',
+          'description': _stall!.description ?? '',
+          'slot': _stall!.slot ?? '',
+          'imageUrl': _stall!.imageUrl ?? '',
+          'bannerUrl': _stall!.Banner_img ?? '',
+          'ownerName': _stall!.ownerName ?? '',
+          'email': '', // Add default value if needed
+          'address': _stall!.slot ?? '', // Using slot as address
+          'role': 'owner', // Add default role
+          'status': 'active', // Add default status
+        };
 
     try {
       final result = await Navigator.of(context, rootNavigator: true).push(
@@ -139,7 +224,8 @@ class _MyStorePageState extends State<MyStorePage> with TickerProviderStateMixin
             ownerName: result['name'] as String? ?? _stall!.ownerName,
             stanName: result['stallName'] as String? ?? _stall!.stanName,
             phone: result['phone'] as String? ?? _stall!.phone,
-            description: result['description'] as String? ?? _stall!.description,
+            description:
+                result['description'] as String? ?? _stall!.description,
             slot: result['slot'] as String? ?? _stall!.slot,
             imageUrl: result['imageUrl'] as String? ?? _stall!.imageUrl,
             Banner_img: result['bannerUrl'] as String? ?? _stall!.Banner_img,
@@ -165,52 +251,53 @@ class _MyStorePageState extends State<MyStorePage> with TickerProviderStateMixin
     }
   }
 
-  Future<void> _loadStallAndMenus() async {
+  Future<void> _initializeStore() async {
+    if (!mounted) return;
+
     try {
       setState(() => _isLoading = true);
-      
-      // Load stall data
+
+      // Load stall data with error handling
       final stall = await _stallService.getStallByUserId(widget.userId);
-      
-      // Create userData map with required fields
-      final Map<String, dynamic> userDataMap = {
-        'id': stall.id.toString(),
-        'name': stall.ownerName,
-        'stallName': stall.stanName,
-        'phone': stall.phone ?? '',
-        'description': stall.description ?? '',
-        'slot': stall.slot ?? '',
-        'imageUrl': stall.imageUrl ?? '',
-        'bannerUrl': stall.Banner_img ?? '',
-        'ownerName': stall.ownerName ?? '',
-        'email': '', // Add default value if needed
-        'address': stall.slot ?? '', // Using slot as address
-        'role': 'owner', // Add default role
-        'status': 'active', // Add default status
-      };
+      if (!mounted) return;
 
-      // Load menus
-      final menus = await _foodService.getMenuByStanId(stall.id);
-      
-      // Load addons for each menu
-      for (final menu in menus) {
-        if (menu.id != null) {
-          _menuAddons[menu.id!] = await _foodService.getAddonsForMenu(menu.id!);
+      setState(() {
+        _stall = stall;
+        _isLoading = false;
+      });
+
+      // Initialize store service streams
+      _storeService.menuStream.listen((menus) {
+        if (mounted) {
+          setState(() {
+            _menus = menus;
+            _menuStateManager.updateMenus(menus);
+            _foodMenus = menus.where((menu) => menu.type == 'food').toList();
+            _drinkMenus = menus.where((menu) => menu.type == 'drink').toList();
+          });
         }
-      }
+      }, onError: (error) {
+        if (mounted) {
+          setState(() => _error = error.toString());
+        }
+      });
 
-      if (mounted) {
-        setState(() {
-          _stall = stall;
-          userData = userDataMap; // Set the userData
-          _menus = menus;
-          _foodMenus = menus.where((menu) => menu.type == 'food').toList();
-          _drinkMenus = menus.where((menu) => menu.type == 'drink').toList();
-          _isLoading = false;
-        });
-      }
+      _storeService.addonStream.listen((addons) {
+        if (mounted) {
+          setState(() {
+            _menuAddons = addons;
+            _menuStateManager.updateAddons(addons);
+          });
+        }
+      }, onError: (error) {
+        if (mounted) {
+          setState(() => _error = error.toString());
+        }
+      });
+
+      // Load initial data
+      await _storeService.loadMenusForStore(stall.id);
     } catch (e) {
-      print('Error loading data: $e');
       if (mounted) {
         setState(() {
           _error = e.toString();
@@ -231,109 +318,77 @@ class _MyStorePageState extends State<MyStorePage> with TickerProviderStateMixin
 
   @override
   Widget build(BuildContext context) {
+    // Show loading screen while initializing
     if (_isLoading) {
       return _buildLoadingScreen();
     }
 
+    // Show error screen if there's an error
     if (_error != null) {
       return _buildErrorScreen();
     }
 
+    // Show create store prompt if no store data
     if (_stall == null) {
       return _buildCreateStorePrompt();
     }
 
-    return Scaffold(
-      // Remove the AppBar here
-      extendBodyBehindAppBar: true,
-      body: RefreshIndicator(
-        key: _refreshIndicatorKey,
-        onRefresh: _handleRefresh,
-        color: accentColor,
-        backgroundColor: Colors.white,
-        child: CustomScrollView(
-          controller: _scrollController,
-          physics: const AlwaysScrollableScrollPhysics(),
-          slivers: [
-            _buildHeader(),
-            _buildQuickActions(),
-            _buildStats(),
-            _buildMenuSection(),
-            SliverToBoxAdapter(
-              child: const SizedBox(height: 80),
-            ),
-          ]
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeader() {
-    return SliverAppBar(
-      expandedHeight: 300,
-      pinned: true,
-      stretch: true,
-      backgroundColor: Colors.white,
-      leading: IconButton( // Add the back button here with proper styling
-        icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
-        onPressed: () => Navigator.of(context).pop(),
-      ),
-      flexibleSpace: FlexibleSpaceBar(
-        background: Stack(
-          fit: StackFit.expand,
-          children: [
-            // Banner Image
-            _buildStoreImage(),
-            // Gradient overlay moved to _buildHeaderContent
-            SafeArea(
-              child: Align(
-                alignment: Alignment.bottomCenter,
-                child: _buildHeaderContent(),
+    return LoadingOverlay(
+      isLoading: _isProcessing,
+      message: 'Please wait...',
+      child: Scaffold(
+        extendBodyBehindAppBar: true,
+        body: RefreshIndicator(
+          key: _refreshIndicatorKey,
+          onRefresh: _handleRefresh,
+          color: accentColor,
+          backgroundColor: Colors.white,
+          child: CustomScrollView(
+            controller: _scrollController,
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              _buildHeader(),
+              _buildQuickActions(),
+              _buildStats(),
+              _buildMenuSection(),
+              const SliverToBoxAdapter(
+                child: SizedBox(height: 80),
               ),
-            ),
-          ]
+            ],
+          ),
         ),
       ),
-      bottom: _isCollapsed ? _buildCollapsedHeader() : null,
     );
   }
 
-  PreferredSize _buildCollapsedHeader() {
-    return PreferredSize(
-      preferredSize: const Size.fromHeight(60),
-      child: Container(
-        color: Colors.white,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: Row(
+  Widget _buildLoadingScreen() {
+    return Shimmer.fromColors(
+      baseColor: Colors.grey[300]!,
+      highlightColor: Colors.grey[100]!,
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            CircleAvatar(
-              radius: 20,
-              backgroundImage: _stall?.imageUrl != null
-                  ? NetworkImage(_stall!.imageUrl!)
-                  : null,
-              child: _stall?.imageUrl == null
-                  ? Text(_stall!.ownerName[0].toUpperCase())
-                  : null,
+            Container(
+              height: 280,
+              color: Colors.white,
             ),
-            const SizedBox(width: 12),
-            Expanded(
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    _stall!.stanName,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
+                  Container(
+                    height: 24,
+                    width: 200,
+                    color: Colors.white,
                   ),
-                  Text(
-                    _stall!.slot,
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                      fontSize: 12,
-                    ),
+                  const SizedBox(height: 8),
+                  Container(
+                    height: 16,
+                    width: 150,
+                    color: Colors.white,
                   ),
                 ],
               ),
@@ -344,7 +399,39 @@ class _MyStorePageState extends State<MyStorePage> with TickerProviderStateMixin
     );
   }
 
+  Widget _buildHeader() {
+    if (_stall == null) {
+      return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
+
+    return SliverAppBar(
+      expandedHeight: 300,
+      pinned: true,
+      leading: IconButton(
+        // Add the back button here with proper styling
+        icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
+        onPressed: () => Navigator.of(context).pop(),
+      ),
+      flexibleSpace: FlexibleSpaceBar(
+        background: Stack(fit: StackFit.expand, children: [
+          // Banner Image
+          _buildStoreImage(),
+          // Gradient overlay moved to _buildHeaderContent
+          SafeArea(
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              child: _buildHeaderContent(),
+            ),
+          ),
+        ]),
+      ),
+      bottom: _isCollapsed ? _buildCollapsedHeader() : null,
+    );
+  }
+
   Widget _buildHeaderContent() {
+    if (_stall == null) return const SizedBox.shrink();
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -451,6 +538,59 @@ class _MyStorePageState extends State<MyStorePage> with TickerProviderStateMixin
     );
   }
 
+  PreferredSize _buildCollapsedHeader() {
+    if (_stall == null) {
+      return PreferredSize(
+        preferredSize: const Size.fromHeight(60),
+        child: Container(),
+      );
+    }
+
+    return PreferredSize(
+      preferredSize: const Size.fromHeight(60),
+      child: Container(
+        color: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 20,
+              backgroundImage: _stall?.imageUrl != null
+                  ? NetworkImage(_stall!.imageUrl!)
+                  : null,
+              child: _stall?.imageUrl == null
+                  ? Text(_stall!.ownerName[0].toUpperCase())
+                  : null,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _stall!.stanName,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                  Text(
+                    _stall!.slot,
+                    style: TextStyle(
+                      color: Colors.grey[600],
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildQuickActions() {
     return SliverToBoxAdapter(
       child: Card(
@@ -476,7 +616,39 @@ class _MyStorePageState extends State<MyStorePage> with TickerProviderStateMixin
                     icon: Icons.add_box,
                     label: 'Add Menu',
                     color: accentColor,
-                    onTap: () {/* TODO */},
+                    onTap: () {
+                      // Show bottom sheet to choose image source
+                      showModalBottomSheet(
+                        context: context,
+                        builder: (BuildContext context) {
+                          return SafeArea(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: <Widget>[
+                                ListTile(
+                                  leading: const Icon(Icons.photo_camera),
+                                  title: const Text('Take a photo'),
+                                  onTap: () =>
+                                      _pickImage(ImageSource.camera, context),
+                                ),
+                                ListTile(
+                                  leading: const Icon(Icons.photo_library),
+                                  title: const Text('Choose from gallery'),
+                                  onTap: () =>
+                                      _pickImage(ImageSource.gallery, context),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  ),
+                  _buildActionButton(
+                    icon: Icons.local_offer,
+                    label: 'Discounts',
+                    color: Colors.purple,
+                    onTap: () => _showDiscountManagement(),
                   ),
                   _buildActionButton(
                     icon: Icons.edit_note,
@@ -497,6 +669,261 @@ class _MyStorePageState extends State<MyStorePage> with TickerProviderStateMixin
         ),
       ),
     );
+  }
+
+  void _showDiscountManagement() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => StatefulBuilder(
+        builder: (BuildContext context, StateSetter setModalState) {
+          return Container(
+            height: MediaQuery.of(context).size.height * 0.8,
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Manage Discounts',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.add_circle_outline),
+                      onPressed: () => _showAddDiscountDialog(),
+                    ),
+                  ],
+                ),
+                Expanded(
+                  child: FutureBuilder<List<Discount>>(
+                    future: _discountService.getDiscounts(),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return Center(child: CircularProgressIndicator());
+                      }
+                      if (snapshot.hasError) {
+                        return Center(child: Text('Error: ${snapshot.error}'));
+                      }
+                      if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                        return Center(child: Text('No discounts available'));
+                      }
+
+                      return ListView.builder(
+                        itemCount: snapshot.data!.length,
+                        itemBuilder: (context, index) {
+                          final discount = snapshot.data![index];
+                          return _buildDiscountCard(
+                            discount,
+                            () => setModalState(() {}),
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _applyDiscountToMenus(Discount discount) async {
+    if (_stall == null) return;
+
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ApplyDiscountScreen(
+          discount: discount,
+          stallId: _stall!.id,
+        ),
+      ),
+    );
+
+    if (result == true && mounted) {
+      // Close the current bottom sheet
+      Navigator.pop(context);
+      // Reopen the discount management with fresh data
+      _showDiscountManagement();
+    }
+  }
+
+  Widget _buildDiscountCard(Discount discount, VoidCallback refresh) {
+    final isWithinDateRange = discount.startDate.isBefore(DateTime.now()) &&
+        discount.endDate.isAfter(DateTime.now());
+
+    return Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ListTile(
+            title: Text(
+              discount.discountName,
+              overflow: TextOverflow.ellipsis,
+            ),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${discount.discountPercentage}% off',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).primaryColor,
+                  ),
+                ),
+                Text(
+                  'Valid: ${DateFormat('MMM dd').format(discount.startDate)} - ${DateFormat('MMM dd').format(discount.endDate)}',
+                  style: TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
+            trailing: Switch(
+              value: discount.isActive,
+              onChanged: (value) async {
+                try {
+                  await _discountService.toggleDiscountStatus(
+                    discount.id,
+                    value,
+                  );
+                  discount.isActive = value;
+                  refresh();
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Failed to update status: $e'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                }
+              },
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton.icon(
+                  icon: Icon(Icons.link, size: 18),
+                  label: Text('Apply to Menu'),
+                  onPressed: () => _applyDiscountToMenus(discount),
+                ),
+                const SizedBox(width: 8),
+                TextButton.icon(
+                  icon: Icon(Icons.edit, size: 18),
+                  label: Text('Edit'),
+                  onPressed: () => _editDiscount(discount),
+                ),
+                const SizedBox(width: 8),
+                TextButton.icon(
+                  icon: Icon(Icons.delete_outline, size: 18),
+                  label: Text('Delete'),
+                  onPressed: () => _deleteDiscount(discount),
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.red,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _editDiscount(Discount discount) {
+    showDialog(
+      context: context,
+      builder: (context) => EditDiscountDialog(
+        discount: discount,
+        onSave: (updatedDiscount) async {
+          try {
+            await _discountService.updateDiscount(updatedDiscount);
+            Navigator.pop(context); // Close dialog
+            Navigator.pop(context); // Close bottom sheet
+            _showDiscountManagement(); // Reopen to refresh
+          } catch (e) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Failed to update discount: $e'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+        },
+      ),
+    );
+  }
+
+  void _showAddDiscountDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Add New Discount'),
+        content: AddDiscountForm(
+          onSave: (discount) async {
+            try {
+              await _discountService.addDiscount(discount);
+              Navigator.pop(context); // Close dialog
+              Navigator.pop(context); // Close bottom sheet
+              _showDiscountManagement(); // Reopen bottom sheet to refresh
+            } catch (e) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Failed to add discount: $e'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+          },
+        ),
+      ),
+    );
+  }
+
+  Future<void> _deleteDiscount(Discount discount) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Confirm Delete'),
+        content: Text('Are you sure you want to delete this discount?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      try {
+        await _discountService.deleteDiscount(discount.id);
+        Navigator.pop(context); // Close bottom sheet
+        _showDiscountManagement(); // Reopen to refresh
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to delete discount: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Widget _buildActionButton({
@@ -613,11 +1040,14 @@ class _MyStorePageState extends State<MyStorePage> with TickerProviderStateMixin
             labelColor: primaryColor,
             unselectedLabelColor: Colors.grey,
             indicatorColor: primaryColor,
-            tabs: _categories.map((category) => Tab(
-              text: category == 'food' ? 'Food' : 
-                   category == 'drink' ? 'Drink' : 
-                   category
-            )).toList(),
+            tabs: _categories
+                .map((category) => Tab(
+                    text: category == 'food'
+                        ? 'Food'
+                        : category == 'drink'
+                            ? 'Drink'
+                            : category))
+                .toList(),
           ),
           SizedBox(
             height: 400, // Adjust based on your needs
@@ -626,8 +1056,9 @@ class _MyStorePageState extends State<MyStorePage> with TickerProviderStateMixin
               children: _categories.map((category) {
                 final menuItems = category == 'All'
                     ? _menus
-                    : _menus.where((menu) => 
-                        menu.type == category) // Remove toLowerCase()
+                    : _menus
+                        .where((menu) =>
+                            menu.type == category) // Remove toLowerCase()
                         .toList();
                 return _buildMenuGrid(menuItems);
               }).toList(),
@@ -639,15 +1070,31 @@ class _MyStorePageState extends State<MyStorePage> with TickerProviderStateMixin
   }
 
   Widget _buildStoreImage() {
+    if (_stall?.Banner_img == null) {
+      return Container(
+        color: Colors.grey[200],
+        child: const Center(
+          child: Icon(
+            Icons.store,
+            size: 64,
+            color: Colors.grey,
+          ),
+        ),
+      );
+    }
+
     return CachedNetworkImage(
-      imageUrl: _stall!.Banner_img ?? '',
+      imageUrl: _stall!.Banner_img!,
       fit: BoxFit.cover,
       placeholder: (context, url) => Shimmer.fromColors(
         baseColor: Colors.grey[300]!,
         highlightColor: Colors.grey[100]!,
         child: Container(color: Colors.white),
       ),
-      errorWidget: (context, url, error) => const Icon(Icons.error),
+      errorWidget: (context, url, error) => Container(
+        color: Colors.grey[200],
+        child: const Icon(Icons.error),
+      ),
     );
   }
 
@@ -656,9 +1103,8 @@ class _MyStorePageState extends State<MyStorePage> with TickerProviderStateMixin
       children: [
         CircleAvatar(
           radius: 50,
-          backgroundImage: _stall!.imageUrl != null
-              ? NetworkImage(_stall!.imageUrl!)
-              : null,
+          backgroundImage:
+              _stall!.imageUrl != null ? NetworkImage(_stall!.imageUrl!) : null,
           child: _stall!.imageUrl == null
               ? AvatarGlow(
                   glowColor: Colors.blue,
@@ -942,18 +1388,20 @@ class _MyStorePageState extends State<MyStorePage> with TickerProviderStateMixin
     );
   }
 
-Widget _buildMenuGrid(List<Menu> menuItems) {
-  return ListView.separated(
-    padding: const EdgeInsets.all(16),
-    itemCount: menuItems.length,
-    separatorBuilder: (_, __) => const SizedBox(height: 12),
-    itemBuilder: (context, index) => _buildMenuCard(menuItems[index]),
-  );
-}
+  Widget _buildMenuGrid(List<Menu> menuItems) {
+    return ListView.separated(
+      padding: const EdgeInsets.all(16),
+      itemCount: menuItems.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 12),
+      itemBuilder: (context, index) => _buildMenuCard(menuItems[index]),
+    );
+  }
+
   Widget _buildMenuCard(Menu menu) {
     final addons = _menuAddons[menu.id] ?? [];
     final hasAddons = addons.isNotEmpty;
-    final isAvailable = menu.isAvailable ?? true; // Add this field to Menu model
+    final isAvailable =
+        menu.isAvailable ?? true; // Add this field to Menu model
 
     return Card(
       elevation: 2,
@@ -988,7 +1436,9 @@ Widget _buildMenuGrid(List<Menu> menuItems) {
                             height: 100,
                             color: Colors.grey[300],
                             child: Icon(
-                              menu.type == 'food' ? Icons.restaurant : Icons.local_drink,
+                              menu.type == 'food'
+                                  ? Icons.restaurant
+                                  : Icons.local_drink,
                               color: Colors.grey,
                             ),
                           ),
@@ -1017,7 +1467,7 @@ Widget _buildMenuGrid(List<Menu> menuItems) {
                     ],
                   ),
                   const SizedBox(width: 12),
-                  
+
                   // Details Section
                   Expanded(
                     child: Column(
@@ -1037,20 +1487,31 @@ Widget _buildMenuGrid(List<Menu> menuItems) {
                             ),
                             Switch.adaptive(
                               value: isAvailable,
-                              onChanged: (value) => _toggleMenuAvailability(menu),
+                              onChanged: (value) {
+                                _toggleMenuAvailability(menu)
+                                    .catchError((error) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                          'Failed to update availability: $error'),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                });
+                              },
                               activeColor: Theme.of(context).primaryColor,
                             ),
                           ],
                         ),
-                        
+
                         // Category and Type Tags
                         Wrap(
                           spacing: 8,
                           children: [
                             _buildTag(
                               menu.type.toUpperCase(),
-                              color: menu.type == 'food' 
-                                  ? Colors.orange 
+                              color: menu.type == 'food'
+                                  ? Colors.orange
                                   : Colors.blue,
                             ),
                             if (menu.category != null)
@@ -1061,11 +1522,11 @@ Widget _buildMenuGrid(List<Menu> menuItems) {
                           ],
                         ),
                         const SizedBox(height: 4),
-                        
+
                         // Description
-                        if (menu.description != null && menu.description!.isNotEmpty)
+                        if (menu.description.isNotEmpty)
                           Text(
-                            menu.description!,
+                            menu.description,
                             style: TextStyle(
                               fontSize: 13,
                               color: Colors.grey[600],
@@ -1075,7 +1536,7 @@ Widget _buildMenuGrid(List<Menu> menuItems) {
                             overflow: TextOverflow.ellipsis,
                           ),
                         const SizedBox(height: 8),
-                        
+
                         // Price and Quick Edit
                         Row(
                           children: [
@@ -1104,36 +1565,45 @@ Widget _buildMenuGrid(List<Menu> menuItems) {
                 ],
               ),
             ),
-            
-            // Add-ons Section
-            if (hasAddons) ...[
-              const Divider(height: 16),
-              Row(
-                children: [
-                  Icon(Icons.add_circle_outline, 
-                       size: 16, 
-                       color: Colors.grey[600]),
-                  const SizedBox(width: 4),
-                  Text(
-                    '${addons.length} Add-ons Available',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey[600],
-                    ),
+
+            // Modified Add-ons Section
+            const Divider(height: 16),
+            Row(
+              children: [
+                Icon(
+                  hasAddons ? Icons.add_circle_outline : Icons.add_circle,
+                  size: 16,
+                  color: hasAddons
+                      ? Colors.grey[600]
+                      : Theme.of(context).primaryColor,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  hasAddons
+                      ? '${addons.length} Add-ons Available'
+                      : 'Add New Add-on',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: hasAddons
+                        ? Colors.grey[600]
+                        : Theme.of(context).primaryColor,
+                    fontWeight: hasAddons ? FontWeight.normal : FontWeight.bold,
                   ),
-                  const Spacer(),
-                  TextButton(
-                    onPressed: () => _showAddons(context, menu, addons),
-                    child: Text('Manage'),
-                    style: TextButton.styleFrom(
-                      padding: EdgeInsets.zero,
-                      minimumSize: Size(60, 30),
-                    ),
+                ),
+                const Spacer(),
+                TextButton(
+                  onPressed: () => hasAddons
+                      ? _showAddons(context, menu, addons)
+                      : _showAddonDialog(context, menu, null),
+                  style: TextButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    minimumSize: const Size(60, 30),
                   ),
-                ],
-              ),
-            ],
-            
+                  child: Text(hasAddons ? 'Manage' : 'Add'),
+                ),
+              ],
+            ),
+
             // Stats Section
             Container(
               margin: const EdgeInsets.only(top: 8),
@@ -1163,7 +1633,7 @@ Widget _buildMenuGrid(List<Menu> menuItems) {
                 ],
               ),
             ),
-            
+
             // Action Buttons
             Padding(
               padding: const EdgeInsets.only(top: 8),
@@ -1171,9 +1641,12 @@ Widget _buildMenuGrid(List<Menu> menuItems) {
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: () => _editMenu(context, menu, addons),
+                      onPressed: _isProcessing
+                          ? null
+                          : () => _navigateToMenuDetails(menu, addons),
                       icon: const Icon(Icons.edit_note),
-                      label: const Text('Edit Details'),
+                      label: Text(
+                          _isProcessing ? 'Please wait...' : 'Edit Details'),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: Theme.of(context).primaryColor,
                         side: BorderSide(
@@ -1239,33 +1712,34 @@ Widget _buildMenuGrid(List<Menu> menuItems) {
             fontSize: 11,
             color: Colors.grey[600],
           ),
-        )
-        ],
-
+        ),
+      ],
     );
   }
 
-  void _toggleMenuAvailability(Menu menu) async {
+  Future<void> _toggleMenuAvailability(Menu menu) async {
     try {
       setState(() => _isLoading = true);
-      
-      await _foodService.toggleMenuAvailability(
-        menu.id!,
-        !menu.isAvailable,
-      );
+
+      // Get the current availability status
+      final bool newAvailability = !menu.isAvailable;
+
+      // Update the menu availability
+      await _foodService.toggleMenuAvailability(menu.id!, newAvailability);
 
       // Update local state
       setState(() {
         final index = _menus.indexWhere((m) => m.id == menu.id);
         if (index != -1) {
-          _menus[index] = menu.copyWith(isAvailable: !menu.isAvailable);
+          _menus[index] = menu.copyWith(isAvailable: newAvailability);
         }
       });
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Menu ${menu.isAvailable ? 'disabled' : 'enabled'} successfully'),
+            content: Text(
+                'Menu ${newAvailability ? 'enabled' : 'disabled'} successfully'),
             backgroundColor: Colors.green,
           ),
         );
@@ -1279,6 +1753,7 @@ Widget _buildMenuGrid(List<Menu> menuItems) {
           ),
         );
       }
+      rethrow;
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -1311,7 +1786,7 @@ Widget _buildMenuGrid(List<Menu> menuItems) {
               try {
                 final newPrice = double.parse(priceController.text);
                 await _foodService.updateMenuPrice(menu.id!, newPrice);
-                
+
                 // Update local state
                 setState(() {
                   final index = _menus.indexWhere((m) => m.id == menu.id);
@@ -1365,14 +1840,42 @@ Widget _buildMenuGrid(List<Menu> menuItems) {
             onTap: () async {
               try {
                 Navigator.pop(context);
-                setState(() => _isLoading = true);
-                
+                setState(() => _isProcessing = true);
+
                 await _foodService.duplicateMenu(menu.id!);
-                await _loadStallAndMenus(); // Reload all menus
-                
+
+                // Reload menus and addons
+                if (_stall != null) {
+                  final menus = await _foodService.getMenuByStanId(_stall!.id);
+                  // Update menus state
+                  setState(() {
+                    _menus = menus;
+                    _foodMenus =
+                        menus.where((menu) => menu.type == 'food').toList();
+                    _drinkMenus =
+                        menus.where((menu) => menu.type == 'drink').toList();
+                  });
+
+                  // Load addons for all menus
+                  final Map<int, List<FoodAddon>> newAddonMap = {};
+                  for (final menu in menus) {
+                    if (menu.id != null) {
+                      final addons =
+                          await _foodService.getAddonsForMenu(menu.id!);
+                      newAddonMap[menu.id!] = addons;
+                    }
+                  }
+
+                  // Update addons state
+                  setState(() {
+                    _menuAddons = newAddonMap;
+                    _isProcessing = false;
+                  });
+                }
+
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
+                    const SnackBar(
                       content: Text('Menu duplicated successfully'),
                       backgroundColor: Colors.green,
                     ),
@@ -1380,6 +1883,7 @@ Widget _buildMenuGrid(List<Menu> menuItems) {
                 }
               } catch (e) {
                 if (mounted) {
+                  setState(() => _isProcessing = false);
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text('Failed to duplicate menu: $e'),
@@ -1387,8 +1891,6 @@ Widget _buildMenuGrid(List<Menu> menuItems) {
                     ),
                   );
                 }
-              } finally {
-                if (mounted) setState(() => _isLoading = false);
               }
             },
           ),
@@ -1422,9 +1924,9 @@ Widget _buildMenuGrid(List<Menu> menuItems) {
                 if (confirm ?? false) {
                   Navigator.pop(context); // Close bottom sheet
                   setState(() => _isLoading = true);
-                  
+
                   await _foodService.deleteMenu(menu.id!);
-                  
+
                   // Update local state
                   setState(() {
                     _menus.removeWhere((m) => m.id == menu.id);
@@ -1458,133 +1960,195 @@ Widget _buildMenuGrid(List<Menu> menuItems) {
     );
   }
 
+  Future<void> _showAddonDialog(
+      BuildContext context, Menu menu, FoodAddon? addon) async {
+    try {
+      final addonData = await showDialog<FoodAddon?>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => AddonDialog(
+          addon: addon,
+          menuId: menu.id!,
+        ),
+      );
+
+      if (addonData != null && mounted) {
+        setState(() => _isProcessing = true);
+        await _storeService.saveAddon(addonData);
+
+        // Refresh the addons for this menu
+        final updatedAddons = await _foodService.getAddonsForMenu(menu.id!);
+
+        setState(() {
+          _menuAddons[menu.id!] = updatedAddons;
+          _isProcessing = false;
+        });
+
+        // Pop context for both new and edit cases
+        if (mounted) {
+          Navigator.of(context).pop();
+        }
+
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(addon == null
+                ? 'Add-on added successfully'
+                : 'Add-on updated successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isProcessing = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   void _showAddons(BuildContext context, Menu menu, List<FoodAddon> addons) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      isScrollControlled: true, // Make the bottom sheet adjustable
-      builder: (context) => Container(
-        height: MediaQuery.of(context).size.height * 0.7, // Set max height
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: Column(
-          children: [
-            // Handle and header
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(
-                    color: Colors.grey.shade200,
-                    width: 1,
-                  ),
+      isScrollControlled: true,
+      isDismissible: true,
+      builder: (bottomSheetContext) => StatefulBuilder(
+        builder: (context, setBottomSheetState) => Container(
+          height: MediaQuery.of(context).size.height * 0.7,
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              _buildAddonHeader(
+                  menu, context), // Changed from bottomSheetContext
+              Expanded(
+                child: ListView.builder(
+                  itemCount: _menuAddons[menu.id]?.length ?? 0,
+                  padding: const EdgeInsets.all(16),
+                  itemBuilder: (context, index) {
+                    final addon = _menuAddons[menu.id]![index];
+                    return AddonCard(
+                      key: ValueKey('${addon.id}-${addon.addonName}'),
+                      addon: addon,
+                      onEdit: () => _showAddonDialog(context, menu, addon),
+                      onDelete: () => _deleteAddon(context, menu.id!, addon),
+                    );
+                  },
                 ),
               ),
-              child: Column(
-                children: [
-                  Container(
-                    width: 40,
-                    height: 4,
-                    margin: const EdgeInsets.only(bottom: 16),
-                    decoration: BoxDecoration(
-                      color: Colors.grey[300],
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                  Text(
-                    'Add-ons for ${menu.foodName}',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  if (menu.description != null) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      menu.description!,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey[600],
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            
-            // Add-ons list
-            Expanded(
-              child: ListView.builder(
-                itemCount: addons.length,
-                padding: const EdgeInsets.all(16),
-                itemBuilder: (context, index) {
-                  final addon = addons[index];
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    child: ListTile(
-                      contentPadding: const EdgeInsets.all(16),
-                      title: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            addon.addonName,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          Text(
-                            'Rp ${addon.price.toStringAsFixed(0)}',
-                            style: TextStyle(
-                              color: Theme.of(context).primaryColor,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                      subtitle: addon.description != null
-                          ? Padding(
-                              padding: const EdgeInsets.only(top: 8),
-                              child: Text(
-                                addon.description!,
-                                style: TextStyle(
-                                  color: Colors.grey[600],
-                                ),
-                              ),
-                            )
-                          : null,
-                      trailing: IconButton(
-                        icon: const Icon(Icons.edit),
-                        onPressed: () => _editAddon(context, menu, addon),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-            
-            // Add new addon button
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: ElevatedButton.icon(
-                onPressed: () => _addNewAddon(context, menu),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Theme.of(context).primaryColor,
-                  minimumSize: const Size(double.infinity, 48),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                icon: const Icon(Icons.add),
-                label: const Text('Add New Add-on'),
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  Widget _buildAddonHeader(Menu menu, BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).primaryColor.withOpacity(0.1),
+        border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Add-ons Management',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${menu.foodName} - ${_menuAddons[menu.id]?.length ?? 0} Add-ons',
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ElevatedButton.icon(
+            onPressed: () => _showAddonDialog(context, menu, null),
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('New Add-on'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Theme.of(context).primaryColor,
+              foregroundColor: Colors.white,
+              elevation: 0,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAddonCard(Menu menu, FoodAddon addon) {
+    return AddonCard(
+      addon: addon,
+      onEdit: () => _showAddonDialog(context, menu, addon),
+      onDelete: () => _deleteAddon(context, menu.id!, addon),
+    );
+  }
+
+  Future<void> _deleteAddon(
+      BuildContext context, int menuId, FoodAddon addon) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirm Delete'),
+        content: Text('Delete add-on "${addon.addonName}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true && mounted) {
+      try {
+        await _storeService.deleteAddon(menuId, addon.id!);
+        // Refresh addons list
+        final newAddons = await _foodService.getAddonsForMenu(menuId);
+        setState(() {
+          _menuAddons[menuId] = newAddons;
+        });
+        Navigator.pop(context); // Close the bottom sheet
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Add-on deleted'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error deleting add-on: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   void _addNewAddon(BuildContext context, Menu menu) {
@@ -1597,44 +2161,6 @@ Widget _buildMenuGrid(List<Menu> menuItems) {
 
   void _editAddon(BuildContext context, Menu menu, FoodAddon addon) {
     // TODO: Implement edit addon functionality
-  }
-
-  Widget _buildLoadingScreen() {
-    return Shimmer.fromColors(
-      baseColor: Colors.grey[300]!,
-      highlightColor: Colors.grey[100]!,
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              height: 280,
-              color: Colors.white,
-            ),
-            const SizedBox(height: 16),
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    height: 24,
-                    width: 200,
-                    color: Colors.white,
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    height: 16,
-                    width: 150,
-                    color: Colors.white,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   Widget _buildErrorScreen() {
@@ -1653,7 +2179,7 @@ Widget _buildMenuGrid(List<Menu> menuItems) {
                   _isLoading = true;
                   _error = null;
                 });
-                _loadStallAndMenus();
+                _initializeStore(); // Changed from _loadStallAndMenus
               },
               child: const Text('Retry'),
             ),
@@ -1693,10 +2219,44 @@ Widget _buildMenuGrid(List<Menu> menuItems) {
     // TODO: Implement edit field functionality
   }
 
+  Future<void> _navigateToMenuDetails(Menu menu, List<FoodAddon> addons) async {
+    try {
+      setState(() => _isProcessing = true);
+      final result = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => MenuDetailsScreen(
+            menu: menu,
+            addons: addons,
+          ),
+        ),
+      );
+
+      if (result == true && mounted) {
+        await _initializeStore();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error navigating to menu details: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isProcessing = false);
+      }
+    }
+  }
+
   @override
   void dispose() {
+    _storeService.dispose();
     _menuTabController.dispose();
     _scrollController.dispose();
+    _menuStateManager.clear();
     super.dispose();
   }
 }

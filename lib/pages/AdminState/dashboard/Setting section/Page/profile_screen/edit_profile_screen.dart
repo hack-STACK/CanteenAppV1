@@ -3,7 +3,6 @@ import 'package:image_picker/image_picker.dart';
 import 'package:kantin/Services/feature/cropImage.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:io';
-import 'package:avatar_glow/avatar_glow.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shimmer/shimmer.dart';
 
@@ -12,22 +11,23 @@ class EditProfileScreen extends StatefulWidget {
   final String stallId;
 
   const EditProfileScreen({
-    Key? key,
+    super.key,
     required this.initialData,
     required this.stallId,
-  }) : super(key: key);
+  });
 
   @override
   State<EditProfileScreen> createState() => _EditProfileScreenState();
 }
 
-class _EditProfileScreenState extends State<EditProfileScreen> with SingleTickerProviderStateMixin {
+class _EditProfileScreenState extends State<EditProfileScreen>
+    with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _stallNameController;
   late TextEditingController _ownerNameController;
   late TextEditingController _phoneController;
   late TextEditingController _descriptionController;
-  
+
   // Remove duplicate declarations and consolidate image-related variables
   File? _imageFile;
   File? _bannerImageFile;
@@ -70,10 +70,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> with SingleTicker
     _animationController.forward();
 
     // Initialize existing images with proper URLs
-    _currentProfileImage = widget.initialData['imageUrl'] ?? widget.initialData['image_url'];
-    _currentBannerImage = widget.initialData['bannerUrl'] ?? widget.initialData['Banner_img'];
-    _hasExistingProfile = _currentProfileImage != null && _currentProfileImage!.isNotEmpty;
-    _hasExistingBanner = _currentBannerImage != null && _currentBannerImage!.isNotEmpty;
+    _currentProfileImage =
+        widget.initialData['imageUrl'] ?? widget.initialData['image_url'];
+    _currentBannerImage =
+        widget.initialData['bannerUrl'] ?? widget.initialData['Banner_img'];
+    _hasExistingProfile =
+        _currentProfileImage != null && _currentProfileImage!.isNotEmpty;
+    _hasExistingBanner =
+        _currentBannerImage != null && _currentBannerImage!.isNotEmpty;
 
     debugPrint('Profile Image URL: $_currentProfileImage'); // Debug line
     debugPrint('Banner Image URL: $_currentBannerImage'); // Debug line
@@ -193,13 +197,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> with SingleTicker
     try {
       setState(() => _isLoading = true);
       final supabase = Supabase.instance.client;
-      
+
       // Read file as bytes
       final bytes = await imageFile.readAsBytes();
-      
+
       // Create unique filename
       final fileExt = imageFile.path.split('.').last;
-      final fileName = 'stall_${widget.stallId}_${DateTime.now().millisecondsSinceEpoch}.$fileExt';
+      final fileName =
+          'stall_${widget.stallId}_${DateTime.now().millisecondsSinceEpoch}.$fileExt';
 
       // Delete existing image if it exists
       if (widget.initialData['image_url'] != null) {
@@ -213,21 +218,22 @@ class _EditProfileScreenState extends State<EditProfileScreen> with SingleTicker
 
       // Upload new image with proper content type
       await supabase.storage.from('stall-images').uploadBinary(
-        fileName,
-        bytes,
-        fileOptions: FileOptions(
-          contentType: 'image/$fileExt',
-          upsert: true,
-        ),
-      );
+            fileName,
+            bytes,
+            fileOptions: FileOptions(
+              contentType: 'image/$fileExt',
+              upsert: true,
+            ),
+          );
 
       // Get public URL
-      final imageUrl = supabase.storage.from('stall-images').getPublicUrl(fileName);
+      final imageUrl =
+          supabase.storage.from('stall-images').getPublicUrl(fileName);
 
       // Update database
-      await supabase.from('stalls')
-          .update({'image_url': imageUrl})
-          .eq('id', widget.stallId);
+      await supabase
+          .from('stalls')
+          .update({'image_url': imageUrl}).eq('id', widget.stallId);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -258,13 +264,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> with SingleTicker
     try {
       setState(() => _isLoading = true);
       final supabase = Supabase.instance.client;
-      
+
       // Read file as bytes
       final bytes = await imageFile.readAsBytes();
-      
+
       // Create unique filename
       final fileExt = imageFile.path.split('.').last;
-      final fileName = 'banner_${widget.stallId}_${DateTime.now().millisecondsSinceEpoch}.$fileExt';
+      final fileName =
+          'banner_${widget.stallId}_${DateTime.now().millisecondsSinceEpoch}.$fileExt';
 
       // Delete existing banner if it exists
       if (widget.initialData['Banner_img'] != null) {
@@ -278,21 +285,22 @@ class _EditProfileScreenState extends State<EditProfileScreen> with SingleTicker
 
       // Upload new banner with proper content type
       await supabase.storage.from('banner-images').uploadBinary(
-        fileName,
-        bytes,
-        fileOptions: FileOptions(
-          contentType: 'image/$fileExt',
-          upsert: true,
-        ),
-      );
+            fileName,
+            bytes,
+            fileOptions: FileOptions(
+              contentType: 'image/$fileExt',
+              upsert: true,
+            ),
+          );
 
       // Get public URL
-      final bannerUrl = supabase.storage.from('banner-images').getPublicUrl(fileName);
+      final bannerUrl =
+          supabase.storage.from('banner-images').getPublicUrl(fileName);
 
       // Update database
-      await supabase.from('stalls')
-          .update({'Banner_img': bannerUrl})
-          .eq('id', widget.stallId);
+      await supabase
+          .from('stalls')
+          .update({'Banner_img': bannerUrl}).eq('id', widget.stallId);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -360,8 +368,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> with SingleTicker
         // Delete existing banner image if it exists
         if (widget.initialData['Banner_img'] != null) {
           try {
-            final oldBannerFileName = widget.initialData['Banner_img'].split('/').last;
-            await supabase.storage.from('banner-images').remove([oldBannerFileName]);
+            final oldBannerFileName =
+                widget.initialData['Banner_img'].split('/').last;
+            await supabase.storage
+                .from('banner-images')
+                .remove([oldBannerFileName]);
           } catch (e) {
             debugPrint('Error deleting old banner image: $e');
           }
@@ -373,7 +384,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> with SingleTicker
             .upload(bannerFileName, _bannerImageFile!);
 
         // Get the public URL
-        bannerImageUrl = supabase.storage.from('banner-images').getPublicUrl(bannerFileName);
+        bannerImageUrl =
+            supabase.storage.from('banner-images').getPublicUrl(bannerFileName);
         debugPrint('New banner image URL: $bannerImageUrl'); // Debug line
       }
 
@@ -459,7 +471,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> with SingleTicker
             Positioned.fill(
               child: _bannerImageFile != null
                   ? Image.file(_bannerImageFile!, fit: BoxFit.cover)
-                  : (_currentBannerImage != null && _currentBannerImage!.isNotEmpty
+                  : (_currentBannerImage != null &&
+                          _currentBannerImage!.isNotEmpty
                       ? CachedNetworkImage(
                           imageUrl: _currentBannerImage!,
                           fit: BoxFit.cover,
@@ -576,12 +589,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> with SingleTicker
                               radius: 58,
                               backgroundColor: Colors.white,
                               backgroundImage: _imageFile != null
-                                  ? FileImage(_imageFile!) as ImageProvider<Object>?
-                                  : (_currentProfileImage != null && _currentProfileImage!.isNotEmpty
+                                  ? FileImage(_imageFile!)
+                                      as ImageProvider<Object>?
+                                  : (_currentProfileImage != null &&
+                                          _currentProfileImage!.isNotEmpty
                                       ? NetworkImage(_currentProfileImage!)
                                       : null),
-                              child: _imageFile == null && 
-                                     (_currentProfileImage == null || _currentProfileImage!.isEmpty)
+                              child: _imageFile == null &&
+                                      (_currentProfileImage == null ||
+                                          _currentProfileImage!.isEmpty)
                                   ? Text(
                                       widget.initialData['ownerName'][0]
                                           .toUpperCase(),
@@ -660,7 +676,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> with SingleTicker
         slivers: [
           _buildBannerWithProfile(),
           SliverToBoxAdapter(
-            child: SizedBox(height: 60), // Increased spacing for profile overlap
+            child:
+                SizedBox(height: 60), // Increased spacing for profile overlap
           ),
           SliverList(
             delegate: SliverChildListDelegate([
@@ -678,7 +695,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> with SingleTicker
                     ),
                   ],
                 ),
-                child: Form( // Changed from child: to proper child property
+                child: Form(
+                  // Changed from child: to proper child property
                   key: _formKey,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -818,7 +836,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> with SingleTicker
     );
   }
 
-  Widget _buildImagePreview(String? currentImage, File? imageFile, String placeholder) {
+  Widget _buildImagePreview(
+      String? currentImage, File? imageFile, String placeholder) {
     if (imageFile != null) {
       return Image.file(
         imageFile,
@@ -870,7 +889,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> with SingleTicker
       String? newProfileUrl = _currentProfileImage;
       String? newBannerUrl = _currentBannerImage;
 
-      if (_imageFile != null) { // Changed from _profileImageFile to _imageFile
+      if (_imageFile != null) {
+        // Changed from _profileImageFile to _imageFile
         newProfileUrl = await _uploadImage(_imageFile!, 'profile');
       }
 

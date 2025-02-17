@@ -43,6 +43,12 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
   List<MenuDiscount> _menuDiscounts = [];
   final _supabase = Supabase.instance.client;
 
+  // Add these properties
+  double _basePrice = 0;
+  double _addonTotal = 0;
+  double _discountAmount = 0;
+  double _finalPrice = 0;
+
   @override
   void initState() {
     super.initState();
@@ -51,6 +57,7 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
     _loadDiscounts();
     _loadMenuDiscounts();
     _initializeImages();
+    _calculatePrices(); // Add this
   }
 
   void _initializeImages() {
@@ -81,15 +88,19 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
   Future<void> _saveChanges() async {
     if (!_formKey.currentState!.validate()) return;
     _formKey.currentState!.save();
+    
     try {
       setState(() => _isLoading = true);
-      await _foodService.updateMenu(_currentMenu);
+      
+      // Save menu and addons together
+      await _foodService.updateMenuWithAddons(_currentMenu, _addons);
+      
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Changes saved successfully')),
         );
+        Navigator.pop(context, true);
       }
-      Navigator.pop(context, true);
     } catch (e) {
       _showError('Failed to save changes: $e');
     } finally {
@@ -203,6 +214,69 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
         discount.isActive = true;
       });
     }
+    _calculatePrices(); // Recalculate prices after toggling discount
+  }
+
+  void _calculatePrices() {
+    // Calculate base price
+    _basePrice = _currentMenu.price;
+
+    // Calculate addons total
+    _addonTotal = _addons.where((addon) => addon.isRequired).fold(
+          0,
+          (sum, addon) => sum + addon.price,
+        );
+
+    // Calculate applicable discount
+    double discountPercentage = 0;
+    String discountType = 'none';
+
+    // Find active discount with highest percentage
+    for (var menuDiscount in _menuDiscounts) {
+      final discount = _discounts.firstWhere(
+        (d) => d.id == menuDiscount.discountId && d.isActive,
+        orElse: () => Discount(
+          id: 0,
+          discountName: '',
+          discountPercentage: 0,
+          startDate: DateTime.now(),
+          endDate: DateTime.now(),
+          type: 'none',
+        ),
+      );
+
+      if (discount.discountPercentage > discountPercentage) {
+        discountPercentage = discount.discountPercentage;
+        discountType = discount.type;
+      }
+    }
+
+    // Calculate discount amount based on type
+    _discountAmount = 0;
+    switch (discountType) {
+      case 'mainPrice':
+        _discountAmount = _basePrice * (discountPercentage / 100);
+        break;
+      case 'addons':
+        _discountAmount = _addonTotal * (discountPercentage / 100);
+        break;
+      case 'both':
+        _discountAmount =
+            (_basePrice + _addonTotal) * (discountPercentage / 100);
+        break;
+    }
+
+    // Calculate final price
+    _finalPrice = _basePrice + _addonTotal - _discountAmount;
+
+    setState(() {}); // Update UI
+  }
+
+  void _updateAddons(List<FoodAddon> newAddons) {
+    setState(() {
+      _addons = newAddons;
+      _calculatePrices();
+    });
   }
 
   @override
@@ -257,12 +331,15 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
                           children: [
                             _buildBasicInfoSection(),
                             const Divider(height: 32),
+                            _buildPriceBreakdown(), // Add this after basic info section
                             _buildPricingSection(),
                             const Divider(height: 32),
                             AddonEditor(
                               addons: _addons,
+                              menuId: widget.menu.id!, // Add the menuId parameter
                               onAddonsChanged: (addons) {
                                 setState(() => _addons = addons);
+                                _calculatePrices(); // Recalculate prices when addons change
                               },
                             ),
                             const Divider(height: 32),
@@ -959,5 +1036,60 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
     if (confirm == true) {
       // Implement delete functionality
     }
+  }
+
+  // Add this widget to show price breakdown
+  Widget _buildPriceBreakdown() {
+    return Card(
+      margin: const EdgeInsets.all(16),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Price Breakdown',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            const SizedBox(height: 16),
+            _buildPriceRow('Base Price', _basePrice),
+            if (_addonTotal > 0) _buildPriceRow('Required Add-ons', _addonTotal),
+            if (_discountAmount > 0)
+              _buildPriceRow(
+                'Discount',
+                -_discountAmount,
+                style: const TextStyle(color: Colors.red),
+              ),
+            const Divider(height: 24),
+            _buildPriceRow(
+              'Final Price',
+              _finalPrice,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPriceRow(String label, double amount, {TextStyle? style}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label),
+          Text(
+            'Rp ${amount.toStringAsFixed(0)}',
+            style: style,
+          ),
+        ],
+      ),
+    );
   }
 }

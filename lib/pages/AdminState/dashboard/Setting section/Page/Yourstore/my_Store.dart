@@ -701,7 +701,9 @@ class _MyStorePageState extends State<MyStorePage>
                 ),
                 Expanded(
                   child: FutureBuilder<List<Discount>>(
-                    future: _discountService.getDiscounts(),
+                    future: _stall != null 
+                        ? _discountService.getDiscountsByStallId(_stall!)
+                        : Future.value([]),
                     builder: (context, snapshot) {
                       if (snapshot.connectionState == ConnectionState.waiting) {
                         return Center(child: CircularProgressIndicator());
@@ -868,22 +870,27 @@ class _MyStorePageState extends State<MyStorePage>
   void _showAddDiscountDialog() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: Text('Add New Discount'),
         content: AddDiscountForm(
+          stallId: _stall!.id,
           onSave: (discount) async {
             try {
               await _discountService.addDiscount(discount);
-              Navigator.pop(context); // Close dialog
-              Navigator.pop(context); // Close bottom sheet
-              _showDiscountManagement(); // Reopen bottom sheet to refresh
+              if (mounted) {
+                Navigator.pop(dialogContext); // Use dialogContext instead of context
+                Navigator.pop(context); // Close bottom sheet
+                _showDiscountManagement(); // Reopen to refresh
+              }
             } catch (e) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Failed to add discount: $e'),
-                  backgroundColor: Colors.red,
-                ),
-              );
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Failed to add discount: $e'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
             }
           },
         ),

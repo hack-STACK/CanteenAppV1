@@ -354,7 +354,7 @@ class _DiscountDialogState extends State<DiscountDialog> {
         isActive: true, // Default to active
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
-        type: 'mainPrice', // Default type
+        type: 'mainPrice', stallId: 0, // Default type
       );
       Navigator.pop(context, discount);
     }

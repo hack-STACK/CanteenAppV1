@@ -168,40 +168,23 @@ class FoodService {
 
   /// **🔵 Create: Insert a new food add-on**
   Future<FoodAddon> createFoodAddon(FoodAddon addon) async {
-    if (!await hasInternetConnection()) {
-      throw Exception('No internet connection');
-    }
-
     try {
-      final response = await retry(() async {
-        final data = {
-          'menu_id': addon.menuId,
-          'addon_name': addon.addonName,
-          'price': addon.price,
-          'is_required': addon.isRequired,
-          'stock_quantity': 0, // Default value
-          'is_available': true, // Default value
-          'Description': addon.description,
-        };
+      final response = await _client
+          .from('food_addons')
+          .insert({
+            'menu_id': addon.menuId,
+            'addon_name': addon.addonName,
+            'price': addon.price,
+            'is_required': addon.isRequired,
+            'description': addon.description,
+          })
+          .select()
+          .single();
 
-        final result =
-            await _supabase.from('food_addons').insert(data).select().single();
-
-        return FoodAddon.fromMap(result);
-      });
-
-      return response;
+      return FoodAddon.fromMap(response);
     } catch (e) {
-      if (e is PostgrestException) {
-        if (e.code == '23505') {
-          throw Exception(
-              'An add-on with this name already exists for this menu');
-        }
-        if (e.code == '23514') {
-          throw Exception('Price must be greater than 0');
-        }
-      }
-      throw Exception('Failed to create add-on: $e');
+      print('Error creating addon: $e');
+      throw Exception('Failed to create addon: $e');
     }
   }
 
@@ -407,6 +390,40 @@ class FoodService {
     } catch (e) {
       print('Error fetching addon templates: $e');
       throw Exception('Failed to fetch addon templates: $e');
+    }
+  }
+
+  Future<void> updateMenuWithAddons(Menu menu, List<FoodAddon> addons) async {
+    try {
+      // Start a transaction
+      await _client.rpc('begin_transaction');
+
+      // First update the menu
+      await updateMenu(menu);
+
+      // Delete existing addons for this menu
+      await _client.from('food_addons').delete().eq('menu_id', menu.id!);
+
+      // Insert new addons
+      if (addons.isNotEmpty) {
+        final addonsData = addons.map((addon) => {
+              'menu_id': menu.id,
+              'addon_name': addon.addonName,
+              'price': addon.price,
+              'is_required': addon.isRequired,
+              'description': addon.description,
+            }).toList();
+
+        await _client.from('food_addons').insert(addonsData);
+      }
+
+      // Commit transaction
+      await _client.rpc('commit_transaction');
+    } catch (e) {
+      // Rollback on error
+      await _client.rpc('rollback_transaction');
+      print('Error updating menu with addons: $e');
+      throw Exception('Failed to update menu with addons: $e');
     }
   }
 }

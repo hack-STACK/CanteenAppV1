@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:kantin/Models/discount.dart';
 import 'package:kantin/Models/menu_discount.dart';
+import 'package:kantin/Models/Stan_model.dart'; // Add this import
 
 class DiscountService {
   final SupabaseClient _client;
@@ -11,6 +12,35 @@ class DiscountService {
   void _logDebug(String message) {
     if (debugMode) {
       print('DiscountService: $message');
+    }
+  }
+  Future <List<Discount>> getDiscountsByStallId(Stan stall) async{
+    try {
+      _logDebug('Fetching discounts for stall ${stall.id}...');
+      final response = await _client
+          .from('discounts')
+          .select()
+          .eq('stall_id', stall.id)
+          .order('created_at', ascending: false);
+
+      _logDebug('Received response: $response');
+
+      final List<Discount> discounts = [];
+      for (var item in response as List) {
+        try {
+          discounts.add(Discount.fromMap(item));
+        } catch (e) {
+          _logDebug('Error parsing discount: $item\nError: $e');
+          // Continue with next item instead of failing completely
+          continue;
+        }
+      }
+
+      _logDebug('Successfully parsed ${discounts.length} discounts');
+      return discounts;
+    } catch (e, stackTrace) {
+      _logDebug('Error in getDiscounts: $e\n$stackTrace');
+      throw Exception('Failed to fetch discounts: $e');
     }
   }
 

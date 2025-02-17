@@ -3,11 +3,13 @@ import 'package:kantin/Models/menus_addon.dart';
 
 class AddonEditor extends StatefulWidget {
   final List<FoodAddon> addons;
+  final int menuId; // Add this field
   final Function(List<FoodAddon>) onAddonsChanged;
 
   const AddonEditor({
     super.key,
     required this.addons,
+    required this.menuId, // Add this parameter
     required this.onAddonsChanged,
   });
 
@@ -24,30 +26,47 @@ class _AddonEditorState extends State<AddonEditor> {
     _addons = List.from(widget.addons);
   }
 
-  void _addAddon() {
+  void _addAddon(FoodAddon addon) {
+    setState(() {
+      _addons.add(addon);
+      widget.onAddonsChanged(_addons);
+    });
+  }
+
+  void _updateAddon(int index, FoodAddon addon) {
+    setState(() {
+      _addons[index] = addon;
+      widget.onAddonsChanged(_addons);
+    });
+  }
+
+  void _removeAddon(int index) {
+    setState(() {
+      _addons.removeAt(index);
+      widget.onAddonsChanged(_addons);
+    });
+  }
+
+  void _addAddonDialog() {
     showDialog(
       context: context,
       builder: (context) => _AddonDialog(
+        menuId: widget.menuId, // Pass the menu ID
         onSave: (addon) {
-          setState(() {
-            _addons.add(addon);
-            widget.onAddonsChanged(_addons);
-          });
+          _addAddon(addon);
         },
       ),
     );
   }
 
-  void _editAddon(int index) {
+  void _editAddonDialog(int index) {
     showDialog(
       context: context,
       builder: (context) => _AddonDialog(
         addon: _addons[index],
+        menuId: widget.menuId, // Pass the menu ID
         onSave: (addon) {
-          setState(() {
-            _addons[index] = addon;
-            widget.onAddonsChanged(_addons);
-          });
+          _updateAddon(index, addon);
         },
       ),
     );
@@ -66,7 +85,7 @@ class _AddonEditorState extends State<AddonEditor> {
               style: Theme.of(context).textTheme.titleMedium,
             ),
             TextButton.icon(
-              onPressed: _addAddon,
+              onPressed: _addAddonDialog,
               icon: const Icon(Icons.add),
               label: const Text('Add'),
             ),
@@ -107,16 +126,11 @@ class _AddonEditorState extends State<AddonEditor> {
                     children: [
                       IconButton(
                         icon: const Icon(Icons.edit),
-                        onPressed: () => _editAddon(index),
+                        onPressed: () => _editAddonDialog(index),
                       ),
                       IconButton(
                         icon: const Icon(Icons.delete),
-                        onPressed: () {
-                          setState(() {
-                            _addons.removeAt(index);
-                            widget.onAddonsChanged(_addons);
-                          });
-                        },
+                        onPressed: () => _removeAddon(index),
                       ),
                     ],
                   ),
@@ -130,12 +144,14 @@ class _AddonEditorState extends State<AddonEditor> {
 }
 
 class _AddonDialog extends StatefulWidget {
-  final FoodAddon? addon;
+  final FoodAddon? addon; // Make nullable
+  final int menuId; // Add menuId parameter
   final Function(FoodAddon) onSave;
 
   const _AddonDialog({
     super.key,
-    this.addon,
+    this.addon, // Optional parameter
+    required this.menuId, // Required parameter
     required this.onSave,
   });
 
@@ -147,14 +163,36 @@ class _AddonDialogState extends State<_AddonDialog> {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _nameController;
   late TextEditingController _priceController;
+  late TextEditingController _descriptionController; // Add this
+  bool _isRequired = false; // Add this
 
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController(text: widget.addon?.addonName);
+    _nameController = TextEditingController(text: widget.addon?.addonName ?? '');
     _priceController = TextEditingController(
-      text: widget.addon?.price.toStringAsFixed(0),
+      text: widget.addon?.price.toStringAsFixed(0) ?? '',
     );
+    _descriptionController = TextEditingController(  // Initialize this
+      text: widget.addon?.description ?? '',
+    );
+    _isRequired = widget.addon?.isRequired ?? false; // Initialize from addon if exists
+  }
+
+  void _submitForm() {
+    if (_formKey.currentState?.validate() ?? false) {
+      final addon = FoodAddon(
+        id: widget.addon?.id,
+        menuId: widget.menuId,
+        addonName: _nameController.text,
+        price: double.parse(_priceController.text),
+        isRequired: _isRequired,
+        description: _descriptionController.text,
+      );
+      
+      widget.onSave(addon);
+      Navigator.pop(context);
+    }
   }
 
   @override
@@ -190,6 +228,15 @@ class _AddonDialogState extends State<_AddonDialog> {
                 return null;
               },
             ),
+            const SizedBox(height: 16),
+            // Add Required checkbox
+            CheckboxListTile(
+              title: const Text('Required Add-on'),
+              value: _isRequired,
+              onChanged: (value) {
+                setState(() => _isRequired = value ?? false);
+              },
+            ),
           ],
         ),
       ),
@@ -199,19 +246,7 @@ class _AddonDialogState extends State<_AddonDialog> {
           child: const Text('Cancel'),
         ),
         ElevatedButton(
-          onPressed: () {
-            if (_formKey.currentState?.validate() ?? false) {
-              widget.onSave(
-                FoodAddon(
-                  id: widget.addon?.id,
-                  addonName: _nameController.text,
-                  price: double.parse(_priceController.text),
-                  menuId: widget.addon!.menuId,
-                ),
-              );
-              Navigator.pop(context);
-            }
-          },
+          onPressed: _submitForm,
           child: const Text('Save'),
         ),
       ],
@@ -222,6 +257,7 @@ class _AddonDialogState extends State<_AddonDialog> {
   void dispose() {
     _nameController.dispose();
     _priceController.dispose();
+    _descriptionController.dispose();  // Dispose this
     super.dispose();
   }
 }

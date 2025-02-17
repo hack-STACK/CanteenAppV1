@@ -4,8 +4,13 @@ import 'package:kantin/Models/discount_type.dart';
 
 class AddDiscountForm extends StatefulWidget {
   final Function(Discount) onSave;
+  final int stallId; // Add this parameter
 
-  const AddDiscountForm({super.key, required this.onSave});
+  const AddDiscountForm({
+    Key? key,
+    required this.onSave,
+    required this.stallId, // Add this parameter
+  }) : super(key: key);
 
   @override
   State<AddDiscountForm> createState() => _AddDiscountFormState();
@@ -96,7 +101,7 @@ class _AddDiscountFormState extends State<AddDiscountForm> {
           ),
           const SizedBox(height: 24),
           ElevatedButton(
-            onPressed: _submit,
+            onPressed: _submitForm,
             child: Text('Save Discount'),
           ),
         ],
@@ -123,7 +128,7 @@ class _AddDiscountFormState extends State<AddDiscountForm> {
     }
   }
 
-  void _submit() {
+  void _submitForm() {
     if (_formKey.currentState?.validate() ?? false) {
       final discount = Discount(
         id: 0,
@@ -131,8 +136,11 @@ class _AddDiscountFormState extends State<AddDiscountForm> {
         discountPercentage: double.parse(_percentageController.text),
         startDate: _startDate,
         endDate: _endDate,
-        type: _selectedType.value, // Convert enum to string value
+        type: _selectedType.toString().split('.').last,
+        stallId: widget.stallId,
       );
+      
+      // Call onSave without popping the context - let the parent handle navigation
       widget.onSave(discount);
     }
   }

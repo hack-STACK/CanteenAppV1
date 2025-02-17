@@ -7,7 +7,10 @@ class Discount {
   final DateTime createdAt;
   final DateTime updatedAt;
   final String type;
-  bool isActive; // Changed from final to non-final
+  bool isActive;
+  final int? stallId;
+
+  static const List<String> validTypes = ['mainPrice', 'addons', 'both'];
 
   Discount({
     required this.id,
@@ -17,10 +20,18 @@ class Discount {
     required this.endDate,
     DateTime? createdAt,
     DateTime? updatedAt,
-    this.type = 'mainPrice',
-    this.isActive = true,
-  })  : createdAt = createdAt ?? DateTime.now(),
-        updatedAt = updatedAt ?? DateTime.now();
+    String? type,
+    bool? isActive,
+    this.stallId,
+  })  : createdAt = createdAt ?? DateTime.now().toUtc(),  // Ensure UTC timestamps
+        updatedAt = updatedAt ?? DateTime.now().toUtc(),
+        type = type ?? 'mainPrice',
+        isActive = isActive ?? true {
+    // Validate type against allowed values
+    if (!validTypes.contains(this.type)) {
+      throw ArgumentError('Invalid discount type: ${this.type}. Must be one of: $validTypes');
+    }
+  }
 
   factory Discount.fromMap(Map<String, dynamic> map) {
     final dynamic rawPercentage = map['discount_percentage'];
@@ -32,23 +43,27 @@ class Discount {
       id: map['id'] as int,
       discountName: map['discount_name'] as String,
       discountPercentage: percentage,
-      startDate: DateTime.parse(map['start_date'] as String),
-      endDate: DateTime.parse(map['end_date'] as String),
+      startDate: DateTime.parse(map['start_date'] as String).toLocal(),
+      endDate: DateTime.parse(map['end_date'] as String).toLocal(),
       createdAt: DateTime.parse(map['created_at'] as String),
       updatedAt: DateTime.parse(map['updated_at'] as String),
       type: map['type'] as String? ?? 'mainPrice',
       isActive: map['is_active'] as bool? ?? true,
+      stallId: map['stall_id'] as int?,
     );
   }
 
   Map<String, dynamic> toMap() {
     return {
+      if (id != 0) 'id': id,  // Only include id if it's not 0 (new record)
       'discount_name': discountName,
       'discount_percentage': discountPercentage,
-      'start_date': startDate.toIso8601String(),
-      'end_date': endDate.toIso8601String(),
+      'start_date': startDate.toUtc().toIso8601String(),
+      'end_date': endDate.toUtc().toIso8601String(),
       'type': type,
       'is_active': isActive,
+      'stall_id': stallId,
+      // Don't include created_at and updated_at as they're handled by the database
     };
   }
 
@@ -62,6 +77,7 @@ class Discount {
     DateTime? updatedAt,
     String? type,
     bool? isActive,
+    int? stallId,
   }) {
     return Discount(
       id: id ?? this.id,
@@ -73,8 +89,7 @@ class Discount {
       updatedAt: updatedAt ?? this.updatedAt,
       type: type ?? this.type,
       isActive: isActive ?? this.isActive,
+      stallId: stallId ?? this.stallId,
     );
   }
-
-  static List<String> get validTypes => ['mainPrice', 'addons', 'both'];
 }

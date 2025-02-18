@@ -226,8 +226,7 @@ class _ApplyDiscountScreenState extends State<ApplyDiscountScreen> {
               id: 0,
               menuId: menuId,
               discountId: widget.discount.id,
-              createdAt: now, // Provide the current timestamp
-              updatedAt: now,
+              isActive: true, // Add this argument
             ),
           );
           successCount++;

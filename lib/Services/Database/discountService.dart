@@ -212,6 +212,27 @@ class DiscountService {
       throw Exception('Failed to delete menu discount: $e');
     }
   }
+    Future<void> createMenuDiscount(int menuId, int discountId, bool isActive) async {
+    try {
+      _logDebug('Creating menu discount: menuId=$menuId, discountId=$discountId, isActive=$isActive');
+
+      final response = await _client
+          .from('menu_discounts')
+          .insert({
+            'id_menu': menuId,
+            'id_discount': discountId,
+            'is_active': isActive,
+          })
+          .select()
+          .single();
+
+      _logDebug('Create menu discount response: $response');
+    } catch (e, stackTrace) {
+      _logDebug('Error creating menu discount: $e\n$stackTrace');
+      throw Exception('Failed to create menu discount: $e');
+    }
+  }
+
 
   Future<List<MenuDiscount>> getMenuDiscounts(int menuId) async {
     try {
@@ -229,6 +250,27 @@ class DiscountService {
     } catch (e, stackTrace) {
       _logDebug('Error in getMenuDiscounts: $e\n$stackTrace');
       throw Exception('Failed to fetch menu discounts: $e');
+    }
+  }
+    Future<void> updateMenuDiscount(int menuId, int discountId, bool isActive) async {
+    try {
+      _logDebug('Updating menu discount: menuId=$menuId, discountId=$discountId, isActive=$isActive');
+
+      // Construct the update payload
+      final Map<String, dynamic> updatePayload = {'is_active': isActive};
+
+      final response = await _client
+          .from('menu_discounts')
+          .update(updatePayload)
+          .eq('id_menu', menuId)
+          .eq('id_discount', discountId)
+          .select()
+          .single();
+
+      _logDebug('Update menu discount response: $response');
+    } catch (e, stackTrace) {
+      _logDebug('Error updating menu discount: $e\n$stackTrace');
+      throw Exception('Failed to update menu discount: $e');
     }
   }
 }

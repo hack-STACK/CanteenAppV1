@@ -176,7 +176,7 @@ class FoodService {
             'addon_name': addon.addonName,
             'price': addon.price,
             'is_required': addon.isRequired,
-            'description': addon.description,
+            'Description': addon.description, // Fixed: Changed to "Description"
           })
           .select()
           .single();
@@ -223,7 +223,7 @@ class FoodService {
           'addon_name': addon.addonName,
           'price': addon.price,
           'is_required': addon.isRequired,
-          'Description': addon.description,
+          'Description': addon.description, // Fixed: Changed to "Description"
           // Don't update menu_id as it's part of a unique constraint
         };
 
@@ -411,7 +411,7 @@ class FoodService {
               'addon_name': addon.addonName,
               'price': addon.price,
               'is_required': addon.isRequired,
-              'description': addon.description,
+              'Description': addon.description,
             }).toList();
 
         await _client.from('food_addons').insert(addonsData);

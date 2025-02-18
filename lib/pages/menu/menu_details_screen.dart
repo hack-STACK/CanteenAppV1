@@ -18,6 +18,11 @@ import 'package:kantin/services/database/discountService.dart';
 import 'package:kantin/theme/merchant_theme.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:kantin/widgets/image_crop_screen.dart';
+import 'package:kantin/widgets/addon_dialog.dart';
+import 'package:flutter/services.dart';
+import 'dart:async';
+import 'package:rxdart/rxdart.dart';
+import 'package:kantin/utils/debouncer.dart';
 
 class MenuDetailsScreen extends StatefulWidget {
   final Menu menu;
@@ -31,6 +36,9 @@ class MenuDetailsScreen extends StatefulWidget {
 }
 
 class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
+  // Add scroll controller
+  final ScrollController _scrollController = ScrollController();
+  
   final FoodService _foodService = FoodService();
   final DiscountService _discountService = DiscountService();
   bool _isLoading = false;
@@ -43,11 +51,49 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
   List<MenuDiscount> _menuDiscounts = [];
   final _supabase = Supabase.instance.client;
 
-  // Add these properties
+  // Add these properties for price calculations
   double _basePrice = 0;
   double _addonTotal = 0;
-  double _discountAmount = 0;
   double _finalPrice = 0;
+  double _discountAmount = 0; // Add this
+
+  // Add these properties
+  bool _hasUnsavedChanges = false;
+  String? _errorMessage;
+  final GlobalKey<ScaffoldMessengerState> _scaffoldKey = GlobalKey<ScaffoldMessengerState>();
+
+  // Add new properties
+  bool _isSaving = false;
+  Timer? _saveDebouncer;
+  bool _hasChanges = false;
+
+  // Add these properties
+  final _debouncer = Debouncer(milliseconds: 500);
+  final _menuSubject = BehaviorSubject<Menu>();
+  final _addonsSubject = BehaviorSubject<List<FoodAddon>>();
+  final _discountsSubject = BehaviorSubject<List<Discount>>();
+  bool _needsSync = false;
+
+  // Add this method to track form changes
+  void _onFormChanged() {
+    if (!_hasUnsavedChanges) {
+      setState(() => _hasUnsavedChanges = true);
+    }
+    
+    // Debounce auto-save
+    _saveDebouncer?.cancel();
+    _saveDebouncer = Timer(const Duration(seconds: 2), () {
+      if (_formKey.currentState?.validate() ?? false) {
+        _autoSave();
+      }
+    });
+
+    // Debounce changes before updating streams
+    _debouncer.run(() {
+      _menuSubject.add(_currentMenu);
+      _addonsSubject.add(_addons);
+    });
+  }
 
   @override
   void initState() {
@@ -58,6 +104,127 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
     _loadMenuDiscounts();
     _initializeImages();
     _calculatePrices(); // Add this
+
+    // Initialize streams
+    _menuSubject.add(_currentMenu);
+    _addonsSubject.add(_addons);
+    
+    // Setup stream subscriptions
+    _setupStreams();
+    
+    // Load initial data
+    _initializeData();
+  }
+
+  void _setupStreams() {
+    // Menu changes stream
+    _menuSubject
+        .debounceTime(const Duration(milliseconds: 500))
+        .distinct()
+        .listen((menu) {
+      if (_needsSync) {
+        _syncMenu(menu);
+      }
+    });
+
+    // Addons changes stream
+    _addonsSubject
+        .debounceTime(const Duration(milliseconds: 500))
+        .distinct()
+        .listen((addons) {
+      if (_needsSync) {
+        _syncAddons(addons);
+      }
+    });
+  }
+
+  Future<void> _initializeData() async {
+    try {
+      setState(() => _isLoading = true);
+
+      // Create explicit Future list to fix type inference
+      final List<Future<void>> futures = [
+        _loadDiscounts(),
+        _loadMenuDiscounts(),
+      ];
+
+      // Initialize images synchronously since it doesn't return a Future
+      _initializeImages();
+
+      // Wait for all async operations
+      await Future.wait(futures);
+
+      _calculatePrices();
+      
+      // Enable sync after initial load
+      _needsSync = true;
+    } catch (e) {
+      _showError('Failed to load data: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _syncMenu(Menu menu) async {
+    try {
+      await _foodService.updateMenu(menu);
+      _showSuccess('Menu synchronized');
+    } catch (e) {
+      _showError('Failed to sync menu: $e');
+    }
+  }
+
+  Future<void> _syncAddons(List<FoodAddon> addons) async {
+    try {
+      await Future.wait(
+        addons.map((addon) => _foodService.updateFoodAddon(addon)),
+      );
+      _showSuccess('Add-ons synchronized');
+    } catch (e) {
+      _showError('Failed to sync add-ons: $e');
+    }
+  }
+
+  @override
+  void dispose() {
+    _saveDebouncer?.cancel();
+    _scrollController.dispose(); // Dispose the controller
+
+    // Clean up streams
+    _menuSubject.close();
+    _addonsSubject.close();
+    _discountsSubject.close();
+    _debouncer.dispose();
+    
+    super.dispose();
+  }
+
+  // Override willPop to show unsaved changes dialog
+  Future<bool> _onWillPop() async {
+    if (!_hasUnsavedChanges) return true;
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Unsaved Changes'),
+        content: const Text('You have unsaved changes. Are you sure you want to leave?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Stay'),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Leave'),
+          ),
+        ],
+      ),
+    );
+
+    return result ?? false;
   }
 
   void _initializeImages() {
@@ -78,33 +245,100 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
     }
   }
 
-  void _showError(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.red),
+  // Improve error handling
+  void _showError(String message, {bool persistent = false}) {
+    setState(() => _errorMessage = message);
+    
+    final snackBar = SnackBar(
+      content: Text(message),
+      backgroundColor: Colors.red,
+      behavior: SnackBarBehavior.floating,
+      action: SnackBarAction(
+        label: 'Dismiss',
+        textColor: Colors.white,
+        onPressed: () {
+          _scaffoldKey.currentState?.hideCurrentSnackBar();
+          setState(() => _errorMessage = null);
+        },
+      ),
+      duration: persistent ? const Duration(days: 1) : const Duration(seconds: 4),
     );
+
+    _scaffoldKey.currentState?.showSnackBar(snackBar);
+  }
+
+  void _showSuccess(String message) {
+    final snackBar = SnackBar(
+      content: Row(
+        children: [
+          const Icon(Icons.check_circle, color: Colors.white),
+          const SizedBox(width: 8),
+          Text(message),
+        ],
+      ),
+      backgroundColor: Colors.green,
+      behavior: SnackBarBehavior.floating,
+      duration: const Duration(seconds: 2),
+    );
+
+    _scaffoldKey.currentState?.showSnackBar(snackBar);
+  }
+
+  Future<void> _autoSave() async {
+    if (!_hasUnsavedChanges || _isSaving) return;
+    
+    try {
+      _formKey.currentState?.save();
+      await _foodService.updateMenu(_currentMenu);
+      setState(() => _hasUnsavedChanges = false);
+      _showSuccess('Changes auto-saved');
+    } catch (e) {
+      _showError('Auto-save failed: $e');
+    }
   }
 
   Future<void> _saveChanges() async {
-    if (!_formKey.currentState!.validate()) return;
-    _formKey.currentState!.save();
+    if (!_formKey.currentState!.validate()) {
+      _showError('Please fix the errors before saving');
+      return;
+    }
     
     try {
-      setState(() => _isLoading = true);
+      setState(() => _isSaving = true);
       
-      // Save menu and addons together
-      await _foodService.updateMenuWithAddons(_currentMenu, _addons);
+      if (_currentMenu.id == null) {
+        throw Exception('Menu ID is required');
+      }
       
+      _formKey.currentState!.save();
+      
+      // Update streams with latest data
+      _menuSubject.add(_currentMenu);
+      _addonsSubject.add(_addons);
+      
+      // Wait for all pending syncs
+      await Future.wait([
+        _syncMenu(_currentMenu),
+        _syncAddons(_addons),
+      ]);
+      
+      setState(() {
+        _hasUnsavedChanges = false;
+        _isSaving = false;
+      });
+      
+      _showSuccess('Changes saved successfully');
+      
+      // Vibrate for feedback
+      HapticFeedback.mediumImpact();
+      
+      // Return to previous screen
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Changes saved successfully')),
-        );
         Navigator.pop(context, true);
       }
     } catch (e) {
+      setState(() => _isSaving = false);
       _showError('Failed to save changes: $e');
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -118,7 +352,7 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
     // Implement edit addon logic
   }
 
-  void _deleteAddon(FoodAddon addon) {
+  void _removeAddon(FoodAddon addon) {
     // Implement delete addon logic
   }
 
@@ -135,10 +369,25 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
 
   Future<void> _loadMenuDiscounts() async {
     try {
-      final menuDiscounts =
-          await _discountService.getMenuDiscounts(_currentMenu.id!);
+      final menuDiscounts = await _discountService.getMenuDiscounts(_currentMenu.id!);
+      final discounts = await _discountService.getDiscounts();
+      
       setState(() {
         _menuDiscounts = menuDiscounts;
+        _discounts = discounts.map((discount) {
+          // Check if this discount is applied to this menu
+          final isApplied = menuDiscounts.any((md) => md.discountId == discount.id);
+          if (isApplied) {
+            // Update discount status based on global discount status
+            return discount.copyWith(
+              isActive: discount.isActive && isApplied
+            );
+          }
+          return discount;
+        }).toList();
+        
+        // Recalculate prices after loading discounts
+        _calculatePrices();
       });
     } catch (e) {
       _showError('Failed to load menu discounts: $e');
@@ -189,183 +438,348 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
   void _removeImage(int index) => setState(() => _imagePaths.removeAt(index));
 
   Future<void> _toggleDiscount(Discount discount) async {
-    if (discount.isActive) {
-      // Deactivate the discount
-      await _discountService.toggleDiscountStatus(discount.id, false);
-      setState(() {
-        discount.isActive = false;
-      });
-    } else {
-      // Check if any other discount is active
-      final activeDiscount = _menuDiscounts.any((menuDiscount) {
-        final appliedDiscount =
-            _discounts.firstWhere((d) => d.id == menuDiscount.discountId);
-        return appliedDiscount.isActive;
-      });
+    try {
+      final currentPosition = _scrollController.offset;
+      setState(() => _isLoading = true);
 
-      if (activeDiscount) {
-        _showError('Only one discount can be active at a time.');
-        return;
+      // First update the global discount status
+      await _discountService.toggleDiscountStatus(discount.id, !discount.isActive);
+
+      // Then update menu-specific discount
+      if (_currentMenu.id != null) {
+        await _discountService.updateMenuDiscount(
+          _currentMenu.id!,
+          discount.id,
+          !discount.isActive,
+        );
       }
 
-      // Activate the discount
-      await _discountService.toggleDiscountStatus(discount.id, true);
+      // Reload all discounts to get the synchronized state
+      await _loadMenuDiscounts();
+
       setState(() {
-        discount.isActive = true;
+        discount.isActive = !discount.isActive;
+        _errorMessage = null;
       });
+
+      // Recalculate prices immediately after discount status change
+      _calculatePrices();
+
+      _showSuccess(discount.isActive ? 'Discount activated' : 'Discount deactivated');
+
+      // Restore scroll position
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_scrollController.hasClients) {
+          _scrollController.jumpTo(currentPosition);
+        }
+      });
+    } catch (e) {
+      _showError('Failed to toggle discount: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
-    _calculatePrices(); // Recalculate prices after toggling discount
   }
 
   void _calculatePrices() {
-    // Calculate base price
     _basePrice = _currentMenu.price;
-
-    // Calculate addons total
     _addonTotal = _addons.where((addon) => addon.isRequired).fold(
-          0,
-          (sum, addon) => sum + addon.price,
-        );
+      0,
+      (sum, addon) => sum + addon.price,
+    );
 
-    // Calculate applicable discount
-    double discountPercentage = 0;
-    String discountType = 'none';
-
-    // Find active discount with highest percentage
-    for (var menuDiscount in _menuDiscounts) {
+    // Update discount calculation to consider global discount status
+    _discountAmount = _menuDiscounts.fold(0, (sum, menuDiscount) {
       final discount = _discounts.firstWhere(
-        (d) => d.id == menuDiscount.discountId && d.isActive,
+        (d) => d.id == menuDiscount.discountId,
         orElse: () => Discount(
-          id: 0,
+          id: -1,
           discountName: '',
           discountPercentage: 0,
           startDate: DateTime.now(),
           endDate: DateTime.now(),
-          type: 'none',
+          isActive: false,
+          stallId: -1,
+        ),
+      );
+      
+      // Only apply discount if both global and menu-specific status are active
+      return discount.id != -1 && discount.isActive 
+          ? sum + (_basePrice * discount.discountPercentage / 100) 
+          : sum;
+    });
+
+    _finalPrice = _basePrice + _addonTotal - _discountAmount;
+    setState(() {});
+  }
+
+  Future<void> _showAddonDialog(FoodAddon? addon) async {
+    try {
+      final addonData = await showDialog<FoodAddon?>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => Theme(
+          data: Theme.of(context).copyWith(
+            // Ensure consistent dialog styling
+            dialogTheme: DialogTheme(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              elevation: 0,
+            ),
+            // Use the same color scheme
+            colorScheme: Theme.of(context).colorScheme.copyWith(
+              primary: const Color(0xFFFF542D), // Your app's primary color
+            ),
+          ),
+          child: Material( // Add this Material widget
+            type: MaterialType.transparency,
+            child: Dialog(
+              backgroundColor: Colors.transparent,
+              insetPadding: const EdgeInsets.all(24),
+              child: AddonDialog(
+                key: ValueKey(addon?.id ?? 'new'),
+                addon: addon,
+                menuId: _currentMenu.id!,
+              ),
+            ),
+          ),
         ),
       );
 
-      if (discount.discountPercentage > discountPercentage) {
-        discountPercentage = discount.discountPercentage;
-        discountType = discount.type;
+      if (addonData != null && mounted) {
+        setState(() => _isLoading = true);
+
+        try {
+          if (addon == null) {
+            // Creating new addon
+            await _foodService.createFoodAddon(addonData);
+          } else {
+            // Updating existing addon
+            await _foodService.updateFoodAddon(addonData);
+          }
+
+          // Refresh the addons list
+          final updatedAddons = await _foodService.getAddonsForMenu(_currentMenu.id!);
+          setState(() {
+            _addons = updatedAddons;
+            _calculatePrices(); // Recalculate prices after addon changes
+          });
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(addon == null ? 'Add-on created successfully' : 'Add-on updated successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } catch (e) {
+          _showError('Failed to save add-on: $e');
+        }
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
       }
     }
-
-    // Calculate discount amount based on type
-    _discountAmount = 0;
-    switch (discountType) {
-      case 'mainPrice':
-        _discountAmount = _basePrice * (discountPercentage / 100);
-        break;
-      case 'addons':
-        _discountAmount = _addonTotal * (discountPercentage / 100);
-        break;
-      case 'both':
-        _discountAmount =
-            (_basePrice + _addonTotal) * (discountPercentage / 100);
-        break;
-    }
-
-    // Calculate final price
-    _finalPrice = _basePrice + _addonTotal - _discountAmount;
-
-    setState(() {}); // Update UI
-  }
-
-  void _updateAddons(List<FoodAddon> newAddons) {
-    setState(() {
-      _addons = newAddons;
-      _calculatePrices();
-    });
   }
 
   @override
   Widget build(BuildContext context) {
-    return Theme(
-      data: MerchantTheme.lightTheme(),
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(_currentMenu.foodName),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.qr_code),
-              onPressed: _showQRCode,
-            ),
-            PopupMenuButton(
-              itemBuilder: (context) => [
-                const PopupMenuItem(
-                  value: 'duplicate',
-                  child: Text('Duplicate Menu'),
-                ),
-                const PopupMenuItem(
-                  value: 'delete',
-                  child:
-                      Text('Delete Menu', style: TextStyle(color: Colors.red)),
-                ),
-              ],
-              onSelected: (value) {
-                if (value == 'duplicate') _duplicateMenu();
-                if (value == 'delete') _confirmDelete();
-              },
-            ),
-          ],
-        ),
-        body: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    MenuImageGallery(
-                      images: _imagePaths,
-                      onImagePicked: _handleImagePicked,
-                      onImageRemoved: _removeImage,
-                      isLoading: _isLoading,
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Form(
-                        key: _formKey,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _buildBasicInfoSection(),
-                            const Divider(height: 32),
-                            _buildPriceBreakdown(), // Add this after basic info section
-                            _buildPricingSection(),
-                            const Divider(height: 32),
-                            AddonEditor(
-                              addons: _addons,
-                              menuId: widget.menu.id!, // Add the menuId parameter
-                              onAddonsChanged: (addons) {
-                                setState(() => _addons = addons);
-                                _calculatePrices(); // Recalculate prices when addons change
-                              },
-                            ),
-                            const Divider(height: 32),
-                            _buildDiscountSection(),
-                            const Divider(height: 32),
-                            _buildAvailabilitySection(),
-                          ],
+    return WillPopScope(
+      onWillPop: _onWillPop,
+      child: ScaffoldMessenger(
+        key: _scaffoldKey,
+        child: Theme(
+          data: MerchantTheme.lightTheme(),
+          child: Scaffold(
+            appBar: AppBar(
+              title: Text(_currentMenu.foodName),
+              actions: [
+                if (_hasUnsavedChanges)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          'Unsaved',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.primary,
+                            fontSize: 12,
+                          ),
                         ),
                       ),
                     ),
-                  ],
-                ),
-              ),
-        floatingActionButton: FloatingActionButton.extended(
-          onPressed: _saveChanges,
-          icon: _isLoading
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                   ),
-                )
-              : const Icon(Icons.save),
-          label: Text(_isLoading ? 'Saving...' : 'Save Changes'),
+                IconButton(
+                  icon: const Icon(Icons.qr_code),
+                  onPressed: _showQRCode,
+                ),
+                PopupMenuButton(
+                  itemBuilder: (context) => [
+                    const PopupMenuItem(
+                      value: 'duplicate',
+                      child: Text('Duplicate Menu'),
+                    ),
+                    const PopupMenuItem(
+                      value: 'delete',
+                      child:
+                          Text('Delete Menu', style: TextStyle(color: Colors.red)),
+                    ),
+                  ],
+                  onSelected: (value) {
+                    if (value == 'duplicate') _duplicateMenu();
+                    if (value == 'delete') _confirmDelete();
+                  },
+                ),
+              ],
+            ),
+            body: GestureDetector(
+              onTap: () => FocusScope.of(context).unfocus(),
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : SingleChildScrollView(
+                      controller: _scrollController,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          MenuImageGallery(
+                            images: _imagePaths,
+                            onImagePicked: _handleImagePicked,
+                            onImageRemoved: _removeImage,
+                            isLoading: _isLoading,
+                          ),
+                          if (_hasUnsavedChanges && MediaQuery.of(context).size.width >= 600)
+                            Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Card(
+                                color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.info_outline),
+                                      const SizedBox(width: 16),
+                                      const Expanded(
+                                        child: Text('You have unsaved changes'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () {
+                                          _formKey.currentState?.reset();
+                                          setState(() => _hasUnsavedChanges = false);
+                                        },
+                                        child: const Text('Discard'),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          Form(
+                            key: _formKey,
+                            onChanged: _onFormChanged,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _buildBasicInfoSection(),
+                                const Divider(height: 32),
+                                _buildPriceBreakdown(),
+                                _buildPricingSection(),
+                                const Divider(height: 32),
+                                _buildAddonsSection(),
+                                const Divider(height: 32),
+                                _buildDiscountSection(),
+                                const Divider(height: 32),
+                                _buildAvailabilitySection(),
+                                // Add bottom padding to account for the bottom bar
+                                SizedBox(height: _hasUnsavedChanges ? 80 : 16),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+            ),
+            bottomNavigationBar: Container(
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                bottom: MediaQuery.of(context).padding.bottom + 16,
+                top: 16,
+              ),
+              decoration: BoxDecoration(
+                color: Theme.of(context).scaffoldBackgroundColor,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 8,
+                    offset: const Offset(0, -2),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  if (_hasUnsavedChanges) ...[
+                    Expanded(
+                      child: Text(
+                        'You have unsaved changes',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        _formKey.currentState?.reset();
+                        setState(() => _hasUnsavedChanges = false);
+                      },
+                      child: const Text('Discard'),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  Expanded(
+                    flex: _hasUnsavedChanges ? 0 : 1,
+                    child: ElevatedButton(
+                      onPressed: _isSaving ? null : _saveChanges,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Theme.of(context).colorScheme.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        minimumSize: const Size(double.infinity, 48),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (_isSaving)
+                            const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
+                            )
+                          else
+                            const Icon(Icons.save),
+                          const SizedBox(width: 8),
+                          Text(_isSaving ? 'Saving...' : 'Save Changes'),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            
+            // Remove the floating action button since we have a consistent bottom bar now
+            floatingActionButton: null,
+          ),
         ),
       ),
     );
@@ -802,19 +1216,29 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Add-ons',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Add-ons',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.bold,
                 ),
+              ),
+              TextButton.icon(
+                onPressed: () => _showAddonDialog(null), // Fixed
+                icon: const Icon(Icons.add),
+                label: const Text('Add'),
+              ),
+            ],
           ),
           const SizedBox(height: 16),
-          if (_isEditingAddons)
-            AddonManager(
-              addons: _addons,
-              onReorder: _reorderAddons,
-              onEdit: _editAddon,
-              onDelete: _deleteAddon,
+          if (_addons.isEmpty)
+            Center(
+              child: Text(
+                'No add-ons yet',
+                style: TextStyle(color: Colors.grey[600]),
+              ),
             )
           else
             ListView.builder(
@@ -824,25 +1248,122 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
               itemBuilder: (context, index) {
                 final addon = _addons[index];
                 return Card(
+                  elevation: 2,
+                  margin: const EdgeInsets.only(bottom: 8),
                   child: ListTile(
-                    title: Text(addon.addonName),
-                    subtitle: Text('Rp ${addon.price.toStringAsFixed(0)}'),
+                    title: Row(
+                      children: [
+                        Text(
+                          addon.addonName,
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        if (addon.isRequired)
+                          Container(
+                            margin: const EdgeInsets.only(left: 8),
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).primaryColor.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              'Required',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Theme.of(context).primaryColor,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Rp ${addon.price.toStringAsFixed(0)}',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        if (addon.description?.isNotEmpty ?? false)
+                          Text(
+                            addon.description!,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                      ],
+                    ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.edit),
+                          onPressed: () => _showAddonDialog(addon), // Fixed
+                          color: Theme.of(context).primaryColor,
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete),
+                          onPressed: () => _deleteAddon(addon),
+                          color: Colors.red,
+                        ),
+                      ],
+                    ),
                   ),
                 );
               },
             ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: ElevatedButton(
-              onPressed: () {
-                // Implement add new addon
-              },
-              child: const Text('Add New Add-on'),
-            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteAddon(FoodAddon addon) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Add-on'),
+        content: Text('Are you sure you want to delete "${addon.addonName}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
           ),
         ],
       ),
     );
+
+    if (confirm == true && mounted) {
+      try {
+        setState(() => _isLoading = true);
+        await _foodService.deleteFoodAddon(addon.id!);
+        
+        // Refresh the addons list
+        final updatedAddons = await _foodService.getAddonsForMenu(_currentMenu.id!);
+        setState(() {
+          _addons = updatedAddons;
+          _calculatePrices(); // Recalculate prices after deletion
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Add-on deleted successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } catch (e) {
+        _showError('Failed to delete add-on: $e');
+      } finally {
+        if (mounted) {
+          setState(() => _isLoading = false);
+        }
+      }
+    }
   }
 
   Widget _buildDiscountSection() {
@@ -856,11 +1377,22 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Discounts',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Discounts',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.bold,
                 ),
+              ),
+              if (_discountAmount > 0)
+                Chip(
+                  label: Text('${(_discountAmount / _basePrice * 100).toStringAsFixed(0)}% OFF'),
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  labelStyle: const TextStyle(color: Colors.white),
+                ),
+            ],
           ),
           const SizedBox(height: 16),
           ListView.builder(
@@ -871,20 +1403,41 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
               final discount = appliedDiscounts[index];
               return Card(
                 child: ListTile(
-                  title: Text(discount.discountName),
+                  title: Row(
+                    children: [
+                      Text(discount.discountName),
+                      const SizedBox(width: 8),
+                      if (discount.isActive)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Text(
+                            'Active',
+                            style: TextStyle(
+                              color: Colors.green,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                   subtitle: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text('${discount.discountPercentage}% off'),
                       Text(
                         'Valid: ${DateFormat('MMM dd').format(discount.startDate)} - ${DateFormat('MMM dd').format(discount.endDate)}',
-                        style: TextStyle(fontSize: 12),
+                        style: const TextStyle(fontSize: 12),
                       ),
                     ],
                   ),
-                  trailing: Switch(
+                  trailing: Switch.adaptive(
                     value: discount.isActive,
                     onChanged: (value) async {
+                      HapticFeedback.selectionClick();
                       await _toggleDiscount(discount);
                     },
                   ),
@@ -892,12 +1445,14 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
               );
             },
           ),
-          ElevatedButton(
-            onPressed: () {
-              // Implement add new discount
-            },
-            child: const Text('Add New Discount'),
-          ),
+          if (_errorMessage != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                _errorMessage!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ),
         ],
       ),
     );
@@ -1056,12 +1611,7 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
             const SizedBox(height: 16),
             _buildPriceRow('Base Price', _basePrice),
             if (_addonTotal > 0) _buildPriceRow('Required Add-ons', _addonTotal),
-            if (_discountAmount > 0)
-              _buildPriceRow(
-                'Discount',
-                -_discountAmount,
-                style: const TextStyle(color: Colors.red),
-              ),
+            if (_discountAmount > 0) _buildPriceRow('Discount', -_discountAmount, style: TextStyle(color: Colors.red)),
             const Divider(height: 24),
             _buildPriceRow(
               'Final Price',
@@ -1091,5 +1641,22 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
         ],
       ),
     );
+  }
+
+  // Memory optimization - override didUpdateWidget
+  @override
+  void didUpdateWidget(MenuDetailsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    
+    // Only update if menu or addons changed
+    if (widget.menu != oldWidget.menu) {
+      _currentMenu = widget.menu;
+      _menuSubject.add(_currentMenu);
+    }
+    
+    if (widget.addons != oldWidget.addons) {
+      _addons = List.from(widget.addons);
+      _addonsSubject.add(_addons);
+    }
   }
 }

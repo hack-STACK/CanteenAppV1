@@ -7,10 +7,10 @@ class AddDiscountForm extends StatefulWidget {
   final int stallId; // Add this parameter
 
   const AddDiscountForm({
-    Key? key,
+    super.key,
     required this.onSave,
     required this.stallId, // Add this parameter
-  }) : super(key: key);
+  });
 
   @override
   State<AddDiscountForm> createState() => _AddDiscountFormState();
@@ -139,7 +139,7 @@ class _AddDiscountFormState extends State<AddDiscountForm> {
         type: _selectedType.toString().split('.').last,
         stallId: widget.stallId,
       );
-      
+
       // Call onSave without popping the context - let the parent handle navigation
       widget.onSave(discount);
     }

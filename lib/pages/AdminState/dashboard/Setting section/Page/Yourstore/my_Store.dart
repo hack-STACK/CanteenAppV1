@@ -1,6 +1,5 @@
 import 'package:avatar_glow/avatar_glow.dart';
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:kantin/Models/Stan_model.dart';
@@ -25,8 +24,6 @@ import 'package:kantin/widgets/loading_overlay.dart';
 import 'package:kantin/widgets/addon_dialog.dart';
 import 'package:kantin/widgets/addon_card.dart';
 import 'package:kantin/utils/menu_state_manager.dart';
-import 'package:kantin/widgets/optimized_addon_list.dart';
-import 'package:kantin/Models/discount_type.dart';
 
 class MyStorePage extends StatefulWidget {
   final int userId;
@@ -701,8 +698,8 @@ class _MyStorePageState extends State<MyStorePage>
                 ),
                 Expanded(
                   child: FutureBuilder<List<Discount>>(
-                    future: _stall != null 
-                        ? _discountService.getDiscountsByStallId(_stall!)
+                    future: _stall != null
+                        ? _discountService.getDiscountsByStallId(_stall!.id)
                         : Future.value([]),
                     builder: (context, snapshot) {
                       if (snapshot.connectionState == ConnectionState.waiting) {
@@ -878,7 +875,8 @@ class _MyStorePageState extends State<MyStorePage>
             try {
               await _discountService.addDiscount(discount);
               if (mounted) {
-                Navigator.pop(dialogContext); // Use dialogContext instead of context
+                Navigator.pop(
+                    dialogContext); // Use dialogContext instead of context
                 Navigator.pop(context); // Close bottom sheet
                 _showDiscountManagement(); // Reopen to refresh
               }

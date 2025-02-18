@@ -134,7 +134,6 @@ class _AddonDialog extends StatefulWidget {
   final Function(FoodAddon) onSave;
 
   const _AddonDialog({
-    super.key,
     this.addon,
     required this.onSave,
   });

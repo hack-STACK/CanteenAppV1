@@ -73,9 +73,9 @@ class _ImageCropperWidgetState extends State<ImageCropperWidget>
 
   // Add new properties for crop control
   bool _isCircularCrop = false;
-  double _cropRadius = 1.0;
+  final double _cropRadius = 1.0;
   double _rotation = 0.0;
-  double _scale = 1.0;
+  final double _scale = 1.0;
   String? _activeFilter;
 
   // Add image state management
@@ -85,7 +85,7 @@ class _ImageCropperWidgetState extends State<ImageCropperWidget>
   // Add new properties for crop state management
   final ValueNotifier<Rect?> _cropRect = ValueNotifier<Rect?>(null);
   bool _isCropValid = false;
-  bool _isRotating = false;
+  final bool _isRotating = false;
   CropImageStatus _cropStatus = CropImageStatus.ready;
 
   // Add crop state notifier

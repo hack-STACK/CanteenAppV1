@@ -3,30 +3,29 @@ import 'package:kantin/Models/menus_addon.dart';
 class Menu {
   static const validTypes = {'food', 'drink'};
 
-  final int? id; // Make id nullable
+  final int? id;
   final String foodName;
   final double price;
-  final String type; // "food" or "drink"
+  final String type;
   final String? photo;
   final String description;
   final int? stallId;
-  final List<FoodAddon> addons; // New field for add-ons
+  final List<FoodAddon> addons;
   bool isAvailable;
   String? category;
 
   Menu({
-    this.id, // Make id optional
+    this.id,
     required this.foodName,
     required this.price,
     required String type,
     this.photo,
     required this.description,
     this.stallId,
-    this.addons = const [], // Default to empty list
+    this.addons = const [],
     this.isAvailable = true,
     this.category,
   }) : type = type.toLowerCase() {
-    // Normalize type to lowercase
     if (!validTypes.contains(this.type)) {
       throw ArgumentError(
           'Invalid menu type. Must be either "food" or "drink"');
@@ -42,9 +41,7 @@ class Menu {
     }
   }
 
-  // Convert from JSON (fetch from Supabase)
   factory Menu.fromJson(Map<String, dynamic> json) {
-    // Handle the addons array from JSON
     List<FoodAddon> parsedAddons = [];
     if (json['addons'] != null) {
       parsedAddons = (json['addons'] as List)
@@ -61,18 +58,12 @@ class Menu {
       description: json['description'] ?? '',
       stallId: json['stall_id'],
       addons: parsedAddons,
-      isAvailable: json['is_available'] ?? true, // Updated field name
+      isAvailable: json['is_available'] ?? true,
       category: json['category'],
     );
   }
 
-  // Convert to JSON (insert to Supabase)
   Map<String, dynamic> toJson({bool excludeId = false}) {
-    // Validate before converting to JSON
-    if (!validTypes.contains(type)) {
-      throw ArgumentError('Invalid menu type: $type');
-    }
-
     final data = {
       'food_name': foodName,
       'price': price,
@@ -80,9 +71,8 @@ class Menu {
       'photo': photo,
       'description': description,
       'stall_id': stallId,
-      'is_available': isAvailable, // Updated field name
+      'is_available': isAvailable,
       'category': category,
-      // Remove 'addons' from the main JSON data
     };
 
     if (!excludeId && id != null) {
@@ -92,14 +82,12 @@ class Menu {
     return data;
   }
 
-  // Add a new method to get the complete JSON including addons
   Map<String, dynamic> toCompleteJson({bool excludeId = false}) {
     final data = toJson(excludeId: excludeId);
     data['addons'] = addons.map((addon) => addon.toJson()).toList();
     return data;
   }
 
-  // Create a copy of Menu with modifications
   Menu copyWith({
     int? id,
     String? foodName,
@@ -126,19 +114,13 @@ class Menu {
     );
   }
 
-  // Cache computed values
-  double? _totalPrice;
-
-  // Computed property for total price including required addons
   double get totalPrice {
-    _totalPrice ??= price +
+    return price +
         addons
             .where((addon) => addon.isRequired)
             .fold(0.0, (sum, addon) => sum + addon.price);
-    return _totalPrice!;
   }
 
-  // Override == and hashCode for better comparison
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -151,19 +133,22 @@ class Menu {
   int get hashCode => id.hashCode ^ foodName.hashCode;
 
   factory Menu.fromMap(Map<String, dynamic> map) {
-    // Handle price conversion from various types
     final dynamic rawPrice = map['price'];
     final double price =
         rawPrice is int ? rawPrice.toDouble() : rawPrice as double;
 
+    final dynamic rawStallId = map['stall_id'] ?? map['id_stan'];
+    final int? stallId =
+        rawStallId != null ? int.tryParse(rawStallId.toString()) : null;
+
     return Menu(
-      id: map['id'] as int?, // Handle nullable id
+      id: map['id'] as int?,
       foodName: map['food_name'] as String,
       price: price,
       type: map['type'] as String,
       photo: map['photo'] as String?,
       description: map['description'] as String? ?? '',
-      stallId: map['stall_id'] as int?,
+      stallId: stallId,
       isAvailable: map['is_available'] as bool? ?? true,
       category: map['category'] as String?,
     );
@@ -177,7 +162,7 @@ class Menu {
       'type': type,
       'photo': photo,
       'description': description,
-      'stall_id': stallId,
+      'id_stan': stallId,
       'is_available': isAvailable,
       'category': category,
     };

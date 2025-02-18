@@ -1,7 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:kantin/Models/discount.dart';
 import 'package:kantin/Models/menu_discount.dart';
-import 'package:kantin/Models/Stan_model.dart'; // Add this import
 
 class DiscountService {
   final SupabaseClient _client;
@@ -14,24 +13,23 @@ class DiscountService {
       print('DiscountService: $message');
     }
   }
-  Future <List<Discount>> getDiscountsByStallId(Stan stall) async{
+
+  Future<List<Discount>> getDiscountsByStallId(int stallId) async {
     try {
-      _logDebug('Fetching discounts for stall ${stall.id}...');
+      _logDebug('Fetching discounts for stall $stallId...');
       final response = await _client
           .from('discounts')
           .select()
-          .eq('stall_id', stall.id)
+          .eq('stall_id', stallId)
           .order('created_at', ascending: false);
 
       _logDebug('Received response: $response');
-
       final List<Discount> discounts = [];
       for (var item in response as List) {
         try {
           discounts.add(Discount.fromMap(item));
         } catch (e) {
           _logDebug('Error parsing discount: $item\nError: $e');
-          // Continue with next item instead of failing completely
           continue;
         }
       }
@@ -46,13 +44,11 @@ class DiscountService {
 
   Future<List<Discount>> getDiscounts() async {
     try {
-      _logDebug('Fetching discounts...');
+      _logDebug('Fetching all discounts...');
       final response = await _client
           .from('discounts')
           .select()
           .order('created_at', ascending: false);
-
-      _logDebug('Received response: $response');
 
       final List<Discount> discounts = [];
       for (var item in response as List) {
@@ -60,7 +56,6 @@ class DiscountService {
           discounts.add(Discount.fromMap(item));
         } catch (e) {
           _logDebug('Error parsing discount: $item\nError: $e');
-          // Continue with next item instead of failing completely
           continue;
         }
       }
@@ -82,8 +77,6 @@ class DiscountService {
           .select()
           .single();
 
-      _logDebug('Received response: $response');
-
       return Discount.fromMap(response);
     } catch (e, stackTrace) {
       _logDebug('Error in addDiscount: $e\n$stackTrace');
@@ -94,18 +87,8 @@ class DiscountService {
   Future<void> updateDiscount(Discount discount) async {
     try {
       _logDebug('Updating discount: ${discount.toMap()}');
-
-      // Don't include created_at and updated_at in update
       final map = discount.toMap();
-
-      final response = await _client
-          .from('discounts')
-          .update(map)
-          .eq('id', discount.id)
-          .select()
-          .single();
-
-      _logDebug('Update response: $response');
+      await _client.from('discounts').update(map).eq('id', discount.id);
     } catch (e, stackTrace) {
       _logDebug('Error updating discount: $e\n$stackTrace');
       throw Exception('Failed to update discount: $e');
@@ -115,15 +98,9 @@ class DiscountService {
   Future<void> toggleDiscountStatus(int discountId, bool newStatus) async {
     try {
       _logDebug('Toggling discount status: $discountId to $newStatus');
-
-      final response = await _client
+      await _client
           .from('discounts')
-          .update({'is_active': newStatus})
-          .eq('id', discountId)
-          .select()
-          .single();
-
-      _logDebug('Toggle response: $response');
+          .update({'is_active': newStatus}).eq('id', discountId);
     } catch (e, stackTrace) {
       _logDebug('Error toggling discount status: $e\n$stackTrace');
       throw Exception('Failed to toggle discount status: $e');
@@ -135,10 +112,84 @@ class DiscountService {
       _logDebug('Deleting discount $discountId');
       // This will cascade delete related menu_discounts due to foreign key constraint
       await _client.from('discounts').delete().eq('id', discountId);
-      _logDebug('Successfully deleted discount');
     } catch (e, stackTrace) {
       _logDebug('Error in deleteDiscount: $e\n$stackTrace');
       throw Exception('Failed to delete discount: $e');
+    }
+  }
+
+  Future<List<MenuDiscount>> getMenuDiscountsByMenuId(int menuId) async {
+    try {
+      _logDebug('Fetching discounts for menu $menuId');
+      final response = await _client.from('menu_discounts').select('''
+            *,
+            discount:discounts (
+              id,
+              discount_name,
+              discount_percentage,
+              start_date,
+              end_date,
+              is_active,
+              type,
+              stall_id,
+              created_at,
+              updated_at
+            )
+          ''').eq('id_menu', menuId);
+
+      final menuDiscounts = (response as List)
+          .map((item) => MenuDiscount.fromJson(item))
+          .toList();
+
+      _logDebug('Found ${menuDiscounts.length} discounts for menu $menuId');
+      return menuDiscounts;
+    } catch (e) {
+      _logDebug('Error in getMenuDiscountsByMenuId: $e');
+      throw Exception('Failed to fetch menu discounts: $e');
+    }
+  }
+
+  Future<void> updateMenuDiscount(
+      int menuId, int discountId, bool isActive) async {
+    try {
+      _logDebug(
+          'Updating menu discount status: menuId=$menuId, discountId=$discountId, isActive=$isActive');
+
+      final existing = await _client
+          .from('menu_discounts')
+          .select()
+          .eq('id_menu', menuId)
+          .eq('id_discount', discountId)
+          .maybeSingle();
+
+      if (existing == null && isActive) {
+        // Create new relationship if it doesn't exist and we want to activate
+        await createMenuDiscount(menuId, discountId, true);
+      } else if (existing != null) {
+        // Update existing relationship
+        await _client
+            .from('menu_discounts')
+            .update({'is_active': isActive})
+            .eq('id_menu', menuId)
+            .eq('id_discount', discountId);
+      }
+    } catch (e) {
+      _logDebug('Error updating menu discount: $e');
+      throw Exception('Failed to update menu discount: $e');
+    }
+  }
+
+  Future<void> createMenuDiscount(
+      int menuId, int discountId, bool isActive) async {
+    try {
+      await _client.from('menu_discounts').insert({
+        'id_menu': menuId,
+        'id_discount': discountId,
+        'is_active': isActive,
+      });
+    } catch (e) {
+      _logDebug('Error creating menu discount: $e');
+      throw Exception('Failed to create menu discount: $e');
     }
   }
 
@@ -180,115 +231,115 @@ class DiscountService {
       }
 
       // Insert the menu discount
-      final response = await _client
-          .from('menu_discounts')
-          .insert({
-            'id_menu': menuDiscount.menuId,
-            'id_discount': menuDiscount.discountId,
-          })
-          .select()
-          .single();
-
-      _logDebug('Successfully added menu discount: $response');
-    } catch (e, stackTrace) {
-      _logDebug('Error in addMenuDiscount: $e\n$stackTrace');
+      await _client.from('menu_discounts').insert({
+        'id_menu': menuDiscount.menuId,
+        'id_discount': menuDiscount.discountId,
+        'is_active': true,
+      });
+    } catch (e) {
+      _logDebug('Error in addMenuDiscount: $e');
       if (e.toString().contains('Foreign key violation')) {
         throw Exception('Invalid menu or discount ID');
-      }
-      if (e.toString().contains('duplicate key')) {
-        throw Exception('This discount is already applied to this menu item');
       }
       throw Exception('Failed to apply discount to menu: $e');
     }
   }
 
-  Future<void> deleteMenuDiscount(int menuDiscountId) async {
+  Future<bool> validateDiscountFromMenu(
+      int discountId, int menuId, int stallId) async {
     try {
-      _logDebug('Deleting menu discount $menuDiscountId');
-      await _client.from('menu_discounts').delete().eq('id', menuDiscountId);
-      _logDebug('Successfully deleted menu discount');
-    } catch (e, stackTrace) {
-      _logDebug('Error in deleteMenuDiscount: $e\n$stackTrace');
-      throw Exception('Failed to delete menu discount: $e');
-    }
-  }
-    Future<void> createMenuDiscount(int menuId, int discountId, bool isActive) async {
-    try {
-      _logDebug('Creating menu discount: menuId=$menuId, discountId=$discountId, isActive=$isActive');
+      _logDebug(
+          'Starting discount validation: discountId=$discountId, menuId=$menuId, stallId=$stallId');
 
-      final response = await _client
-          .from('menu_discounts')
-          .insert({
-            'id_menu': menuId,
-            'id_discount': discountId,
-            'is_active': isActive,
-          })
+      // Check if discount exists and get its details
+      final discountResponse = await _client
+          .from('discounts')
           .select()
-          .single();
+          .eq('id', discountId)
+          .maybeSingle();
 
-      _logDebug('Create menu discount response: $response');
-    } catch (e, stackTrace) {
-      _logDebug('Error creating menu discount: $e\n$stackTrace');
-      throw Exception('Failed to create menu discount: $e');
-    }
-  }
+      if (discountResponse == null) {
+        _logDebug('Discount not found');
+        return false;
+      }
 
+      // Check stall ownership
+      if (discountResponse['stall_id'] != stallId) {
+        _logDebug(
+            'Stall ID mismatch: expected=$stallId, actual=${discountResponse['stall_id']}');
+        return false;
+      }
 
-  Future<List<MenuDiscount>> getMenuDiscounts(int menuId) async {
-    try {
-      _logDebug('Fetching discounts for menu $menuId');
-      final response = await _client
-          .from('menu_discounts')
-          .select('''
-            *,
-            discount:discounts (
-              id,
-              discount_name,
-              discount_percentage,
-              start_date,
-              end_date,
-              is_active,
-              type,
-              stall_id,
-              created_at,
-              updated_at
-            )
-          ''')
-          .eq('id_menu', menuId);
+      // Validate date range
+      try {
+        final now = DateTime.now();
+        final startDate = DateTime.parse(discountResponse['start_date']);
+        final endDate = DateTime.parse(discountResponse['end_date']);
 
-      _logDebug('Received response: $response');
-
-      final menuDiscounts = (response as List).map((item) {
-        try {
-          return MenuDiscount.fromJson(item);
-        } catch (e) {
-          _logDebug('Error parsing menu discount: $e');
-          return null;
+        if (now.isBefore(startDate)) {
+          _logDebug(
+              'Discount not yet active. Starts on: ${startDate.toLocal()}');
+          return false;
         }
-      }).whereType<MenuDiscount>().toList();
 
-      _logDebug('Found ${menuDiscounts.length} discounts for menu $menuId');
-      return menuDiscounts;
-    } catch (e) {
-      _logDebug('Error in getMenuDiscounts: $e');
-      throw Exception('Failed to fetch menu discounts: $e');
+        if (now.isAfter(endDate)) {
+          _logDebug('Discount expired on: ${endDate.toLocal()}');
+          return false;
+        }
+      } catch (e) {
+        _logDebug('Error parsing dates: $e');
+        return false;
+      }
+
+      // Check existing menu discount status
+      final menuDiscountResponse = await _client
+          .from('menu_discounts')
+          .select()
+          .eq('id_menu', menuId)
+          .eq('id_discount', discountId)
+          .maybeSingle();
+
+      // Always allow toggling existing discounts
+      if (menuDiscountResponse != null) {
+        final isCurrentlyActive = menuDiscountResponse['is_active'] ?? false;
+        _logDebug(
+            'Existing menu discount found - currently active: $isCurrentlyActive');
+        return true; // Allow toggling regardless of current state
+      }
+
+      // If no existing menu discount, it can be applied
+      _logDebug('No existing menu discount found - can be applied');
+      return true;
+    } catch (e, stackTrace) {
+      _logDebug('Error in validateDiscountFromMenu: $e');
+      _logDebug('Stack trace: $stackTrace');
+      return false;
     }
   }
-  
-  Future<void> updateMenuDiscount(int menuId, int discountId, bool isActive) async {
-    try {
-      _logDebug('Updating menu discount: menuId=$menuId, discountId=$discountId, isActive=$isActive');
-      
-      await _client
-          .from('menu_discounts')
-          .update({'is_active': isActive})
-          .eq('id_menu', menuId)
-          .eq('id_discount', discountId);
 
-      _logDebug('Successfully updated menu discount');
+  /// Attaches a discount to a menu item
+  Future<void> attachMenuDiscount(int menuId, int discountId) async {
+    try {
+      await _client.from('menu_discounts').insert({
+        'menu_id': menuId,
+        'discount_id': discountId,
+        'is_active': true,
+        'created_at': DateTime.now().toIso8601String(),
+      });
     } catch (e) {
-      _logDebug('Error updating menu discount: $e');
-      throw Exception('Failed to update menu discount: $e');
+      throw Exception('Failed to attach discount: $e');
+    }
+  }
+
+  /// Detaches a discount from a menu item
+  Future<void> detachMenuDiscount(int menuId, int discountId) async {
+    try {
+      await _client.from('menu_discounts').delete().match({
+        'menu_id': menuId,
+        'discount_id': discountId,
+      });
+    } catch (e) {
+      throw Exception('Failed to detach discount: $e');
     }
   }
 }

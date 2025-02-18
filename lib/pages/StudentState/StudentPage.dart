@@ -6,6 +6,7 @@ import 'package:kantin/Component/my_drawer.dart';
 import 'package:kantin/Component/my_stall_tile.dart';
 import 'package:kantin/Models/Stan_model.dart';
 import 'package:kantin/Services/Database/Stan_service.dart';
+import 'package:kantin/pages/StudentState/Stalldetailpage.dart';
 
 class StudentPage extends StatefulWidget {
   const StudentPage({super.key});
@@ -92,15 +93,14 @@ class _HomepageState extends State<StudentPage> {
                           return AnimatedStallTile(
                             stall: _stalls[index],
                             onTap: () {
-                              // TODO: Navigate to stall detail page
-                              // Navigator.push(
-                              //   context,
-                              //   MaterialPageRoute(
-                              //     builder: (context) => StallDetailPage(
-                              //       stall: _stalls[index],
-                              //     ),
-                              //   ),
-                              // );
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => StallDetailPage(
+                                    stall: _stalls[index],
+                                  ),
+                                ),
+                              );
                             },
                           );
                         },

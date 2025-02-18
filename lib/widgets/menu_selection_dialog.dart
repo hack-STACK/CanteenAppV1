@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:kantin/Models/menus.dart';
 import 'package:kantin/Models/discount.dart';
-import 'package:kantin/services/database/foodService.dart';
 
 class MenuSelectionDialog extends StatefulWidget {
   final Discount discount;

@@ -1,22 +1,22 @@
 class Stan {
   final int id;
-  final String stanName;
-  final String ownerName;
-  final String phone;
-  final String slot;
-  final String description;
-  final String? imageUrl;
-  final int userId;
-  final String? Banner_img;
+  final String stanName; // maps to nama_stalls
+  final String ownerName; // maps to nama_pemilik
+  final String phone; // maps to no_telp
+  final int userId; // maps to id_user
+  final String description; // maps to deskripsi
+  final String slot; // maps to slot
+  final String? imageUrl; // maps to image_url
+  final String? Banner_img; // maps to Banner_img
 
   Stan({
     required this.id,
     required this.stanName,
     required this.ownerName,
     required this.phone,
-    required this.slot,
-    required this.description,
     required this.userId,
+    required this.description,
+    required this.slot,
     this.imageUrl,
     this.Banner_img,
   });
@@ -27,10 +27,10 @@ class Stan {
       stanName: map['nama_stalls'],
       ownerName: map['nama_pemilik'],
       phone: map['no_telp'],
-      slot: map['slot'],
-      description: map['deskripsi'],
-      imageUrl: map['image_url'],
       userId: map['id_user'],
+      description: map['deskripsi'],
+      slot: map['slot'],
+      imageUrl: map['image_url'],
       Banner_img: map['Banner_img'],
     );
   }
@@ -41,9 +41,9 @@ class Stan {
       'nama_stalls': stanName,
       'nama_pemilik': ownerName,
       'no_telp': phone,
-      'slot': slot,
-      'deskripsi': description,
       'id_user': userId,
+      'deskripsi': description,
+      'slot': slot,
       'image_url': imageUrl,
       'Banner_img': Banner_img,
     };
@@ -54,10 +54,10 @@ class Stan {
     String? stanName,
     String? ownerName,
     String? phone,
-    String? slot,
-    String? description,
-    String? imageUrl,
     int? userId,
+    String? description,
+    String? slot,
+    String? imageUrl,
     String? Banner_img,
   }) {
     return Stan(
@@ -65,16 +65,11 @@ class Stan {
       stanName: stanName ?? this.stanName,
       ownerName: ownerName ?? this.ownerName,
       phone: phone ?? this.phone,
-      slot: slot ?? this.slot,
-      description: description ?? this.description,
-      imageUrl: imageUrl ?? this.imageUrl,
       userId: userId ?? this.userId,
+      description: description ?? this.description,
+      slot: slot ?? this.slot,
+      imageUrl: imageUrl ?? this.imageUrl,
       Banner_img: Banner_img ?? this.Banner_img,
     );
-  }
-
-  @override
-  String toString() {
-    return 'Stan{id: $id, stanName: $stanName, ownerName: $ownerName, phone: $phone, slot: $slot, description: $description, userId: $userId, imageUrl: $imageUrl, Banner_img: $Banner_img}';
   }
 }

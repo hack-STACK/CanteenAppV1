@@ -370,21 +370,14 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
   Future<void> _loadMenuDiscounts() async {
     try {
       final menuDiscounts = await _discountService.getMenuDiscounts(_currentMenu.id!);
-      final discounts = await _discountService.getDiscounts();
       
       setState(() {
         _menuDiscounts = menuDiscounts;
-        _discounts = discounts.map((discount) {
-          // Check if this discount is applied to this menu
-          final isApplied = menuDiscounts.any((md) => md.discountId == discount.id);
-          if (isApplied) {
-            // Update discount status based on global discount status
-            return discount.copyWith(
-              isActive: discount.isActive && isApplied
-            );
-          }
-          return discount;
-        }).toList();
+        // Update _discounts list using the nested discount data
+        _discounts = menuDiscounts
+            .map((md) => md.discount)
+            .whereType<Discount>()
+            .toList();
         
         // Recalculate prices after loading discounts
         _calculatePrices();
@@ -392,6 +385,82 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
     } catch (e) {
       _showError('Failed to load menu discounts: $e');
     }
+  }
+
+  Future<void> _toggleDiscount(Discount discount) async {
+    try {
+      final currentPosition = _scrollController.offset;
+      setState(() => _isLoading = true);
+
+      // Find the associated menu discount
+      final menuDiscount = _menuDiscounts.firstWhere(
+        (md) => md.discountId == discount.id,
+        orElse: () => throw Exception('Menu discount not found'),
+      );
+
+      // Toggle the menu discount status
+      await _discountService.updateMenuDiscount(
+        _currentMenu.id!,
+        discount.id,
+        !menuDiscount.isActive, // Toggle the status
+      );
+
+      // Update local state immediately
+      setState(() {
+        // Update the menu discount status
+        final index = _menuDiscounts.indexWhere((md) => md.discountId == discount.id);
+        if (index != -1) {
+          _menuDiscounts[index] = MenuDiscount(
+            id: menuDiscount.id,
+            menuId: menuDiscount.menuId,
+            discountId: menuDiscount.discountId,
+            isActive: !menuDiscount.isActive, // Toggle the status
+            discount: discount,
+          );
+        }
+
+        // Recalculate prices immediately
+        _calculatePrices();
+        _errorMessage = null;
+      });
+
+      _showSuccess(menuDiscount.isActive ? 'Discount removed' : 'Discount applied');
+
+      // Restore scroll position
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_scrollController.hasClients) {
+          _scrollController.jumpTo(currentPosition);
+        }
+      });
+    } catch (e) {
+      _showError('Failed to toggle discount: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  void _calculatePrices() {
+    _basePrice = _currentMenu.price;
+    _addonTotal = _addons.where((addon) => addon.isRequired).fold(
+      0,
+      (sum, addon) => sum + addon.price,
+    );
+
+    // Calculate discount based on active menu discounts only
+    _discountAmount = _menuDiscounts.where((md) => md.isActive).fold(0, (sum, menuDiscount) {
+      final discount = menuDiscount.discount;
+      
+      if (discount != null && 
+          discount.startDate.isBefore(DateTime.now()) && 
+          discount.endDate.isAfter(DateTime.now())) {
+        return sum + (_basePrice * discount.discountPercentage / 100);
+      }
+      return sum;
+    });
+
+    _finalPrice = _basePrice + _addonTotal - _discountAmount;
   }
 
   Future<void> _pickImage() async {
@@ -436,83 +505,6 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
   }
 
   void _removeImage(int index) => setState(() => _imagePaths.removeAt(index));
-
-  Future<void> _toggleDiscount(Discount discount) async {
-    try {
-      final currentPosition = _scrollController.offset;
-      setState(() => _isLoading = true);
-
-      // First update the global discount status
-      await _discountService.toggleDiscountStatus(discount.id, !discount.isActive);
-
-      // Then update menu-specific discount
-      if (_currentMenu.id != null) {
-        await _discountService.updateMenuDiscount(
-          _currentMenu.id!,
-          discount.id,
-          !discount.isActive,
-        );
-      }
-
-      // Reload all discounts to get the synchronized state
-      await _loadMenuDiscounts();
-
-      setState(() {
-        discount.isActive = !discount.isActive;
-        _errorMessage = null;
-      });
-
-      // Recalculate prices immediately after discount status change
-      _calculatePrices();
-
-      _showSuccess(discount.isActive ? 'Discount activated' : 'Discount deactivated');
-
-      // Restore scroll position
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_scrollController.hasClients) {
-          _scrollController.jumpTo(currentPosition);
-        }
-      });
-    } catch (e) {
-      _showError('Failed to toggle discount: $e');
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
-  }
-
-  void _calculatePrices() {
-    _basePrice = _currentMenu.price;
-    _addonTotal = _addons.where((addon) => addon.isRequired).fold(
-      0,
-      (sum, addon) => sum + addon.price,
-    );
-
-    // Update discount calculation to consider global discount status
-    _discountAmount = _menuDiscounts.fold(0, (sum, menuDiscount) {
-      final discount = _discounts.firstWhere(
-        (d) => d.id == menuDiscount.discountId,
-        orElse: () => Discount(
-          id: -1,
-          discountName: '',
-          discountPercentage: 0,
-          startDate: DateTime.now(),
-          endDate: DateTime.now(),
-          isActive: false,
-          stallId: -1,
-        ),
-      );
-      
-      // Only apply discount if both global and menu-specific status are active
-      return discount.id != -1 && discount.isActive 
-          ? sum + (_basePrice * discount.discountPercentage / 100) 
-          : sum;
-    });
-
-    _finalPrice = _basePrice + _addonTotal - _discountAmount;
-    setState(() {});
-  }
 
   Future<void> _showAddonDialog(FoodAddon? addon) async {
     try {
@@ -1367,10 +1359,7 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
   }
 
   Widget _buildDiscountSection() {
-    final appliedDiscounts = _discounts.where((discount) {
-      return _menuDiscounts
-          .any((menuDiscount) => menuDiscount.discountId == discount.id);
-    }).toList();
+    final appliedDiscounts = _menuDiscounts.map((md) => md.discount).whereType<Discount>().toList();
 
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -1401,22 +1390,29 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
             itemCount: appliedDiscounts.length,
             itemBuilder: (context, index) {
               final discount = appliedDiscounts[index];
+              final menuDiscount = _menuDiscounts.firstWhere(
+                (md) => md.discountId == discount.id,
+              );
+              
+              final isValid = discount.startDate.isBefore(DateTime.now()) && 
+                            discount.endDate.isAfter(DateTime.now());
+
               return Card(
                 child: ListTile(
                   title: Row(
                     children: [
                       Text(discount.discountName),
                       const SizedBox(width: 8),
-                      if (discount.isActive)
+                      if (menuDiscount.isActive && isValid)
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                           decoration: BoxDecoration(
                             color: Colors.green.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(12),
                           ),
-                          child: const Text(
-                            'Active',
-                            style: TextStyle(
+                          child: Text(
+                            'Active - ${discount.discountPercentage}% off',
+                            style: const TextStyle(
                               color: Colors.green,
                               fontSize: 12,
                             ),
@@ -1427,19 +1423,29 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
                   subtitle: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('${discount.discountPercentage}% off'),
+                      if (menuDiscount.isActive && isValid)
+                        Text(
+                          'Saves Rp ${(_basePrice * discount.discountPercentage / 100).toStringAsFixed(0)}',
+                          style: const TextStyle(
+                            color: Colors.green,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       Text(
                         'Valid: ${DateFormat('MMM dd').format(discount.startDate)} - ${DateFormat('MMM dd').format(discount.endDate)}',
-                        style: const TextStyle(fontSize: 12),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isValid ? null : Colors.red,
+                        ),
                       ),
                     ],
                   ),
                   trailing: Switch.adaptive(
-                    value: discount.isActive,
-                    onChanged: (value) async {
+                    value: menuDiscount.isActive,
+                    onChanged: isValid ? (value) async {
                       HapticFeedback.selectionClick();
                       await _toggleDiscount(discount);
-                    },
+                    } : null,
                   ),
                 ),
               );

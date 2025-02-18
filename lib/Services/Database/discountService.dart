@@ -237,39 +237,57 @@ class DiscountService {
   Future<List<MenuDiscount>> getMenuDiscounts(int menuId) async {
     try {
       _logDebug('Fetching discounts for menu $menuId');
-      final response =
-          await _client.from('menu_discounts').select().eq('id_menu', menuId);
+      final response = await _client
+          .from('menu_discounts')
+          .select('''
+            *,
+            discount:discounts (
+              id,
+              discount_name,
+              discount_percentage,
+              start_date,
+              end_date,
+              is_active,
+              type,
+              stall_id,
+              created_at,
+              updated_at
+            )
+          ''')
+          .eq('id_menu', menuId);
 
       _logDebug('Received response: $response');
 
-      final menuDiscounts =
-          (response as List).map((item) => MenuDiscount.fromMap(item)).toList();
+      final menuDiscounts = (response as List).map((item) {
+        try {
+          return MenuDiscount.fromJson(item);
+        } catch (e) {
+          _logDebug('Error parsing menu discount: $e');
+          return null;
+        }
+      }).whereType<MenuDiscount>().toList();
 
       _logDebug('Found ${menuDiscounts.length} discounts for menu $menuId');
       return menuDiscounts;
-    } catch (e, stackTrace) {
-      _logDebug('Error in getMenuDiscounts: $e\n$stackTrace');
+    } catch (e) {
+      _logDebug('Error in getMenuDiscounts: $e');
       throw Exception('Failed to fetch menu discounts: $e');
     }
   }
-    Future<void> updateMenuDiscount(int menuId, int discountId, bool isActive) async {
+  
+  Future<void> updateMenuDiscount(int menuId, int discountId, bool isActive) async {
     try {
       _logDebug('Updating menu discount: menuId=$menuId, discountId=$discountId, isActive=$isActive');
-
-      // Construct the update payload
-      final Map<String, dynamic> updatePayload = {'is_active': isActive};
-
-      final response = await _client
+      
+      await _client
           .from('menu_discounts')
-          .update(updatePayload)
+          .update({'is_active': isActive})
           .eq('id_menu', menuId)
-          .eq('id_discount', discountId)
-          .select()
-          .single();
+          .eq('id_discount', discountId);
 
-      _logDebug('Update menu discount response: $response');
-    } catch (e, stackTrace) {
-      _logDebug('Error updating menu discount: $e\n$stackTrace');
+      _logDebug('Successfully updated menu discount');
+    } catch (e) {
+      _logDebug('Error updating menu discount: $e');
       throw Exception('Failed to update menu discount: $e');
     }
   }

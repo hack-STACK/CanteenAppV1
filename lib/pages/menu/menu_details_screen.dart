@@ -364,8 +364,9 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
   Future<void> _loadDiscounts() async {
     try {
       final discounts = await _discountService.getDiscountsByStallId(_stallId!);
-      if (!mounted)
+      if (!mounted) {
         return; // Ensure the widget is still mounted before updating state
+      }
 
       setState(() {
         _discounts = discounts;

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:kantin/Models/transaction_model.dart';
 import 'package:kantin/Services/transaction_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:intl/intl.dart'; // Add for number formatting
 
 class OrderHistoryPage extends StatelessWidget {
   final TransactionService _transactionService = TransactionService();
@@ -53,6 +54,8 @@ class OrderHistoryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final formatter = NumberFormat("#,##0", "id_ID");
+
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: ExpansionTile(
@@ -68,26 +71,45 @@ class OrderHistoryCard extends StatelessWidget {
             itemBuilder: (context, index) {
               final detail = order.details[index];
               return ListTile(
-                title: Text(detail.menu.foodName),
+                title: Text(detail.menu?.foodName ?? 'Unknown Item'),
                 subtitle: Text(
-                  'Quantity: ${detail.quantity} x Rp${detail.price}',
+                  'Quantity: ${detail.quantity} x Rp${formatter.format(detail.unitPrice)}',
                 ),
-                trailing: Text('Rp${detail.price * detail.quantity}'),
+                trailing: Text('Rp${formatter.format(detail.subtotal)}'),
               );
             },
           ),
           Padding(
             padding: const EdgeInsets.all(16.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            child: Column(
               children: [
-                const Text(
-                  'Total Amount:',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                Text(
-                  'Rp${order.totalAmount}',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
+                if (order.deliveryAddress != null) ...[
+                  Row(
+                    children: [
+                      const Icon(Icons.location_on, size: 16),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          order.deliveryAddress!,
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Total Amount:',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    Text(
+                      'Rp${formatter.format(order.totalAmount)}',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ],
                 ),
               ],
             ),

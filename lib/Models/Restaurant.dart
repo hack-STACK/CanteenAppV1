@@ -18,7 +18,8 @@ class CartItem {
   });
 
   double get totalPrice {
-    double addonPrice = selectedAddons.fold(0, (sum, addon) => sum + addon.price);
+    double addonPrice =
+        selectedAddons.fold(0, (sum, addon) => sum + addon.price);
     return (menu.price + addonPrice) * quantity;
   }
 }
@@ -30,12 +31,14 @@ class Restaurant extends ChangeNotifier {
   bool _isLoading = false;
   String _error = '';
   String _deliveryAddress = "Ruang 32";
+  bool _isValidAddress = true;
 
   List<CartItem> get cart => _cart;
   List<Menu> get menu => _menu;
   bool get isLoading => _isLoading;
   String get error => _error;
   String get deliveryAddress => _deliveryAddress;
+  bool get isValidAddress => _isValidAddress;
 
   Future<void> loadMenu({
     String? category,
@@ -64,9 +67,10 @@ class Restaurant extends ChangeNotifier {
 
   void addToCart(Menu menu, {List<FoodAddon> addons = const [], String? note}) {
     final existingItemIndex = _cart.indexWhere(
-      (item) => item.menu.id == menu.id && 
-                item.selectedAddons.length == addons.length &&
-                item.selectedAddons.every((addon) => addons.contains(addon)),
+      (item) =>
+          item.menu.id == menu.id &&
+          item.selectedAddons.length == addons.length &&
+          item.selectedAddons.every((addon) => addons.contains(addon)),
     );
 
     if (existingItemIndex != -1) {
@@ -120,8 +124,19 @@ class Restaurant extends ChangeNotifier {
   }
 
   void updateDeliveryAddress(String newAddress) {
-    _deliveryAddress = newAddress;
+    if (newAddress.trim().isEmpty) {
+      _isValidAddress = false;
+      notifyListeners();
+      return;
+    }
+
+    _deliveryAddress = newAddress.trim();
+    _isValidAddress = true;
     notifyListeners();
+  }
+
+  bool validateOrder() {
+    return _isValidAddress && _cart.isNotEmpty;
   }
 
   String displayReceipt() {
@@ -139,8 +154,7 @@ class Restaurant extends ChangeNotifier {
       receipt.writeln(
           "${cartItem.quantity} x ${cartItem.menu.foodName} - ${_formatPrice(cartItem.menu.price)}");
       if (cartItem.selectedAddons.isNotEmpty) {
-        receipt.write(
-            '  Add-ons: ${_formatAddons(cartItem.selectedAddons)}');
+        receipt.write('  Add-ons: ${_formatAddons(cartItem.selectedAddons)}');
       }
       receipt.writeln();
     }
@@ -162,5 +176,32 @@ class Restaurant extends ChangeNotifier {
     return addons
         .map((addon) => '${addon.addonName} (${_formatPrice(addon.price)})')
         .join(', ');
+  }
+
+  // Calculate subtotal for all items in cart
+  double calculateSubtotal() {
+    return cart.fold(0, (sum, item) => sum + item.totalPrice);
+  }
+
+  // Increase quantity of a cart item
+  void increaseQuantity(CartItem item) {
+    final index = cart.indexOf(item);
+    if (index != -1) {
+      cart[index].quantity++;
+      notifyListeners();
+    }
+  }
+
+  // Decrease quantity of a cart item
+  void decreaseQuantity(CartItem item) {
+    final index = cart.indexOf(item);
+    if (index != -1) {
+      if (cart[index].quantity > 1) {
+        cart[index].quantity--;
+      } else {
+        cart.removeAt(index);
+      }
+      notifyListeners();
+    }
   }
 }

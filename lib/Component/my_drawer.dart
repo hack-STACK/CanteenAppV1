@@ -3,6 +3,7 @@ import 'package:kantin/Component/my_drawer_tile.dart';
 import 'package:kantin/Services/Auth/auth_Service.dart';
 import 'package:kantin/Services/Auth/login_or_register.dart';
 import 'package:kantin/pages/StudentState/Setting_Page.dart';
+import 'package:kantin/pages/StudentState/OrderPage.dart'; // Add this import
 
 class MyDrawer extends StatelessWidget {
   const MyDrawer({super.key});
@@ -89,6 +90,17 @@ class MyDrawer extends StatelessWidget {
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => SettingPage()),
+              );
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.receipt_long),
+            title: const Text('My Orders'),
+            onTap: () {
+              Navigator.pop(context); // Close drawer
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const OrderPage()),
               );
             },
           ),

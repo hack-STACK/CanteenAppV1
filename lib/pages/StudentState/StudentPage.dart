@@ -14,6 +14,9 @@ import 'package:kantin/utils/banner_generator.dart';
 import 'package:kantin/Services/Database/studentService.dart';
 import 'package:kantin/pages/StudentState/profile_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:kantin/pages/StudentState/OrderPage.dart'; // Add this import
+import 'package:kantin/widgets/student/food_category_grid.dart';
+import 'package:kantin/widgets/search_bar_delegate.dart';
 
 class StudentPage extends StatefulWidget {
   const StudentPage({super.key});
@@ -47,13 +50,32 @@ class _HomepageState extends State<StudentPage> {
   StudentModel? _currentStudent;
   final _supabase = Supabase.instance.client;
 
+  final ScrollController _scrollController = ScrollController();
+  bool _isScrolled = false;
+  String _selectedCategory = 'All';
+  final List<String> _recentSearches = [];
+  final GlobalKey<ScaffoldMessengerState> _scaffoldMessengerKey =
+      GlobalKey<ScaffoldMessengerState>();
+  final GlobalKey<ScaffoldState> _scaffoldKey =
+      GlobalKey<ScaffoldState>(); // Add this
+
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
+    _loadStudentData();
     // Delay the data loading to ensure Scaffold is initialized
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadInitialData();
     });
+  }
+
+  void _onScroll() {
+    if (_scrollController.offset > 20 && !_isScrolled) {
+      setState(() => _isScrolled = true);
+    } else if (_scrollController.offset <= 20 && _isScrolled) {
+      setState(() => _isScrolled = false);
+    }
   }
 
   Future<void> _loadInitialData() async {
@@ -63,17 +85,16 @@ class _HomepageState extends State<StudentPage> {
 
   Future<void> _loadStudentData() async {
     if (!mounted) return;
-    
     try {
       setState(() => _isLoadingProfile = true);
-      
+
       print('Debug: Starting to load student data');
 
       // Get the user data directly from shared preferences or your auth state
       final userId = 36; // This should come from your auth state management
       print('Debug: Using user ID - $userId');
 
-      // Get student data using user_id directly
+      // Get student data using user_id directly;
       final studentResponse = await _supabase
           .from('students')
           .select()
@@ -84,8 +105,8 @@ class _HomepageState extends State<StudentPage> {
 
       if (mounted) {
         setState(() {
-          _currentStudent = studentResponse != null 
-              ? StudentModel.fromMap(studentResponse) 
+          _currentStudent = studentResponse != null
+              ? StudentModel.fromMap(studentResponse)
               : null;
           _isLoadingProfile = false;
         });
@@ -141,7 +162,7 @@ class _HomepageState extends State<StudentPage> {
     try {
       setState(() => _isLoading = true);
       final stalls = await _stanService.getAllStans();
-      
+
       // Sort stalls by rating to get popular stalls, handling null ratings
       final popularStalls = List<Stan>.from(stalls)
         ..sort((a, b) => (b.rating ?? 0).compareTo(a.rating ?? 0));
@@ -160,26 +181,35 @@ class _HomepageState extends State<StudentPage> {
   }
 
   Widget _buildSearchBar() {
-    return Container(
-      margin: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: InkWell(
+          onTap: () => _showSearch(),
+          child: Hero(
+            tag: 'searchBar',
+            child: Material(
+              elevation: 2,
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.search, color: Colors.grey[600]),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Search for food or restaurant...',
+                      style: TextStyle(color: Colors.grey[600]),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
-        ],
-      ),
-      child: TextField(
-        controller: _searchController,
-        decoration: InputDecoration(
-          hintText: 'Search for food or stalls...',
-          prefixIcon: const Icon(Icons.search),
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         ),
       ),
     );
@@ -219,8 +249,9 @@ class _HomepageState extends State<StudentPage> {
               ),
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Theme.of(context).primaryColor.withOpacity(
-                    _currentBannerIndex == index ? 0.9 : 0.4),
+                color: Theme.of(context)
+                    .primaryColor
+                    .withOpacity(_currentBannerIndex == index ? 0.9 : 0.4),
               ),
             );
           }),
@@ -343,13 +374,15 @@ class _HomepageState extends State<StudentPage> {
                             children: [
                               Text(
                                 stall.stanName,
-                                style: const TextStyle(fontWeight: FontWeight.bold),
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
                               Row(
                                 children: [
-                                  Icon(Icons.star, size: 16, color: Colors.amber),
+                                  Icon(Icons.star,
+                                      size: 16, color: Colors.amber),
                                   Text(
                                     ' ${stall.rating?.toStringAsFixed(1) ?? "N/A"}',
                                     style: TextStyle(fontSize: 12),
@@ -417,9 +450,11 @@ class _HomepageState extends State<StudentPage> {
           ? () => Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => StudentProfilePage(student: _currentStudent!),
+                  builder: (context) =>
+                      StudentProfilePage(student: _currentStudent!),
                 ),
-              ).then((_) => _loadStudentData()) // Reload data when returning from profile page
+              ).then((_) =>
+                  _loadStudentData()) // Reload data when returning from profile page
           : () {
               // Show message to complete profile if no student data
               ScaffoldMessenger.of(context).showSnackBar(
@@ -440,8 +475,8 @@ class _HomepageState extends State<StudentPage> {
             CircleAvatar(
               radius: 30,
               backgroundColor: Colors.grey[200],
-              child: _currentStudent?.studentImage != null && 
-                     _currentStudent!.studentImage!.isNotEmpty
+              child: _currentStudent?.studentImage != null &&
+                      _currentStudent!.studentImage!.isNotEmpty
                   ? ClipOval(
                       child: Image.network(
                         _currentStudent!.studentImage!,
@@ -492,85 +527,177 @@ class _HomepageState extends State<StudentPage> {
 
   void _navigateToProfileSetup() {
     // Navigate to profile setup/completion page
-    Navigator.pushNamed(context, '/profile/setup').then((_) => _loadStudentData());
+    Navigator.pushNamed(context, '/profile/setup')
+        .then((_) => _loadStudentData());
+  }
+
+  void _openDrawer() {
+    _scaffoldKey.currentState?.openDrawer();
+  }
+
+  Widget _buildAppBar() {
+    return SliverAppBar(
+      expandedHeight: 120,
+      floating: true,
+      pinned: true,
+      elevation: _isScrolled ? 4 : 0,
+      backgroundColor: _isScrolled ? Colors.white : Colors.transparent,
+      leading: IconButton(
+        // Add this leading button to open drawer
+        icon: Icon(
+          Icons.menu,
+          color: _isScrolled ? Colors.black : Colors.white,
+        ),
+        onPressed: _openDrawer, // Update this
+      ),
+      flexibleSpace: FlexibleSpaceBar(
+        title: Text(
+          'Campus Canteen',
+          style: TextStyle(
+            color: _isScrolled ? Colors.black : Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        background: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Theme.of(context).primaryColor,
+                Theme.of(context).primaryColor.withOpacity(0.8),
+              ],
+            ),
+          ),
+        ),
+      ),
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.notifications_outlined),
+          onPressed: _showNotifications,
+          color: _isScrolled ? Colors.black : Colors.white,
+        ),
+      ],
+    );
+  }
+
+  void _showSearch() {
+    showSearch(
+      context: context,
+      delegate: SearchBarDelegate(
+        onSearch: _performSearch,
+        recentSearches: _recentSearches,
+      ),
+    );
+  }
+
+  Future<List<dynamic>> _performSearch(String query) async {
+    // Implement search functionality
+    return [];
+  }
+
+  void _showNotifications() {
+    // Handle notification tap
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Row(
+          children: [
+            Icon(Icons.notifications_active, color: Colors.white),
+            SizedBox(width: 8),
+            Text('No new notifications'),
+          ],
+        ),
+        duration: Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      drawer: const MyDrawer(),
-      body: RefreshIndicator(
-        onRefresh: () async {
-          await Future.wait([
-            _loadStudentData(),
-            _loadStalls(),
-          ]);
-        },
-        child: CustomScrollView(
-          slivers: [
-            MySilverAppBar(
-              title: const Text('Food Court'),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  _buildProfileSection(),
-                  const MyCurrentLocation(),
-                  _buildSearchBar(),
-                ],
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Column(
-                children: [
-                  _buildBannerCarousel(),
-                  _buildCategories(),
-                  _buildPopularStalls(),
-                  const Divider(height: 32),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16),
-                    child: Text(
-                      'All Stalls',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            _isLoading
-                ? const SliverFillRemaining(
-                    child: Center(child: CircularProgressIndicator()),
-                  )
-                : _stalls.isEmpty
-                    ? const SliverFillRemaining(
-                        child: Center(child: Text('No stalls available')),
-                      )
-                    : SliverPadding(
-                        padding: const EdgeInsets.all(16),
-                        sliver: SliverList(
-                          delegate: SliverChildBuilderDelegate(
-                            (context, index) => AnimatedStallTile(
-                              stall: _stalls[index],
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => StallDetailPage(
-                                      stall: _stalls[index],
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                            childCount: _stalls.length,
-                          ),
+    return ScaffoldMessenger(
+      key:
+          _scaffoldMessengerKey, // Rename the existing scaffoldKey to scaffoldMessengerKey
+      child: Scaffold(
+        key: _scaffoldKey, // Add this key to the Scaffold
+        backgroundColor: Colors.grey[50],
+        drawer: const MyDrawer(), // Add this line to include the drawer
+        body: RefreshIndicator(
+          onRefresh: () async {
+            await Future.wait([
+              _loadStudentData(),
+              _loadStalls(),
+            ]);
+          },
+          child: CustomScrollView(
+            controller: _scrollController,
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              _buildAppBar(),
+              _buildSearchBar(),
+              SliverToBoxAdapter(child: _buildCategories()),
+              SliverToBoxAdapter(child: _buildBannerCarousel()),
+              SliverToBoxAdapter(child: _buildPopularStalls()),
+              SliverToBoxAdapter(
+                child: Column(
+                  children: [
+                    const Divider(height: 32),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16),
+                      child: Text(
+                        'All Stalls',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
-          ],
+                    ),
+                  ],
+                ),
+              ),
+              _buildStallsList(),
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  Widget _buildStallsList() {
+    if (_isLoading) {
+      return const SliverFillRemaining(
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_stalls.isEmpty) {
+      return const SliverFillRemaining(
+        child: Center(child: Text('No stalls available')),
+      );
+    }
+
+    return SliverPadding(
+      padding: const EdgeInsets.all(16),
+      sliver: SliverList(
+        delegate: SliverChildBuilderDelegate(
+          (context, index) => AnimatedStallTile(
+            stall: _stalls[index],
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => StallDetailPage(stall: _stalls[index]),
+              ),
+            ),
+          ),
+          childCount: _stalls.length,
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 }

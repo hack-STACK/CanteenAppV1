@@ -2,9 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:kantin/pages/StudentState/food_cart.dart';
 
 class MySilverAppBar extends StatelessWidget {
-  const MySilverAppBar({super.key, required this.child, required this.title});
-  final Widget child;
   final Widget title;
+  final Widget child;
+  final List<Widget>? actions;
+
+  const MySilverAppBar({
+    super.key,
+    required this.title,
+    required this.child,
+    this.actions,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -14,16 +21,17 @@ class MySilverAppBar extends StatelessWidget {
       collapsedHeight: 120,
       floating: false,
       pinned: true,
-      actions: [
-        IconButton(
-            onPressed: () {
-              Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (context) => const FoodCartPage()));
-            },
-            icon: Icon(Icons.shopping_cart))
-      ],
+      actions: actions ??
+          [
+            IconButton(
+                onPressed: () {
+                  Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (context) => const FoodCartPage()));
+                },
+                icon: Icon(Icons.shopping_cart))
+          ],
       backgroundColor: Theme.of(context).colorScheme.surface,
       foregroundColor: Theme.of(context).colorScheme.inversePrimary,
       title: const Text("Canteen"),

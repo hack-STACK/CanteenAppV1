@@ -1,29 +1,5 @@
-import 'package:kantin/Models/menus.dart';
-import 'package:kantin/Models/menus_addon.dart';
-
-enum TransactionStatus {
-  pending,
-  preparing,
-  readyForPickup,
-  delivering,
-  completed,
-  cancelled
-}
-
-enum PaymentStatus {
-  unpaid,
-  paid,
-  failed,
-  refunded
-}
-
-enum PaymentMethod {
-  cash,
-  qris,
-  debit,
-  credit,
-  eWallet
-}
+import 'package:kantin/models/enums/transaction_enums.dart';
+import 'package:kantin/Models/menus.dart'; // Add this import
 
 class Transaction {
   final int id;
@@ -32,12 +8,15 @@ class Transaction {
   final TransactionStatus status;
   final PaymentStatus paymentStatus;
   final PaymentMethod? paymentMethod;
+  final OrderType orderType; // Add this field
   final double totalAmount;
   final DateTime createdAt;
-  final DateTime updatedAt;
+  final DateTime? updatedAt;
   final String? notes;
   final String? deliveryAddress;
   final DateTime? estimatedDeliveryTime;
+  final String? cancellationReason;
+  final DateTime? cancelledAt;
   final List<TransactionDetail> details;
 
   Transaction({
@@ -47,61 +26,78 @@ class Transaction {
     required this.status,
     required this.paymentStatus,
     this.paymentMethod,
+    required this.orderType, // Add this parameter
     required this.totalAmount,
     required this.createdAt,
-    required this.updatedAt,
+    this.updatedAt,
     this.notes,
     this.deliveryAddress,
     this.estimatedDeliveryTime,
+    this.cancellationReason,
+    this.cancelledAt,
     this.details = const [],
   });
 
-  factory Transaction.fromMap(Map<String, dynamic> map) {
+  factory Transaction.fromJson(Map<String, dynamic> json) {
     return Transaction(
-      id: map['id'],
-      studentId: map['student_id'],
-      stallId: map['stall_id'],
+      id: json['id'],
+      studentId: json['student_id'],
+      stallId: json['stall_id'],
       status: TransactionStatus.values.firstWhere(
-        (e) => e.toString().split('.').last.toLowerCase() == map['status'].toLowerCase(),
+        (e) => e.name == json['status'],
         orElse: () => TransactionStatus.pending,
       ),
       paymentStatus: PaymentStatus.values.firstWhere(
-        (e) => e.toString().split('.').last.toLowerCase() == map['payment_status'].toLowerCase(),
+        (e) => e.name == json['payment_status'],
         orElse: () => PaymentStatus.unpaid,
       ),
-      paymentMethod: map['payment_method'] != null
+      paymentMethod: json['payment_method'] != null
           ? PaymentMethod.values.firstWhere(
-              (e) => e.toString().split('.').last.toLowerCase() == map['payment_method'].toLowerCase(),
+              (e) => e.name == json['payment_method'],
+              orElse: () => PaymentMethod.cash,
             )
           : null,
-      totalAmount: map['total_amount'].toDouble(),
-      createdAt: DateTime.parse(map['created_at']),
-      updatedAt: DateTime.parse(map['updated_at']),
-      notes: map['notes'],
-      deliveryAddress: map['delivery_address'],
-      estimatedDeliveryTime: map['estimated_delivery_time'] != null
-          ? DateTime.parse(map['estimated_delivery_time'])
+      orderType: OrderType.fromJson(json['order_type'] ?? 'delivery'),
+      totalAmount: json['total_amount']?.toDouble() ?? 0.0,
+      createdAt: DateTime.parse(json['created_at']),
+      updatedAt: json['updated_at'] != null
+          ? DateTime.parse(json['updated_at'])
           : null,
-      details: (map['details'] as List?)
-              ?.map((detail) => TransactionDetail.fromMap(detail))
+      notes: json['notes'],
+      deliveryAddress: json['delivery_address'],
+      estimatedDeliveryTime: json['estimated_delivery_time'] != null
+          ? DateTime.parse(json['estimated_delivery_time'])
+          : null,
+      cancellationReason: json['cancellation_reason'],
+      cancelledAt: json['cancelled_at'] != null
+          ? DateTime.parse(json['cancelled_at'])
+          : null,
+      details: (json['transaction_details'] as List?)
+              ?.map((detail) => TransactionDetail.fromJson(detail))
               .toList() ??
           [],
     );
   }
 
-  Map<String, dynamic> toMap() {
-    return {
-      'student_id': studentId,
-      'stall_id': stallId,
-      'status': status.toString().split('.').last.toLowerCase(),
-      'payment_status': paymentStatus.toString().split('.').last.toLowerCase(),
-      'payment_method': paymentMethod?.toString().split('.').last.toLowerCase(),
-      'total_amount': totalAmount,
-      'notes': notes,
-      'delivery_address': deliveryAddress,
-      'estimated_delivery_time': estimatedDeliveryTime?.toIso8601String(),
-    };
-  }
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'student_id': studentId,
+        'stall_id': stallId,
+        'status': status.name,
+        'payment_status': paymentStatus.name,
+        'payment_method': paymentMethod?.name,
+        'order_type': orderType.toJson(),
+        'total_amount': totalAmount,
+        'created_at': createdAt.toIso8601String(),
+        'updated_at': updatedAt?.toIso8601String(),
+        'notes': notes,
+        'delivery_address': deliveryAddress,
+        'estimated_delivery_time': estimatedDeliveryTime?.toIso8601String(),
+        'cancellation_reason': cancellationReason,
+        'cancelled_at': cancelledAt?.toIso8601String(),
+        'transaction_details':
+            details.map((detail) => detail.toJson()).toList(),
+      };
 
   Transaction copyWith({
     int? id,
@@ -110,12 +106,15 @@ class Transaction {
     TransactionStatus? status,
     PaymentStatus? paymentStatus,
     PaymentMethod? paymentMethod,
+    OrderType? orderType,
     double? totalAmount,
     DateTime? createdAt,
     DateTime? updatedAt,
     String? notes,
     String? deliveryAddress,
     DateTime? estimatedDeliveryTime,
+    String? cancellationReason,
+    DateTime? cancelledAt,
     List<TransactionDetail>? details,
   }) {
     return Transaction(
@@ -125,58 +124,103 @@ class Transaction {
       status: status ?? this.status,
       paymentStatus: paymentStatus ?? this.paymentStatus,
       paymentMethod: paymentMethod ?? this.paymentMethod,
+      orderType: orderType ?? this.orderType,
       totalAmount: totalAmount ?? this.totalAmount,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       notes: notes ?? this.notes,
       deliveryAddress: deliveryAddress ?? this.deliveryAddress,
-      estimatedDeliveryTime: estimatedDeliveryTime ?? this.estimatedDeliveryTime,
+      estimatedDeliveryTime:
+          estimatedDeliveryTime ?? this.estimatedDeliveryTime,
+      cancellationReason: cancellationReason ?? this.cancellationReason,
+      cancelledAt: cancelledAt ?? this.cancelledAt,
       details: details ?? this.details,
     );
   }
 }
 
 class TransactionDetail {
-  final String id;
-  final String transactionId;
-  final Menu menu;
+  final int id;
+  final int menuId;
+  final Menu? menu; // Add Menu object
   final int quantity;
-  final double price;
-  final List<FoodAddon> addons;
-  final String? note;
+  final double unitPrice;
+  final double subtotal;
+  final String? notes; // Change note to notes to match DB
+  final List<TransactionAddon> addons;
 
   TransactionDetail({
     required this.id,
-    required this.transactionId,
-    required this.menu,
+    required this.menuId,
+    this.menu, // Add menu parameter
     required this.quantity,
-    required this.price,
-    required this.addons,
-    this.note,
+    required this.unitPrice,
+    required this.subtotal,
+    this.notes,
+    this.addons = const [],
   });
 
-  factory TransactionDetail.fromMap(Map<String, dynamic> map) {
+  factory TransactionDetail.fromJson(Map<String, dynamic> json) {
     return TransactionDetail(
-      id: map['id'],
-      transactionId: map['transaction_id'],
-      menu: Menu.fromMap(map['menu']),
-      quantity: map['quantity'],
-      price: map['price'].toDouble(),
-      addons: (map['addons'] as List?)
-              ?.map((addon) => FoodAddon.fromMap(addon))
+      id: json['id'],
+      menuId: json['menu_id'],
+      menu: json['menu'] != null
+          ? Menu.fromJson(json['menu'])
+          : null, // Parse menu
+      quantity: json['quantity'],
+      unitPrice: json['unit_price']?.toDouble() ?? 0.0,
+      subtotal: json['subtotal']?.toDouble() ?? 0.0,
+      notes: json['notes'],
+      addons: (json['transaction_addon_details'] as List?)
+              ?.map((addon) => TransactionAddon.fromJson(addon))
               .toList() ??
           [],
-      note: map['note'],
     );
   }
 
-  Map<String, dynamic> toMap() {
-    return {
-      'transaction_id': transactionId,
-      'menu_id': menu.id,
-      'quantity': quantity,
-      'price': price,
-      'note': note,
-    };
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'menu_id': menuId,
+        'menu': menu?.toJson(), // Add menu to JSON
+        'quantity': quantity,
+        'unit_price': unitPrice,
+        'subtotal': subtotal,
+        'notes': notes,
+        'transaction_addon_details':
+            addons.map((addon) => addon.toJson()).toList(),
+      };
+}
+
+class TransactionAddon {
+  final int id;
+  final int addonId;
+  final int quantity;
+  final double unitPrice;
+  final double subtotal;
+
+  TransactionAddon({
+    required this.id,
+    required this.addonId,
+    required this.quantity,
+    required this.unitPrice,
+    required this.subtotal,
+  });
+
+  factory TransactionAddon.fromJson(Map<String, dynamic> json) {
+    return TransactionAddon(
+      id: json['id'],
+      addonId: json['addon_id'],
+      quantity: json['quantity'],
+      unitPrice: json['unit_price']?.toDouble() ?? 0.0,
+      subtotal: json['subtotal']?.toDouble() ?? 0.0,
+    );
   }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'addon_id': addonId,
+        'quantity': quantity,
+        'unit_price': unitPrice,
+        'subtotal': subtotal,
+      };
 }

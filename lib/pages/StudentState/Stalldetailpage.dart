@@ -3,7 +3,7 @@ import 'package:kantin/Models/Stan_model.dart';
 import 'package:kantin/Models/menus.dart';
 import 'package:kantin/Services/Database/foodService.dart';
 import 'package:flutter/services.dart';
-import 'package:kantin/Models/menus_addon.dart';  // Add this import
+import 'package:kantin/Models/menus_addon.dart'; // Add this import
 import 'dart:ui';
 import 'package:provider/provider.dart';
 import 'package:kantin/Models/Restaurant.dart';
@@ -26,10 +26,14 @@ class CartItem {
   });
 
   double get totalPrice {
-    double addonPrice = selectedAddons.fold(0, (sum, addon) => sum + addon.price);
+    double addonPrice =
+        selectedAddons.fold(0, (sum, addon) => sum + addon.price);
     return (menu.price + addonPrice) * quantity;
   }
 }
+
+// Add LoadingState enum for better state management
+enum LoadingState { initial, loading, loaded, error }
 
 class StallDetailPage extends StatefulWidget {
   final Stan stall;
@@ -41,8 +45,10 @@ class StallDetailPage extends StatefulWidget {
 }
 
 class _StallDetailPageState extends State<StallDetailPage> {
-  // Remove the _cartItems map since we'll use the Restaurant provider
-  final FoodService _foodService = new FoodService();
+  final FoodService _foodService = FoodService();
+  LoadingState _loadingState = LoadingState.initial;
+  String? _errorMessage;
+
   List<Menu> _menus = [];
   bool _isLoading = true;
   String _selectedCategory = 'All';
@@ -59,25 +65,31 @@ class _StallDetailPageState extends State<StallDetailPage> {
   String _sortBy = 'recommended'; // 'recommended', 'price_asc', 'price_desc'
   Set<String> _favoriteMenus = {};
   List<Menu> _recommendedMenus = [];
-  final GlobalKey<ScaffoldMessengerState> _scaffoldKey = GlobalKey<ScaffoldMessengerState>();
+  final GlobalKey<ScaffoldMessengerState> _scaffoldKey =
+      GlobalKey<ScaffoldMessengerState>();
   final _supabase = Supabase.instance.client;
   // Add this variable to store cart count
   late int _cartItemCount;
+  // Add this property for scroll tracking
+  bool _isScrolled = false;
 
   @override
   void initState() {
     super.initState();
-    _loadMenus();
+    _scrollController.addListener(_onScroll);
+    _loadData();
     _searchController.addListener(_onSearchChanged);
     _scrollController.addListener(_onScroll);
     // Initialize cart count
-    _cartItemCount = Provider.of<Restaurant>(context, listen: false).cart.length;
+    _cartItemCount =
+        Provider.of<Restaurant>(context, listen: false).cart.length;
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _cartItemCount = Provider.of<Restaurant>(context, listen: false).cart.length;
+    _cartItemCount =
+        Provider.of<Restaurant>(context, listen: false).cart.length;
   }
 
   @override
@@ -95,12 +107,13 @@ class _StallDetailPageState extends State<StallDetailPage> {
     }
   }
 
-  Future<void> _loadMenus() async {
+  Future<void> _loadData() async {
     try {
-      setState(() => _isLoading = true);
+      setState(() => _loadingState = LoadingState.loading);
+
       final restaurant = Provider.of<Restaurant>(context, listen: false);
       await restaurant.loadMenu(stallId: widget.stall.id);
-      
+
       // Load addons for each menu
       for (var menu in restaurant.menu) {
         try {
@@ -113,7 +126,7 @@ class _StallDetailPageState extends State<StallDetailPage> {
 
           if (addonsResponse != null) {
             List<FoodAddon> addons = [];
-            
+
             for (var item in (addonsResponse as List)) {
               try {
                 addons.add(FoodAddon.fromMap({
@@ -131,7 +144,7 @@ class _StallDetailPageState extends State<StallDetailPage> {
                 print('Problematic addon data: $item');
               }
             }
-            
+
             if (addons.isNotEmpty) {
               _menuAddons[menu.id!] = addons;
             }
@@ -146,36 +159,95 @@ class _StallDetailPageState extends State<StallDetailPage> {
         setState(() {
           _categorizedMenus = {
             'All': restaurant.menu,
-            'Foods': restaurant.menu.where((menu) => menu.type == 'food').toList(),
-            'Drinks': restaurant.menu.where((menu) => menu.type == 'drink').toList(),
+            'Foods':
+                restaurant.menu.where((menu) => menu.type == 'food').toList(),
+            'Drinks':
+                restaurant.menu.where((menu) => menu.type == 'drink').toList(),
           };
           _menus = _categorizedMenus[_selectedCategory] ?? [];
-          _isLoading = false;
+          _loadingState = LoadingState.loaded;
         });
       }
     } catch (e) {
       print('Error loading menus: $e');
       if (mounted) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading menus: $e')),
-        );
+        setState(() {
+          _errorMessage = 'Failed to load menu items: $e';
+          _loadingState = LoadingState.error;
+        });
+        _showError(_errorMessage!);
       }
     }
   }
 
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(Icons.error_outline, color: Colors.white),
+            SizedBox(width: 8),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        backgroundColor: Colors.red,
+        action: SnackBarAction(
+          label: 'Retry',
+          onPressed: _loadData,
+          textColor: Colors.white,
+        ),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _showAddToCartSuccess(Menu menu, List<FoodAddon> addons) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.white),
+            SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Added to cart'),
+                  Text(
+                    '${menu.foodName} ${addons.isNotEmpty ? "with ${addons.length} add-ons" : ""}',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        action: SnackBarAction(
+          label: 'View Cart',
+          onPressed: _showCart,
+          textColor: Colors.white,
+        ),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+    );
+  }
+
   // Update the add to cart method to use Provider
-  void _addToCart(Menu menu, {List<FoodAddon> addons = const [], String? note}) {
+  void _addToCart(Menu menu,
+      {List<FoodAddon> addons = const [], String? note}) {
     // Get the Restaurant provider
     final restaurant = Provider.of<Restaurant>(context, listen: false);
-    
+
     // Add item to cart using the provider
     restaurant.addToCart(menu, addons: addons, note: note);
     // Show a custom snack bar with undo option
     _showCartSnackBar(menu, restaurant, addons);
   }
 
-  void _showCartSnackBar(Menu menu, Restaurant restaurant, List<FoodAddon> addons) {
+  void _showCartSnackBar(
+      Menu menu, Restaurant restaurant, List<FoodAddon> addons) {
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -184,7 +256,8 @@ class _StallDetailPageState extends State<StallDetailPage> {
             Icon(Icons.check_circle, color: Colors.white),
             SizedBox(width: 12),
             Expanded(
-              child: Text('Added ${menu.foodName} to cart with ${addons.length} addons'),
+              child: Text(
+                  'Added ${menu.foodName} to cart with ${addons.length} addons'),
             ),
           ],
         ),
@@ -315,16 +388,18 @@ class _StallDetailPageState extends State<StallDetailPage> {
           'All',
           'Foods',
           'Drinks',
-        ].map((category) => Padding(
-          padding: const EdgeInsets.only(right: 8),
-          child: ChoiceChip(
-            label: Text(category),
-            selected: _selectedCategory == category,
-            onSelected: (selected) {
-              if (selected) _filterMenus(category);
-            },
-          ),
-        )).toList(),
+        ]
+            .map((category) => Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ChoiceChip(
+                    label: Text(category),
+                    selected: _selectedCategory == category,
+                    onSelected: (selected) {
+                      if (selected) _filterMenus(category);
+                    },
+                  ),
+                ))
+            .toList(),
       ),
     );
   }
@@ -363,115 +438,139 @@ class _StallDetailPageState extends State<StallDetailPage> {
 
   Widget _buildMenuCard(Menu menu, {bool isHorizontal = false}) {
     final addons = _menuAddons[menu.id] ?? [];
-    
+
     return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
       margin: EdgeInsets.only(
-        bottom: isHorizontal ? 0 : 16,
+        bottom: isHorizontal ? 0 : 8,
         right: isHorizontal ? 16 : 0,
       ),
       child: InkWell(
+        borderRadius: BorderRadius.circular(12),
         onTap: () => _showMenuDetail(menu),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Stack(
-              children: [
-                // Menu Image
-                ClipRRect(
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
-                  child: menu.photo != null
-                      ? Image.network(
-                          menu.photo!,
-                          width: double.infinity,
-                          height: isHorizontal ? 120 : 160,
-                          fit: BoxFit.cover,
-                        )
-                      : Container(
-                          width: double.infinity,
-                          height: isHorizontal ? 120 : 160,
-                          color: Colors.grey[200],
-                          child: Icon(
+            // Image and badges section
+            ClipRRect(
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(12)),
+              child: Stack(
+                children: [
+                  // Menu Image
+                  AspectRatio(
+                    aspectRatio: 16 / 9,
+                    child: menu.photo != null
+                        ? Image.network(
+                            menu.photo!,
+                            fit: BoxFit.cover,
+                          )
+                        : Container(
+                            color: Colors.grey[200],
+                            child: Icon(
+                              menu.type == 'food'
+                                  ? Icons.restaurant
+                                  : Icons.local_drink,
+                              size: 40,
+                              color: Colors.grey[400],
+                            ),
+                          ),
+                  ),
+                  // Favorite Button
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: CircleAvatar(
+                      radius: 16,
+                      backgroundColor: Colors.white,
+                      child: IconButton(
+                        padding: EdgeInsets.zero,
+                        icon: Icon(
+                          _favoriteMenus.contains(menu.foodName)
+                              ? Icons.favorite
+                              : Icons.favorite_border,
+                          size: 20,
+                        ),
+                        color: Colors.red,
+                        onPressed: () => _toggleFavorite(menu),
+                      ),
+                    ),
+                  ),
+                  // Category Badge
+                  Positioned(
+                    top: 8,
+                    left: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: menu.type == 'food'
+                            ? Colors.orange.withOpacity(0.9)
+                            : Colors.blue.withOpacity(0.9),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
                             menu.type == 'food'
                                 ? Icons.restaurant
                                 : Icons.local_drink,
-                            size: isHorizontal ? 40 : 60,
-                            color: Colors.grey,
-                          ),
-                        ),
-                ),
-                // Favorite Button
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: CircleAvatar(
-                    radius: 16,
-                    backgroundColor: Colors.white,
-                    child: IconButton(
-                      padding: EdgeInsets.zero,
-                      icon: Icon(
-                        _favoriteMenus.contains(menu.foodName)
-                            ? Icons.favorite
-                            : Icons.favorite_border,
-                        size: 20,
-                      ),
-                      color: Colors.red,
-                      onPressed: () => _toggleFavorite(menu),
-                    ),
-                  ),
-                ),
-                // Category Badge
-                Positioned(
-                  top: 8,
-                  left: 8,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: menu.type == 'food'
-                          ? Colors.orange.withOpacity(0.9)
-                          : Colors.blue.withOpacity(0.9),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          menu.type == 'food'
-                              ? Icons.restaurant
-                              : Icons.local_drink,
-                          color: Colors.white,
-                          size: 16,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          menu.type.capitalize(),
-                          style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
+                            size: 16,
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 4),
+                          Text(
+                            menu.type.capitalize(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
+            // Content section
             Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    menu.foodName,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  // Title and price row
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          menu.foodName,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        'Rp ${menu.price.toStringAsFixed(0)}',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Theme.of(context).primaryColor,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 8),
+                  // Description
                   Text(
                     menu.description,
                     style: TextStyle(
@@ -481,76 +580,51 @@ class _StallDetailPageState extends State<StallDetailPage> {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
+                  // Add-ons section if available
                   if (addons.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    const Divider(),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Available Add-ons:',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[600],
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Wrap(
-                      spacing: 8,
-                      children: addons.take(3).map((addon) {
-                        return Chip(
-                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          label: Text(
-                            '${addon.addonName} (+${addon.price.toStringAsFixed(0)})',
-                            style: const TextStyle(fontSize: 12),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Icon(Icons.add_circle_outline,
+                            size: 16, color: Colors.grey[600]),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${addons.length} Add-ons available',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
                           ),
-                          backgroundColor: Colors.grey[200],
-                        );
-                      }).toList(),
-                    ),
-                    if (addons.length > 3)
-                      Text(
-                        '+${addons.length - 3} more add-ons',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Theme.of(context).primaryColor,
                         ),
-                      ),
+                      ],
+                    ),
                   ],
                   const SizedBox(height: 12),
+                  // Action button
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Rp ${menu.price.toStringAsFixed(0)}',
+                      if (!menu.isAvailable)
+                        const Expanded(
+                          child: Text(
+                            'Not Available',
                             style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Theme.of(context).primaryColor,
+                              color: Colors.red,
+                              fontSize: 12,
                             ),
                           ),
-                          if (!menu.isAvailable)
-                            const Text(
-                              'Not Available',
-                              style: TextStyle(
-                                color: Colors.red,
-                                fontSize: 12,
-                              ),
-                            ),
-                        ],
-                      ),
+                        ),
                       ElevatedButton.icon(
-                        onPressed: menu.isAvailable
-                            ? () => _addToCart(menu)
-                            : null,
+                        onPressed:
+                            menu.isAvailable ? () => _addToCart(menu) : null,
                         icon: const Icon(Icons.add_shopping_cart, size: 18),
                         label: const Text('Add'),
                         style: ElevatedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
+                            horizontal: 24,
+                            vertical: 12,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
                           ),
                         ),
                       ),
@@ -569,7 +643,7 @@ class _StallDetailPageState extends State<StallDetailPage> {
     final addons = _menuAddons[menu.id] ?? [];
     final TextEditingController noteController = TextEditingController();
     List<FoodAddon> selectedAddons = [];
-    
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -774,231 +848,252 @@ class _StallDetailPageState extends State<StallDetailPage> {
   Widget build(BuildContext context) {
     // Listen to cart changes using Consumer instead of watch
     return Scaffold(
-      body: NestedScrollView(
+      body: _buildBody(),
+      bottomNavigationBar: _buildBottomBar(),
+    );
+  }
+
+  Widget _buildBody() {
+    switch (_loadingState) {
+      case LoadingState.initial:
+      case LoadingState.loading:
+        return _buildLoadingState();
+      case LoadingState.error:
+        return _buildErrorState();
+      case LoadingState.loaded:
+        return _buildLoadedState();
+    }
+  }
+
+  Widget _buildLoadingState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CircularProgressIndicator(),
+          SizedBox(height: 16),
+          Text('Loading menu items...'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErrorState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.error_outline, size: 48, color: Colors.red),
+          SizedBox(height: 16),
+          Text(_errorMessage ?? 'An error occurred'),
+          SizedBox(height: 16),
+          ElevatedButton.icon(
+            onPressed: _loadData,
+            icon: Icon(Icons.refresh),
+            label: Text('Retry'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLoadedState() {
+    return RefreshIndicator(
+      onRefresh: _loadData,
+      child: CustomScrollView(
         controller: _scrollController,
-        headerSliverBuilder: (context, innerBoxIsScrolled) => [
-          SliverAppBar(
-            expandedHeight: 200,
-            pinned: true,
-            systemOverlayStyle: SystemUiOverlayStyle.light,
-            flexibleSpace: FlexibleSpaceBar(
-              background: widget.stall.Banner_img != null
-                  ? Image.network(
-                      widget.stall.Banner_img!,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return AvatarGenerator.generateStallAvatar(
-                          widget.stall.stanName,
-                          size: MediaQuery.of(context).size.width,
-                        );
-                      },
-                    )
-                  : AvatarGenerator.generateStallAvatar(
+        slivers: [
+          _buildSliverAppBar(),
+          SliverToBoxAdapter(child: _buildStallInfo()),
+          SliverToBoxAdapter(child: _buildCategoryFilter()),
+          _buildMenuList(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSliverAppBar() {
+    return SliverAppBar(
+      expandedHeight: 200,
+      pinned: true,
+      elevation: _isScrolled ? 4 : 0,
+      flexibleSpace: FlexibleSpaceBar(
+        title: _isScrolled ? Text(widget.stall.stanName) : null,
+        background: _buildStallBanner(),
+      ),
+      leading: BackButton(color: _isScrolled ? null : Colors.white),
+      actions: [_buildCartButton()],
+    );
+  }
+
+  Widget _buildStallBanner() {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        widget.stall.Banner_img != null
+            ? Image.network(
+                widget.stall.Banner_img!,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => _buildBannerPlaceholder(),
+              )
+            : _buildBannerPlaceholder(),
+        Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Colors.transparent, Colors.black54],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBottomBar() {
+    return Consumer<Restaurant>(
+      builder: (context, restaurant, _) {
+        if (restaurant.cart.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        return SafeArea(
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 10,
+                  offset: const Offset(0, -5),
+                ),
+              ],
+            ),
+            child: ElevatedButton(
+              onPressed: _showCart,
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+              child: Text(
+                'View Cart (${restaurant.cart.length} items)',
+                style: const TextStyle(fontSize: 16),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildStallInfo() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 30,
+                backgroundImage: widget.stall.imageUrl != null
+                    ? NetworkImage(widget.stall.imageUrl!)
+                    : null,
+                child: widget.stall.imageUrl == null
+                    ? Text(widget.stall.stanName[0])
+                    : null,
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
                       widget.stall.stanName,
-                      size: MediaQuery.of(context).size.width,
+                      style: Theme.of(context).textTheme.titleLarge,
                     ),
-              title: _isCollapsed ? Text(widget.stall.stanName) : null,
-            ),
-            leading: IconButton(
-              icon: const Icon(Icons.arrow_back),
-              onPressed: () => Navigator.pop(context),
-            ),
-            actions: [
-              Consumer<Restaurant>(
-                builder: (context, restaurant, _) => IconButton(
-                  icon: Stack(
-                    children: [
-                      const Icon(Icons.shopping_cart),
-                      if (restaurant.cart.isNotEmpty)
-                        Positioned(
-                          right: 0,
-                          top: 0,
-                          child: Container(
-                            padding: const EdgeInsets.all(2),
-                            decoration: BoxDecoration(
-                              color: Colors.red,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text(
-                              restaurant.cart.length.toString(),
-                              style: const TextStyle(
-                                fontSize: 10,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                  onPressed: restaurant.cart.isNotEmpty ? _showCart : null,
+                    Text(widget.stall.description),
+                  ],
                 ),
               ),
             ],
           ),
         ],
-        body: Column(
-          children: [
-            _buildSearchBar(),
-            Expanded(
-              child: RefreshIndicator(
-                onRefresh: _loadMenus,
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Stall Info Card
-                      Card(
-                        margin: const EdgeInsets.all(16),
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  CircleAvatar(
-                                    radius: 30,
-                                    backgroundImage: widget.stall.imageUrl != null
-                                        ? NetworkImage(widget.stall.imageUrl!)
-                                        : null, // Remove AssetImage reference
-                                    backgroundColor: Colors.grey[300], // Add background color
-                                    child: widget.stall.imageUrl == null
-                                        ? Icon(Icons.store, size: 30, color: Colors.grey[600])
-                                        : null,
-                                  ),
-                                  const SizedBox(width: 16),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          widget.stall.stanName,
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .titleLarge
-                                              ?.copyWith(fontWeight: FontWeight.bold),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Row(
-                                          children: [
-                                            const Icon(Icons.star, 
-                                              color: Colors.amber, 
-                                              size: 16
-                                            ),
-                                            const Text(' 4.5 • '),
-                                            const Icon(Icons.schedule, 
-                                              size: 16, 
-                                              color: Colors.grey
-                                            ),
-                                            const Text(' 5-10 mins'),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const Divider(height: 24),
-                              Row(
-                                children: [
-                                  const Icon(Icons.location_on_outlined, size: 16),
-                                  const SizedBox(width: 8),
-                                  Text(widget.stall.slot),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              Row(
-                                children: [
-                                  const Icon(Icons.phone_outlined, size: 16),
-                                  const SizedBox(width: 8),
-                                  Text(widget.stall.phone),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
+      ),
+    );
+  }
 
-                      // Recommended Section
-                      if (_recommendedMenus.isNotEmpty)
-                        _buildMenuSection('Recommended', _recommendedMenus),
+  Widget _buildMenuList() {
+    if (_menus.isEmpty) {
+      return const SliverToBoxAdapter(
+        child: Center(
+          child: Padding(
+            padding: EdgeInsets.all(32),
+            child: Text('No menu items available'),
+          ),
+        ),
+      );
+    }
 
-                      // Category Filter with Sort Button
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Row(
-                          children: [
-                            Expanded(child: _buildCategoryFilter()),
-                            _buildSortingButton(),
-                          ],
-                        ),
-                      ),
-
-                      // Menu Items
-                      if (_isLoading)
-                        const Center(child: CircularProgressIndicator())
-                      else if (_menus.isEmpty)
-                        Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(16.0),
-                            child: Text(
-                              _selectedCategory == 'All' 
-                                  ? 'No menu items available'
-                                  : 'No ${_selectedCategory.toLowerCase()} available',
-                              style: const TextStyle(
-                                fontSize: 16,
-                                color: Colors.grey,
-                              ),
-                            ),
-                          ),
-                        )
-                      else
-                        ListView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          padding: const EdgeInsets.all(16),
-                          itemCount: _menus.length,
-                          itemBuilder: (context, index) => _buildMenuCard(_menus[index]),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
+    return SliverPadding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      sliver: SliverList(
+        delegate: SliverChildBuilderDelegate(
+          (context, index) => Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: _buildMenuCard(_menus[index]),
+          ),
+          childCount: _menus.length,
         ),
       ),
-      bottomNavigationBar: Consumer<Restaurant>(
-        builder: (context, restaurant, _) {
-          if (restaurant.cart.isEmpty) {
-            return const SizedBox.shrink(); // Return empty widget instead of null
-          }
-          return SafeArea(
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 10,
-                    offset: const Offset(0, -5),
-                  ),
-                ],
-              ),
-              child: ElevatedButton(
-                onPressed: _showCart,
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
+    );
+  }
+
+  Widget _buildCartButton() {
+    return Consumer<Restaurant>(
+      builder: (context, restaurant, _) => Stack(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.shopping_cart),
+            onPressed: restaurant.cart.isNotEmpty ? _showCart : null,
+          ),
+          if (restaurant.cart.isNotEmpty)
+            Positioned(
+              right: 8,
+              top: 8,
+              child: Container(
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                constraints: const BoxConstraints(
+                  minWidth: 16,
+                  minHeight: 16,
                 ),
                 child: Text(
-                  'View Cart (${restaurant.cart.length} items)',
-                  style: const TextStyle(fontSize: 16),
+                  '${restaurant.cart.length}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                  ),
+                  textAlign: TextAlign.center,
                 ),
               ),
             ),
-          );
-        },
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBannerPlaceholder() {
+    return Container(
+      color: Colors.grey[200],
+      child: const Center(
+        child: Icon(
+          Icons.store,
+          size: 64,
+          color: Colors.grey,
+        ),
       ),
     );
   }

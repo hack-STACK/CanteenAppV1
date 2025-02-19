@@ -332,8 +332,9 @@ class _MyStorePageState extends State<MyStorePage>
 
     return LoadingOverlay(
       isLoading: _isProcessing,
-      message: 'Please wait...',
+      message: 'Please wait...', // Add the isLoading parameter
       child: Scaffold(
+        // Add the child parameter
         extendBodyBehindAppBar: true,
         body: RefreshIndicator(
           key: _refreshIndicatorKey,
@@ -354,7 +355,7 @@ class _MyStorePageState extends State<MyStorePage>
             ],
           ),
         ),
-      ),
+      ), // Optional message
     );
   }
 

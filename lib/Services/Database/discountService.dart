@@ -321,8 +321,8 @@ class DiscountService {
   Future<void> attachMenuDiscount(int menuId, int discountId) async {
     try {
       await _client.from('menu_discounts').insert({
-        'menu_id': menuId,
-        'discount_id': discountId,
+        'id_menu': menuId,
+        'id_discount': discountId,
         'is_active': true,
         'created_at': DateTime.now().toIso8601String(),
       });
@@ -335,8 +335,8 @@ class DiscountService {
   Future<void> detachMenuDiscount(int menuId, int discountId) async {
     try {
       await _client.from('menu_discounts').delete().match({
-        'menu_id': menuId,
-        'discount_id': discountId,
+        'id_menu': menuId,
+        'id_discount': discountId,
       });
     } catch (e) {
       throw Exception('Failed to detach discount: $e');

@@ -7,7 +7,6 @@ class FoodAddon {
   final int stockQuantity;
   final bool isAvailable;
   final String? description;
-  final String? category; // Add this field
 
   FoodAddon({
     this.id,
@@ -18,10 +17,9 @@ class FoodAddon {
     this.stockQuantity = 0,
     this.isAvailable = true,
     this.description,
-    this.category = 'Extras', // Default category
   }) {
-    if (price <= 0) {
-      throw ArgumentError('Price must be greater than 0');
+    if (price < 0) {
+      throw ArgumentError('Price must be non-negative');
     }
     if (addonName.isEmpty) {
       throw ArgumentError('Addon name cannot be empty');
@@ -43,22 +41,20 @@ class FoodAddon {
       'is_required': isRequired,
       'stock_quantity': stockQuantity,
       'is_available': isAvailable,
-      'Description': description,
-      'category': category, // Add this field
+      'Description': description, // Note the capital D to match schema
     };
   }
 
   factory FoodAddon.fromMap(Map<String, dynamic> map) {
     return FoodAddon(
-      id: map['id'] as int?,
-      menuId: map['menu_id'] as int,
-      addonName: map['addon_name'] as String,
-      price: (map['price'] as num).toDouble(),
-      isRequired: map['is_required'] as bool? ?? false,
-      stockQuantity: map['stock_quantity'] as int? ?? 0,
-      isAvailable: map['is_available'] as bool? ?? true,
-      description: map['Description'] as String?,
-      category: map['category'] as String?, // Add this field
+      id: map['id']?.toInt(),
+      menuId: map['menu_id']?.toInt() ?? 0,
+      addonName: map['addon_name'] ?? '',
+      price: (map['price'] as num?)?.toDouble() ?? 0.0,
+      isRequired: map['is_required'] ?? false,
+      stockQuantity: map['stock_quantity']?.toInt() ?? 0,
+      isAvailable: map['is_available'] ?? true,
+      description: map['Description'] as String?, // Note the capital D to match schema
     );
   }
 
@@ -73,8 +69,7 @@ class FoodAddon {
       'is_required': isRequired,
       'stock_quantity': stockQuantity,
       'is_available': isAvailable,
-      'Description': description,
-      'category': category, // Add this field
+      'Description': description, // Note the capital D to match schema
     };
 
     // Only include id if it's not null
@@ -94,7 +89,6 @@ class FoodAddon {
     int? stockQuantity,
     bool? isAvailable,
     String? description,
-    String? category, // Add this field
   }) {
     return FoodAddon(
       id: id ?? this.id,
@@ -105,7 +99,6 @@ class FoodAddon {
       stockQuantity: stockQuantity ?? this.stockQuantity,
       isAvailable: isAvailable ?? this.isAvailable,
       description: description ?? this.description,
-      category: category ?? this.category, // Add this field
     );
   }
 }

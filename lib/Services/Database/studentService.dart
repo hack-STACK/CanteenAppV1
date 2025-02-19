@@ -1,12 +1,11 @@
 import 'dart:io';
-
 import 'package:kantin/Models/student_models.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class StudentService {
   final _supabaseClient = Supabase.instance.client;
 
-  Future<StudentModels> createStudent(StudentModels newStudent) async {
+  Future<StudentModel> createStudent(StudentModel newStudent) async {
     try {
       // Validate required fields
       if (newStudent.studentName.isEmpty ||
@@ -28,7 +27,7 @@ class StudentService {
       }
 
       // Return the created student model
-      return StudentModels.fromMap(response);
+      return StudentModel.fromMap(response);
     } catch (e) {
       print('Error creating student: $e');
       if (e is PostgrestException) {
@@ -41,12 +40,12 @@ class StudentService {
     }
   }
 
-  Future<StudentModels?> getStudentById(int id) async {
+  Future<StudentModel?> getStudentById(int id) async {
     try {
       final response =
           await _supabaseClient.from('students').select().eq('id', id).single();
 
-      return StudentModels.fromMap(response);
+      return StudentModel.fromMap(response);
     } catch (e) {
       print('Error getting student by ID: $e');
       if (e is PostgrestException && e.code == 'PGRST116') {
@@ -56,7 +55,7 @@ class StudentService {
     }
   }
 
-  Future<List<StudentModels>> getAllStudents() async {
+  Future<List<StudentModel>> getAllStudents() async {
     try {
       final response = await _supabaseClient
           .from('students')
@@ -64,7 +63,7 @@ class StudentService {
           .order('id', ascending: true);
 
       return (response as List)
-          .map((studentMap) => StudentModels.fromMap(studentMap))
+          .map((studentMap) => StudentModel.fromMap(studentMap))
           .toList();
     } catch (e) {
       print('Error getting all students: $e');
@@ -72,24 +71,31 @@ class StudentService {
     }
   }
 
-  Future<List<StudentModels>> getStudentsByUserId(int userId) async {
+  Future<List<StudentModel>> getStudentsByUserId(int userId) async {
     try {
+      print('Debug: Fetching students for user ID - $userId');
+      
       final response = await _supabaseClient
           .from('students')
           .select()
-          .eq('user_id', userId)
-          .order('id', ascending: true);
+          .eq('id_user', userId);
+
+      print('Debug: Raw response from students table - $response');
+
+      if (response == null) {
+        return [];
+      }
 
       return (response as List)
-          .map((studentMap) => StudentModels.fromMap(studentMap))
+          .map((studentMap) => StudentModel.fromMap(studentMap))
           .toList();
     } catch (e) {
-      print('Error getting students by user ID: $e');
+      print('Debug: Error getting students by user ID - $e');
       throw Exception('Failed to fetch students: $e');
     }
   }
 
-  Future<StudentModels> updateStudent(StudentModels updatedStudent) async {
+  Future<StudentModel> updateStudent(StudentModel updatedStudent) async {
     try {
       // Validate required fields
       if (updatedStudent.studentName.isEmpty ||
@@ -101,21 +107,21 @@ class StudentService {
       final response = await _supabaseClient
           .from('students')
           .update(updatedStudent.toMap())
-          .eq('user_id', updatedStudent.userId)
+          .eq('id', updatedStudent.userId) // Corrected getter
           .select()
           .single();
 
-      return StudentModels.fromMap(response);
+      return StudentModel.fromMap(response);
     } catch (e) {
       print('Error updating student: $e');
       throw Exception('Failed to update student: $e');
     }
   }
 
-  Future<void> deleteStudent(int userId) async {
+  Future<void> deleteStudent(int id) async {
     try {
       final result =
-          await _supabaseClient.from('students').delete().eq('user_id', userId);
+          await _supabaseClient.from('students').delete().eq('id', id);
 
       if (result == null) {
         throw Exception('Student not found');
@@ -130,10 +136,9 @@ class StudentService {
     try {
       final response = await _supabaseClient
           .from('students')
-          .select('id_user') // Change 'user_id' to 'id_user'
-          .eq('nama_siswa',
-              studentName) // Ensure you're using the correct column name for student name
-          .eq('id_user', userId) // Change 'user_id' to 'id_user'
+          .select('id_user')
+          .eq('nama_siswa', studentName)
+          .eq('id_user', userId)
           .maybeSingle();
 
       return response != null;
@@ -143,19 +148,54 @@ class StudentService {
     }
   }
 
-  Future<String?> uploadStudentImage(String filePath, String fileName) async {
+  Future<String?> uploadStudentImageOld(String filePath, String fileName) async {
     try {
       final response = await _supabaseClient.storage
           .from('student-images')
           .upload(fileName, File(filePath));
 
-      throw response;
+      if (response != null) {
+        throw Exception('Failed to upload student image: ${response}');
+      }
 
       // Get the public URL of the uploaded image
       final imageUrl =
           _supabaseClient.storage.from('student-images').getPublicUrl(fileName);
 
       return imageUrl;
+    } catch (e) {
+      print('Error uploading student image: $e');
+      throw Exception('Failed to upload student image: $e');
+    }
+  }
+
+  Future<String?> uploadStudentImage(String filePath, String fileName) async {
+    try {
+      final file = File(filePath);
+      final fileSize = await file.length();
+      
+      // Check file size (limit to 5MB)
+      if (fileSize > 5 * 1024 * 1024) {
+        throw Exception('Image size too large. Please choose an image under 5MB.');
+      }
+
+      final response = await _supabaseClient.storage
+          .from('student-images')
+          .upload(fileName, file, fileOptions: const FileOptions(
+            cacheControl: '3600',
+            upsert: false,
+          ));
+
+      if (response.isEmpty) {
+        // Get the public URL of the uploaded image
+        final imageUrl = _supabaseClient.storage
+            .from('student-images')
+            .getPublicUrl(fileName);
+
+        return imageUrl;
+      } else {
+        throw Exception('Failed to upload image');
+      }
     } catch (e) {
       print('Error uploading student image: $e');
       throw Exception('Failed to upload student image: $e');

@@ -1,270 +1,126 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:kantin/Models/Food.dart';
-import 'package:kantin/Models/cartItem.dart';
-import 'package:collection/collection.dart';
 import 'package:intl/intl.dart';
+import 'package:kantin/Models/menus.dart';
+import 'package:kantin/Models/menus_addon.dart';
+import 'package:kantin/Services/Database/restaurant_service.dart';
+
+class CartItem {
+  final Menu menu;
+  final List<FoodAddon> selectedAddons;
+  final String? note;
+  int quantity;
+
+  CartItem({
+    required this.menu,
+    this.selectedAddons = const [],
+    this.note,
+    this.quantity = 1,
+  });
+
+  double get totalPrice {
+    double addonPrice = selectedAddons.fold(0, (sum, addon) => sum + addon.price);
+    return (menu.price + addonPrice) * quantity;
+  }
+}
 
 class Restaurant extends ChangeNotifier {
-    String? currentAdminId;
-  final List<Food> _menu = [
-    Food(
-      name: "Nasi Goreng",
-      description: "Nasi yang digoreng dengan bumbu spesial dan sayuran.",
-      imagePath:
-          "https://th.bing.com/th/id/OIP.NzSXtxNWD57kCe_7JuxC4wHaE8?rs=1&pid=ImgDetMain", // Ganti dengan URL yang valid
-      price: 15000,
-      category: foodCategory.mainCourse,
-      addOns: [
-        foodAddOn(name: "Telur Mata Sapi", price: 3000),
-        foodAddOn(name: "Ayam Crispy", price: 5000),
-      ],
-    ),
-    Food(
-      name: "Mie Goreng",
-      description: "Mie yang digoreng dengan sayuran dan bumbu khas.",
-      imagePath:
-          "https://allofresh.id/blog/wp-content/uploads/2023/09/cara-membuat-mie-goreng-4-1-scaled.jpg", // Ganti dengan URL yang valid
-      price: 12000,
-      category: foodCategory.mainCourse,
-      addOns: [
-        foodAddOn(name: "Bakso", price: 4000),
-      ],
-    ),
-    Food(
-      name: "Soto Ayam",
-      description: "Sup ayam dengan rempah-rempah dan sayuran.",
-      imagePath:
-          "https://icone-inc.org/wp-content/uploads/2018/11/Soto-Ayam-2-micita.jpeg", // Ganti dengan URL yang valid
-      price: 20000,
-      category: foodCategory.mainCourse,
-      addOns: [],
-    ),
-    Food(
-      name: "Gado-Gado",
-      description: "Salad sayuran dengan saus kacang.",
-      imagePath:
-          "https://www.wandercooks.com/wp-content/uploads/2020/11/gado-gado-salad-with-peanut-sauce-ft-1.jpg", // Ganti dengan URL yang valid
-      price: 15000,
-      category: foodCategory.healthy,
-      addOns: [],
-    ),
-    Food(
-      name: "Bakso",
-      description: "Bakso daging sapi dalam kuah kaldu.",
-      imagePath:
-          "https://cdn.tasteatlas.com/images/dishrestaurants/35a1edd0bee948e1bcf590b13f9f76c3.jpg", // Ganti dengan URL yang valid
-      price: 18000,
-      category: foodCategory.mainCourse,
-      addOns: [
-        foodAddOn(name: "Mie", price: 2000),
-        foodAddOn(name: "Kerupuk", price: 3000),
-      ],
-    ),
-    Food(
-      name: "Pisang Goreng",
-      description: "Pisang yang digoreng hingga crispy.",
-      imagePath:
-          "https://cdn.kuali.com/wp-content/uploads/2021/09/02213920/crispy-pisang-goreng.jpg", // Ganti dengan URL yang valid
-      price: 8000,
-      category: foodCategory.snacks,
-      addOns: [],
-    ),
-    Food(
-      name: "Kue Cubir",
-      description: "Kue mini yang lembut dan manis.",
-      imagePath:
-          "https://i0.wp.com/resepkoki.id/wp-content/uploads/2019/08/Resep-Kue-Cubit-Original.jpg?fit=1040%2C1300&ssl=1", // Ganti dengan URL yang valid
-      price: 6000,
-      category: foodCategory.desserts,
-      addOns: [],
-    ),
-    Food(
-      name: "Roti Bakar",
-      description: "Roti panggang dengan berbagai isian.",
-      imagePath:
-          "https://th.bing.com/th/id/OIP.MUNsj5cc_HEdqiff8f7m5wHaFA?rs=1&pid=ImgDetMain", // Ganti dengan URL yang valid
-      price: 10000,
-      category: foodCategory.snacks,
-      addOns: [
-        foodAddOn(name: "Cokelat", price: 2000),
-        foodAddOn(name: "Keju", price: 3000),
-      ],
-    ),
-    Food(
-      name: "Es Teh Manis",
-      description: "Teh manis yang disajikan dingin.",
-      imagePath:
-          "https://i.pinimg.com/originals/5d/31/ef/5d31ef90cd6c389e07bc48a08e583122.jpg", // Ganti dengan URL yang valid
-      price: 5000,
-      category: foodCategory.beverages,
-      addOns: [],
-    ),
-    Food(
-      name: "Kerupuk",
-      description: "Kerupuk renyah sebagai camilan.",
-      imagePath:
-          "https://s1.bukalapak.com/bukalapak-kontenz-production/content_attachments/55446/original/Kerupuk_Putih.jpg", // Ganti dengan URL yang valid
-      price: 3000,
-      category: foodCategory.snacks,
-      addOns: [],
-    ),
-    Food(
-      name: "Nasi Campur",
-      description: "Nasi dengan berbagai lauk pauk.",
-      imagePath:
-          "https://i.pinimg.com/originals/e3/20/77/e32077057baa98e4fffa4c5abe048379.jpg", // Ganti dengan URL yang valid
-      price: 18000,
-      category: foodCategory.mainCourse,
-      addOns: [
-        foodAddOn(name: "Sambal", price: 2000),
-      ],
-    ),
-    Food(
-      name: "Tahu Tempe",
-      description: "Tahu dan tempe goreng yang renyah.",
-      imagePath:
-          "https://img-global.cpcdn.com/recipes/c4f877da53e71f2e/751x532cq70/tahu-tempe-goreng-praktis-foto-resep-utama.jpg", // Ganti dengan URL yang valid
-      price: 10000,
-      category: foodCategory.healthy,
-      addOns: [],
-    ),
-    Food(
-      name: "Ayam Penyet",
-      description: "Ayam yang digoreng dan disajikan dengan sambal.",
-      imagePath:
-          "https://th.bing.com/th/id/OIP.tX8cSRN65uqrta6l5wWFZAHaHa?rs=1&pid=ImgDetMain", // Ganti dengan URL yang valid
-      price: 22000,
-      category: foodCategory.mainCourse,
-      addOns: [
-        foodAddOn(name: "Nasi Putih", price: 3000),
-        foodAddOn(name: "Sambal", price: 2000),
-      ],
-    ),
-    Food(
-      name: "Cendol",
-      description: "Minuman manis dengan cendol dan santan.",
-      imagePath:
-          "https://th.bing.com/th/id/OIP.f1mlxPZ88G29bFR0EyiDrgHaE8?rs=1&pid=ImgDetMain", // Ganti dengan URL yang valid
-      price: 7000,
-      category: foodCategory.desserts,
-      addOns: [],
-    ),
-    Food(
-      name: "Kwetiau Goreng",
-      description: "Kwetiau yang digoreng dengan sayuran dan daging.",
-      imagePath:
-          "https://2.bp.blogspot.com/-Uwhu7PAikNQ/WImP41aNzmI/AAAAAAAAAZY/rH0GCe6w2oAECx0XLU6gAC2zKU21oYMMgCLcB/s1600/kwetiau.jpg", // Ganti dengan URL yang valid
-      price: 15000,
-      category: foodCategory.mainCourse,
-      addOns: [
-        foodAddOn(name: "Telur", price: 3000),
-      ],
-    ),
-    Food(
-      name: "Sate Ayam",
-      description: "Sate ayam dengan bumbu kacang.",
-      imagePath:
-          "https://th.bing.com/th/id/R.5834de0a24edc422553bb9a9015a5f39?rik=k5zGUWKEL1dE%2fQ&riu=http%3a%2f%2fwww.rumahmesin.com%2fwp-content%2fuploads%2f2017%2f03%2fresep-sate-ayam-madura-mencicipi-makanan-asli-indonesia-yang-mendunia.jpg&ehk=n42w6xcn41RbMbPvg19nltCAKInNNohJv9ZpDIUWphc%3d&risl=&pid=ImgRaw&r=0", // Ganti dengan URL yang valid
-      price: 20000,
-      category: foodCategory.mainCourse,
-      addOns: [],
-    ),
-    Food(
-      name: "Es Jeruk",
-      description: "Minuman jeruk segar yang disajikan dingin.",
-      imagePath:
-          "https://dcostseafood.id/wp-content/uploads/2021/12/ES-JERUK-murni.jpg", // Ganti dengan URL yang valid
-      price: 6000,
-      category: foodCategory.beverages,
-      addOns: [],
-    ),
-    Food(
-      name: "Martabak Manis",
-      description: "Kue martabak manis dengan berbagai isian.",
-      imagePath:
-          "https://th.bing.com/th/id/R.a3000f3aa654eedddc085f2873891344?rik=PMVn%2fT95nFBE1g&riu=http%3a%2f%2findonesiaexpat.biz%2fwp-content%2fuploads%2f2018%2f11%2fmartabak-manis.jpg&ehk=KbOqv%2bWoX1IMseI5cLxARqf4Oobsp55tqwUYTYFNnSY%3d&risl=&pid=ImgRaw&r=0", // Ganti dengan URL yang valid
-      price: 15000,
-      category: foodCategory.desserts,
-      addOns: [
-        foodAddOn(name: "Kacang", price: 2000),
-        foodAddOn(name: "Keju", price: 3000),
-      ],
-    ),
-    Food(
-      name: "Nasi Uduk",
-      description: "Nasi yang dimasak dengan santan dan rempah.",
-      imagePath:
-          "https://img.freepik.com/fotos-premium/nasi-uduk-betawi-plato-arroz-al-vapor-sabor-coco-betawi-yakarta-sirve-varios-platos_431906-4501.jpg?w=2000", // Ganti dengan URL yang valid
-      price: 16000,
-      category: foodCategory.mainCourse,
-      addOns: [],
-    ),
-  ];
-  List<Food> get menu => _menu;
-  List<CartItem> get cart => _cart;
-  String _deliveryAddress = "Ruang 32";
+  final RestaurantService _service = RestaurantService();
   final List<CartItem> _cart = [];
-  
+  List<Menu> _menu = [];
+  bool _isLoading = false;
+  String _error = '';
+  String _deliveryAddress = "Ruang 32";
+
+  List<CartItem> get cart => _cart;
+  List<Menu> get menu => _menu;
+  bool get isLoading => _isLoading;
+  String get error => _error;
   String get deliveryAddress => _deliveryAddress;
-  void addToCart(Food food, List<foodAddOn> selectedAddOns) {
-    CartItem? existingCart = _cart.firstWhereOrNull((item) {
-      bool isSameFood = item.food == food;
-      bool isSameAddOns =
-          ListEquality().equals(item.selectedAddOns, selectedAddOns);
-      return isSameFood && isSameAddOns;
-    });
 
-    if (existingCart != null) {
-      existingCart.quantity++;
+  Future<void> loadMenu({
+    String? category,
+    String? type,
+    bool? isAvailable,
+    int? stallId,
+  }) async {
+    try {
+      _isLoading = true;
+      _error = '';
+      notifyListeners();
+
+      _menu = await _service.getMenuItems(
+        category: category,
+        type: type,
+        isAvailable: isAvailable,
+        stallId: stallId,
+      );
+    } catch (e) {
+      _error = e.toString();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  void addToCart(Menu menu, {List<FoodAddon> addons = const [], String? note}) {
+    final existingItemIndex = _cart.indexWhere(
+      (item) => item.menu.id == menu.id && 
+                item.selectedAddons.length == addons.length &&
+                item.selectedAddons.every((addon) => addons.contains(addon)),
+    );
+
+    if (existingItemIndex != -1) {
+      _cart[existingItemIndex].quantity++;
     } else {
-      _cart.add(CartItem(food: food, selectedAddOns: selectedAddOns));
+      _cart.add(CartItem(
+        menu: menu,
+        selectedAddons: addons,
+        note: note,
+        quantity: 1,
+      ));
     }
     notifyListeners();
   }
-  void updateDeliveryAddress(String newAddress) {
-    _deliveryAddress = newAddress;
-    notifyListeners();
-  }
-  void removeFromCart(CartItem cartItem) {
-    int cartIndex = _cart.indexOf(cartItem);
-    if (cartIndex != -1) {
-      // Check if the item exists in the cart
-      if (_cart[cartIndex].quantity > 1) {
-        _cart[cartIndex].quantity--; // Decrement quantity
+
+  void removeFromCart(CartItem item) {
+    final index = _cart.indexOf(item);
+    if (index != -1) {
+      if (_cart[index].quantity > 1) {
+        _cart[index].quantity--;
       } else {
-        _cart.removeAt(cartIndex); // Remove item if quantity is 1
+        _cart.removeAt(index);
       }
-      notifyListeners(); // Notify listeners after modification
+      notifyListeners();
     }
   }
 
-  @override
-  notifyListeners();
+  void removeLastItem() {
+    if (_cart.isNotEmpty) {
+      final lastItem = _cart.last;
+      if (lastItem.quantity > 1) {
+        lastItem.quantity--;
+      } else {
+        _cart.removeLast();
+      }
+      notifyListeners();
+    }
+  }
+
+  void clearCart() {
+    _cart.clear();
+    notifyListeners();
+  }
 
   double getTotalPrice() {
-    double totalPrice = 0.0;
-
-    for (CartItem cartItem in _cart) {
-      double itemTotalPrice = cartItem.food.price;
-      for (foodAddOn addOn in cartItem.selectedAddOns) {
-        itemTotalPrice += addOn.price;
-      }
-      totalPrice += itemTotalPrice * cartItem.quantity;
-    }
-    return totalPrice;
+    return _cart.fold(0.0, (sum, item) => sum + item.totalPrice);
   }
 
-  get totalItemCount {
-    int totalItemCount = 0;
-    for (CartItem cartItem in _cart) {
-      totalItemCount += cartItem.quantity;
-    }
-    return totalItemCount;
+  int get totalItemCount {
+    return _cart.fold(0, (sum, item) => sum + item.quantity);
   }
 
-  void clearCartItems() {
-    _cart.clear();
+  void updateDeliveryAddress(String newAddress) {
+    _deliveryAddress = newAddress;
     notifyListeners();
   }
 
@@ -281,17 +137,17 @@ class Restaurant extends ChangeNotifier {
 
     for (final CartItem cartItem in _cart) {
       receipt.writeln(
-          "${cartItem.quantity} x ${cartItem.food.name} - ${_formatPrice(cartItem.food.price)}");
-      if (cartItem.selectedAddOns.isNotEmpty) {
+          "${cartItem.quantity} x ${cartItem.menu.foodName} - ${_formatPrice(cartItem.menu.price)}");
+      if (cartItem.selectedAddons.isNotEmpty) {
         receipt.write(
-            '  Add-ons: ${_formatAddons(cartItem.selectedAddOns)}'); // Corrected method call
+            '  Add-ons: ${_formatAddons(cartItem.selectedAddons)}');
       }
       receipt.writeln();
     }
 
     receipt.writeln('--------------------------------');
     receipt.writeln(
-        "Total items: ${_cart.fold(0, (sum, item) => sum + item.quantity)}"); // Total item count
+        "Total items: ${_cart.fold(0, (sum, item) => sum + item.quantity)}");
     receipt.write("Total price: ${_formatPrice(getTotalPrice())}");
 
     return receipt.toString();
@@ -299,53 +155,12 @@ class Restaurant extends ChangeNotifier {
 
   String _formatPrice(double price) {
     final formatter = NumberFormat('#,##0', 'id_ID');
-    return 'Rp. ${formatter.format(price)}'; // Format price with 2 decimal places
+    return 'Rp. ${formatter.format(price)}';
   }
 
-  String _formatAddons(List<foodAddOn> addons) {
-    // Changed to PascalCase
+  String _formatAddons(List<FoodAddon> addons) {
     return addons
-        .map((addon) => '${addon.name} (${_formatPrice(addon.price)})')
+        .map((addon) => '${addon.addonName} (${_formatPrice(addon.price)})')
         .join(', ');
   }
-
-    void setCurrentAdminId(String id) {
-    currentAdminId = id; // Set the current admin ID
-    notifyListeners();
-  }
-   List<CanteenSlot> _canteenSlots = [];
-
-  List<CanteenSlot> get canteenSlots => _canteenSlots;
-
-  Future<void> fetchCanteenSlots(String adminId) async {
-    final slotsSnapshot = await FirebaseFirestore.instance
-        .collection('canteen_slots')
-        .where('adminId', isEqualTo: adminId)
-        .get();
-
-    _canteenSlots = slotsSnapshot.docs.map((doc) {
-      return CanteenSlot(
-        id: doc.id,
-        name: doc['slotName'],
-      );
-    }).toList();
-    notifyListeners();
-  }
-
-  Future<void> renameCanteenSlot(String slotId, String newName) async {
-    await FirebaseFirestore.instance
-        .collection('canteen_slots')
-        .doc(slotId)
-        .update({'slotName': newName});
-    // Optionally, refresh the slots after renaming
-    await fetchCanteenSlots(currentAdminId!);
-  }
-}
-
-class CanteenSlot {
-  final String id;
-  final String name;
-
-  CanteenSlot({required this.id, required this.name});
-
 }

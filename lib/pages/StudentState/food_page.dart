@@ -1,15 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:kantin/Component/my_button.dart';
-import 'package:kantin/Models/Food.dart';
+import 'package:kantin/Models/menus.dart';
 import 'package:kantin/Models/Restaurant.dart';
+import 'package:kantin/Models/menus_addon.dart';
 import 'package:provider/provider.dart';
 
 class FoodPage extends StatefulWidget {
-  final Food food;
-  final Map<foodAddOn, bool> selectedAddons = {};
+  final Menu menu;
+  final Map<FoodAddon, bool> selectedAddons = {};
 
-  FoodPage({super.key, required this.food}) {
-    for (foodAddOn addOn in food.addOns) {
+  FoodPage({super.key, required this.menu}) {
+    for (FoodAddon addOn in menu.addons) {
       selectedAddons[addOn] = false;
     }
   }
@@ -19,15 +20,15 @@ class FoodPage extends StatefulWidget {
 }
 
 class _FoodPageState extends State<FoodPage> {
-  void addToCart(Food food, Map<foodAddOn, bool> selectedAddOns) {
+  void addToCart(Menu menu, Map<FoodAddon, bool> selectedAddOns) {
     Navigator.pop(context);
-    List<foodAddOn> currentlySelectedAddons = [];
-    for (foodAddOn addOn in widget.food.addOns) {
+    List<FoodAddon> currentlySelectedAddons = [];
+    for (FoodAddon addOn in widget.menu.addons) {
       if (widget.selectedAddons[addOn] == true) {
         currentlySelectedAddons.add(addOn);
       }
     }
-    context.read<Restaurant>().addToCart(food, currentlySelectedAddons);
+    context.read<Restaurant>().addToCart(menu, addons: currentlySelectedAddons);
   }
 
   @override
@@ -41,7 +42,7 @@ class _FoodPageState extends State<FoodPage> {
           children: [
             // Responsive image
             Image.network(
-              widget.food.imagePath,
+              widget.menu.photo ?? '',
               width: screenSize.width,
               height: screenSize.height * 0.3, // Adjust height based on screen size
               fit: BoxFit.cover, // Cover the area
@@ -52,14 +53,14 @@ class _FoodPageState extends State<FoodPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    widget.food.name,
+                    widget.menu.foodName,
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 24, // Increased font size for better visibility
                     ),
                   ),
                   Text(
-                    widget.food.formatPrice(),
+                    'Rp ${widget.menu.price.toStringAsFixed(0)}',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 20,
@@ -68,7 +69,7 @@ class _FoodPageState extends State<FoodPage> {
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    widget.food.description,
+                    widget.menu.description ?? '',
                     style: TextStyle(
                       fontSize: 16,
                       color: Theme.of(context).colorScheme.onSurface,
@@ -78,7 +79,7 @@ class _FoodPageState extends State<FoodPage> {
                   Divider(color: Theme.of(context).colorScheme.secondary),
                   
                   // Conditionally display the Add-ons section
-                  if (widget.food.addOns.isNotEmpty) ...[
+                  if (widget.menu.addons.isNotEmpty) ...[
                     Text(
                       'Add-ons:',
                       style: TextStyle(
@@ -99,13 +100,13 @@ class _FoodPageState extends State<FoodPage> {
                         padding: EdgeInsets.zero,
                         shrinkWrap: true,
                         physics: NeverScrollableScrollPhysics(),
-                        itemCount: widget.food.addOns.length,
+                        itemCount: widget.menu.addons.length,
                         itemBuilder: (BuildContext context, int index) {
-                          foodAddOn addon = widget.food.addOns[index];
+                          FoodAddon addon = widget.menu.addons[index];
                           return CheckboxListTile(
-                            title: Text(addon.name),
+                            title: Text(addon.addonName),
                             subtitle: Text(
-                              addon.formatPrice(),
+                              'Rp ${addon.price.toStringAsFixed(0)}',
                               style: TextStyle(
                                 color: Theme.of(context).colorScheme.primary,
                               ),
@@ -135,9 +136,9 @@ class _FoodPageState extends State<FoodPage> {
             ),
             MyButton(
               text: 'Add to cart',
-              onTap: () => addToCart(widget.food, widget.selectedAddons),
+              onTap: () => addToCart(widget.menu, widget.selectedAddons),
             ),
-            const SizedBox (height: 25),
+            const SizedBox(height: 25),
           ],
         ),
       ),

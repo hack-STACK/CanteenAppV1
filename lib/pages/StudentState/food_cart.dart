@@ -31,7 +31,7 @@ class FoodCartPage extends StatelessWidget {
                       ),
                       TextButton(
                         onPressed: () {
-                          restaurant.clearCartItems();
+                          restaurant.clearCart();
                           Navigator.pop(context);
                         },
                         child: Text('Yes'),
@@ -57,7 +57,6 @@ class FoodCartPage extends StatelessWidget {
                       },
                     ),
             ),
-            // Conditionally render the button based on cart contents
             if (userCart.isNotEmpty) ...[
               MyButton(
                 text: "Go to checkout",

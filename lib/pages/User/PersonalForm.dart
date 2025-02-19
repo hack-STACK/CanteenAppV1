@@ -143,8 +143,9 @@ class _AdaptiveRegistrationFormState extends State<AdaptiveRegistrationForm> {
 
       // Handle role-specific logic
       if (widget.userType == 'student') {
-        // Create student using StudentModels
-        final studentData = StudentModels(
+        // Create student using StudentModel
+        final studentData = StudentModel(
+          id: 0, // This will be auto-generated
           studentName: _nameController.text.trim(),
           studentAddress: _addressController.text.trim(),
           studentPhoneNumber: _phoneController.text.trim(),

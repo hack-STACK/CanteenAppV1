@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:kantin/Models/Stan_model.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:kantin/utils/avatar_generator.dart';
 
 class AnimatedStallTile extends StatefulWidget {
   final void Function()? onTap;
@@ -180,18 +181,22 @@ class _AnimatedStallTileState extends State<AnimatedStallTile>
         child: ClipRRect(
           borderRadius: BorderRadius.circular(12),
           child: widget.stall.imageUrl != null
-              ? CachedNetworkImage(
-                  imageUrl: widget.stall.imageUrl!,
+              ? Image.network(
+                  widget.stall.imageUrl!,
+                  width: 80,
+                  height: 80,
                   fit: BoxFit.cover,
-                  fadeInDuration: const Duration(milliseconds: 300),
-                  fadeOutDuration: const Duration(milliseconds: 300),
-                  placeholder: (context, url) => _buildPlaceholder(context),
-                  errorWidget: (context, url, error) =>
-                      _buildDefaultImage(context),
-                  memCacheWidth: 160,
-                  memCacheHeight: 160,
+                  errorBuilder: (context, error, stackTrace) {
+                    return AvatarGenerator.generateStallAvatar(
+                      widget.stall.stanName,
+                      size: 80,
+                    );
+                  },
                 )
-              : _buildDefaultImage(context),
+              : AvatarGenerator.generateStallAvatar(
+                  widget.stall.stanName,
+                  size: 80,
+                ),
         ),
       ),
     );

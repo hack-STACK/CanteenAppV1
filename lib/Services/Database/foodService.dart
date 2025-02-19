@@ -77,6 +77,36 @@ class FoodService {
     }
   }
 
+  /// Get menu items by stall ID and type
+  Future<List<Menu>> getMenuByStanIdAndType(int stanId, String type) async {
+    try {
+      final response = await _client
+          .from('menu')
+          .select()
+          .eq('stall_id', stanId)
+          .eq('type', type)
+          .order('food_name');
+      
+      return (response as List).map((map) => Menu.fromMap(map)).toList();
+    } catch (e) {
+      throw Exception('Failed to load $type items: $e');
+    }
+  }
+
+  /// Get categorized menus for a stall
+  Future<Map<String, List<Menu>>> getCategorizedMenus(int stanId) async {
+    try {
+      final allMenus = await getMenuByStanId(stanId);
+      
+      return {
+        'food': allMenus.where((menu) => menu.type == 'food').toList(),
+        'drink': allMenus.where((menu) => menu.type == 'drink').toList(),
+      };
+    } catch (e) {
+      throw Exception('Failed to load categorized menus: $e');
+    }
+  }
+
   /// **🟡 Update: Update a menu item**
   Future<void> updateMenu(Menu menu) async {
     try {

@@ -8,6 +8,7 @@ class Stan {
   final String slot; // maps to slot
   final String? imageUrl; // maps to image_url
   final String? Banner_img; // maps to Banner_img
+  final double? rating; // Add rating field
 
   Stan({
     required this.id,
@@ -19,6 +20,7 @@ class Stan {
     required this.slot,
     this.imageUrl,
     this.Banner_img,
+    this.rating, // Include in constructor
   });
 
   factory Stan.fromMap(Map<String, dynamic> map) {
@@ -32,6 +34,7 @@ class Stan {
       slot: map['slot'],
       imageUrl: map['image_url'],
       Banner_img: map['Banner_img'],
+      rating: map['rating'] != null ? (map['rating'] as num).toDouble() : null,
     );
   }
 
@@ -46,6 +49,7 @@ class Stan {
       'slot': slot,
       'image_url': imageUrl,
       'Banner_img': Banner_img,
+      'rating': rating,
     };
   }
 
@@ -59,6 +63,7 @@ class Stan {
     String? slot,
     String? imageUrl,
     String? Banner_img,
+    double? rating,
   }) {
     return Stan(
       id: id ?? this.id,
@@ -70,6 +75,7 @@ class Stan {
       slot: slot ?? this.slot,
       imageUrl: imageUrl ?? this.imageUrl,
       Banner_img: Banner_img ?? this.Banner_img,
+      rating: rating ?? this.rating,
     );
   }
 }

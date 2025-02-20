@@ -367,11 +367,6 @@ class _OrdersScreenState extends State<OrdersScreen>
   }
 
   Future<void> _showOrderDetails(Transaction order) async {
-    // Get student data first
-    final student = await _orderService.getStudentById(order.studentId);
-
-    if (!mounted) return;
-
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -382,8 +377,7 @@ class _OrdersScreenState extends State<OrdersScreen>
         maxChildSize: 0.95,
         builder: (_, controller) => MerchantOrderDetails(
           order: order,
-          onStatusUpdate: (status) => _handleOrderAction(order, status),
-          student: student, // Add the student parameter
+          onStatusUpdate: (status) => _handleOrderAction(order, status), student: student,
         ),
       ),
     );
@@ -811,11 +805,6 @@ class _OrderPageState extends State<OrderPage> {
   }
 
   Future<void> _showOrderDetails(Transaction order) async {
-    // Get student data first
-    final student = await _orderService.getStudentById(order.studentId);
-
-    if (!mounted) return;
-
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -827,7 +816,6 @@ class _OrderPageState extends State<OrderPage> {
         builder: (_, controller) => MerchantOrderDetails(
           order: order,
           onStatusUpdate: (status) => _handleOrderStatus(order, status),
-          student: student, // Add the student parameter
         ),
       ),
     );
@@ -1369,14 +1357,13 @@ class _OrderCardState extends State<OrderCard> {
             ),
           ],
         ),
-        if (_canUpdateStatus(widget.order.status)) ...[
-          const SizedBox(height: 16),
+        const SizedBox(height: 16),
+        if (_canUpdateStatus(widget.order.status))
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
               onPressed: () => widget.onStatusUpdate(
-                _getNextStatus(widget.order.status, widget.order.orderType),
-              ),
+                  _getNextStatus(widget.order.status, widget.order.orderType)),
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 shape: RoundedRectangleBorder(
@@ -1384,12 +1371,9 @@ class _OrderCardState extends State<OrderCard> {
                 ),
               ),
               child: Text(_getActionButtonText(
-                widget.order.status,
-                widget.order.orderType,
-              )),
+                  widget.order.status, widget.order.orderType)),
             ),
           ),
-        ],
       ],
     );
   }

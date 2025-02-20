@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:kantin/Models/transaction_model.dart';
+import 'package:kantin/Services/Database/transaction_service.dart';
 import 'package:kantin/Services/transaction_service.dart';
 import 'package:kantin/models/enums/transaction_enums.dart';
 
@@ -163,6 +164,9 @@ class OrderManagementCard extends StatelessWidget {
         break;
       case TransactionStatus.cancelled:
         chipColor = Colors.red;
+        break;
+      case TransactionStatus.ready:
+        chipColor = Colors.yellow;
         break;
     }
 

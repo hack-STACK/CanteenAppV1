@@ -26,6 +26,17 @@ class StudentModel {
     );
   }
 
+  factory StudentModel.fromJson(Map<String, dynamic> json) {
+    return StudentModel(
+      id: json['id'],
+      studentName: json['nama_siswa'],
+      studentAddress: json['alamat'],
+      studentPhoneNumber: json['telp'],
+      userId: json['id_user'],
+      studentImage: json['foto'],
+    );
+  }
+
   Map<String, dynamic> toMap() {
     return {
       'id': id,
@@ -35,5 +46,35 @@ class StudentModel {
       'id_user': userId,
       'foto': studentImage,
     };
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'nama_siswa': studentName,
+      'alamat': studentAddress,
+      'telp': studentPhoneNumber,
+      'id_user': userId,
+      'foto': studentImage,
+    };
+  }
+  
+
+  StudentModel copyWith({
+    int? id,
+    String? studentName,
+    String? studentAddress,
+    String? studentPhoneNumber,
+    int? userId,
+    String? studentImage,
+  }) {
+    return StudentModel(
+      id: id ?? this.id,
+      studentName: studentName ?? this.studentName,
+      studentAddress: studentAddress ?? this.studentAddress,
+      studentPhoneNumber: studentPhoneNumber ?? this.studentPhoneNumber,
+      userId: userId ?? this.userId,
+      studentImage: studentImage,
+    );
   }
 }

@@ -1,20 +1,24 @@
 class Logger {
-  static bool _isDebug = true;
-
-  static void d(String tag, String message) {
-    if (_isDebug) {
-      print('DEBUG [$tag]: $message');
-    }
+  static final Logger _instance = Logger._internal();
+  
+  factory Logger() {
+    return _instance;
   }
 
-  static void e(String tag, String message,
-      [dynamic error, StackTrace? stack]) {
-    print('ERROR [$tag]: $message');
-    if (error != null) {
-      print('Error details: $error');
-    }
-    if (stack != null) {
-      print('Stack trace: $stack');
+  Logger._internal();
+
+  static void info(String message) {
+    print('INFO: $message');
+  }
+
+  static void debug(String message) {
+    print('DEBUG: $message');
+  }
+
+  static void error(String message, [StackTrace? stackTrace]) {
+    print('ERROR: $message');
+    if (stackTrace != null) {
+      print(stackTrace);
     }
   }
 }

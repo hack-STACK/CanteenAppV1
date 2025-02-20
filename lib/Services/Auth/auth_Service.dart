@@ -144,4 +144,8 @@ class AuthService {
           'Failed to reauthenticate and delete account: ${e.toString()}');
     }
   }
+
+  Stream<User?> get authStateChanges => _firebaseAuth.authStateChanges();
+
+  String? get currentUserId => _firebaseAuth.currentUser?.uid;
 }

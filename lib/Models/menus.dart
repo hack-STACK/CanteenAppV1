@@ -2,17 +2,21 @@ import 'package:kantin/Models/menus_addon.dart';
 
 class Menu {
   static const validTypes = {'food', 'drink'};
+  static const defaultRating = 0.0;
+  static const defaultTotalRatings = 0;
 
   final int? id;
   final String foodName;
   final double price;
   final String type;
   final String? photo;
-  final String description;
-  final int? stallId;
-  final List<FoodAddon> addons;
-  bool isAvailable;
-  String? category;
+  final String? description;
+  final int stallId;
+  final bool isAvailable;
+  final String? category;
+  final double rating;
+  final int totalRatings;
+  final List<FoodAddon> addons; // Add this field
 
   Menu({
     this.id,
@@ -20,51 +24,38 @@ class Menu {
     required this.price,
     required String type,
     this.photo,
-    required this.description,
-    this.stallId,
-    this.addons = const [],
+    this.description,
+    required this.stallId,
     this.isAvailable = true,
     this.category,
-  }) : type = type.toLowerCase() {
-    if (!validTypes.contains(this.type)) {
-      throw ArgumentError(
-          'Invalid menu type. Must be either "food" or "drink"');
-    }
-    if (price < 0) {
-      throw ArgumentError('Price must be greater than or equal to 0');
-    }
-    if (foodName.isEmpty) {
-      throw ArgumentError('Food name cannot be empty');
-    }
-    if (foodName.length > 100) {
-      throw ArgumentError('Food name cannot exceed 100 characters');
-    }
-  }
+    double? rating,
+    int? totalRatings,
+    List<FoodAddon>? addons, // Add to constructor
+  })  : type = type.toLowerCase(),
+        rating = rating ?? defaultRating,
+        totalRatings = totalRatings ?? defaultTotalRatings,
+        addons = addons ?? []; // Initialize addons list
 
-  factory Menu.fromJson(Map<String, dynamic> json) {
-    List<FoodAddon> parsedAddons = [];
-    if (json['addons'] != null) {
-      parsedAddons = (json['addons'] as List)
-          .map((addonJson) => FoodAddon.fromJson(addonJson))
-          .toList();
-    }
-
+  factory Menu.fromMap(Map<String, dynamic> map) {
     return Menu(
-      id: json['id'],
-      foodName: json['food_name'],
-      price: json['price'].toDouble(),
-      type: json['type'] as String,
-      photo: json['photo'],
-      description: json['description'] ?? '',
-      stallId: json['stall_id'],
-      addons: parsedAddons,
-      isAvailable: json['is_available'] ?? true,
-      category: json['category'],
+      id: map['id'] as int?,
+      foodName: map['food_name'] as String,
+      price: (map['price'] as num).toDouble(),
+      type: map['type'] as String,
+      photo: map['photo'] as String?,
+      description: map['description'] as String?,
+      stallId: map['stall_id'] as int,
+      isAvailable: map['is_available'] as bool? ?? true,
+      category: map['category'] as String?,
+      rating: (map['rating'] as num?)?.toDouble() ?? defaultRating,
+      totalRatings: map['total_ratings'] as int? ?? defaultTotalRatings,
+      addons: [], // Initialize empty addons list
     );
   }
 
-  Map<String, dynamic> toJson({bool excludeId = false}) {
-    final data = {
+  Map<String, dynamic> toMap() {
+    return {
+      if (id != null) 'id': id,
       'food_name': foodName,
       'price': price,
       'type': type,
@@ -73,19 +64,48 @@ class Menu {
       'stall_id': stallId,
       'is_available': isAvailable,
       'category': category,
+      'rating': rating,
+      'total_ratings': totalRatings,
+    };
+  }
+
+  // Add toJson method
+  Map<String, dynamic> toJson({bool excludeId = false}) {
+    final map = {
+      'food_name': foodName,
+      'price': price,
+      'type': type,
+      'photo': photo,
+      'description': description,
+      'stall_id': stallId,
+      'is_available': isAvailable,
+      'category': category,
+      'rating': rating,
+      'total_ratings': totalRatings,
     };
 
     if (!excludeId && id != null) {
-      data['id'] = id;
+      map['id'] = id;
     }
 
-    return data;
+    return map;
   }
 
-  Map<String, dynamic> toCompleteJson({bool excludeId = false}) {
-    final data = toJson(excludeId: excludeId);
-    data['addons'] = addons.map((addon) => addon.toJson()).toList();
-    return data;
+  // Add fromJson factory constructor
+  factory Menu.fromJson(Map<String, dynamic> json) {
+    return Menu(
+      id: json['id'] as int?,
+      foodName: json['food_name'] as String,
+      price: (json['price'] as num).toDouble(),
+      type: json['type'] as String,
+      photo: json['photo'] as String?,
+      description: json['description'] as String?,
+      stallId: json['stall_id'] as int,
+      isAvailable: json['is_available'] as bool? ?? true,
+      category: json['category'] as String?,
+      rating: (json['rating'] as num?)?.toDouble() ?? defaultRating,
+      totalRatings: json['total_ratings'] as int? ?? defaultTotalRatings,
+    );
   }
 
   Menu copyWith({
@@ -96,9 +116,11 @@ class Menu {
     String? photo,
     String? description,
     int? stallId,
-    List<FoodAddon>? addons,
     bool? isAvailable,
     String? category,
+    double? rating,
+    int? totalRatings,
+    List<FoodAddon>? addons,
   }) {
     return Menu(
       id: id ?? this.id,
@@ -108,18 +130,16 @@ class Menu {
       photo: photo ?? this.photo,
       description: description ?? this.description,
       stallId: stallId ?? this.stallId,
-      addons: addons ?? this.addons,
       isAvailable: isAvailable ?? this.isAvailable,
       category: category ?? this.category,
+      rating: rating ?? this.rating,
+      totalRatings: totalRatings ?? this.totalRatings,
+      addons: addons ?? this.addons,
     );
   }
 
-  double get totalPrice {
-    return price +
-        addons
-            .where((addon) => addon.isRequired)
-            .fold(0.0, (sum, addon) => sum + addon.price);
-  }
+  String get formattedRating => rating.toStringAsFixed(1);
+  bool get hasRating => rating > 0 && totalRatings > 0;
 
   @override
   bool operator ==(Object other) =>
@@ -132,44 +152,8 @@ class Menu {
   @override
   int get hashCode => id.hashCode ^ foodName.hashCode;
 
-  factory Menu.fromMap(Map<String, dynamic> map) {
-    final dynamic rawPrice = map['price'];
-    final double price =
-        rawPrice is int ? rawPrice.toDouble() : rawPrice as double;
-
-    final dynamic rawStallId = map['stall_id'] ?? map['id_stan'];
-    final int? stallId =
-        rawStallId != null ? int.tryParse(rawStallId.toString()) : null;
-
-    return Menu(
-      id: map['id'] as int?,
-      foodName: map['food_name'] as String,
-      price: price,
-      type: map['type'] as String,
-      photo: map['photo'] as String?,
-      description: map['description'] as String? ?? '',
-      stallId: stallId,
-      isAvailable: map['is_available'] as bool? ?? true,
-      category: map['category'] as String?,
-    );
-  }
-
-  Map<String, dynamic> toMap() {
-    return {
-      'id': id,
-      'food_name': foodName,
-      'price': price,
-      'type': type,
-      'photo': photo,
-      'description': description,
-      'id_stan': stallId,
-      'is_available': isAvailable,
-      'category': category,
-    };
-  }
-
   @override
   String toString() {
-    return 'Menu{id: $id, foodName: $foodName, price: $price, type: $type, photo: $photo, description: $description, stallId: $stallId}';
+    return 'Menu{id: $id, foodName: $foodName, price: $price, type: $type, category: $category, rating: $rating}';
   }
 }

@@ -292,7 +292,7 @@ class _StallDetailPageState extends State<StallDetailPage> {
         _menus = (_categorizedMenus[_selectedCategory] ?? [])
             .where((menu) =>
                 menu.foodName.toLowerCase().contains(query) ||
-                menu.description.toLowerCase().contains(query))
+                (menu.description?.toLowerCase() ?? '').contains(query))
             .toList();
       }
     });
@@ -439,90 +439,84 @@ class _StallDetailPageState extends State<StallDetailPage> {
   Widget _buildMenuCard(Menu menu, {bool isHorizontal = false}) {
     final addons = _menuAddons[menu.id] ?? [];
 
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
+    return Container(
       margin: EdgeInsets.only(
-        bottom: isHorizontal ? 0 : 8,
+        bottom: isHorizontal ? 0 : 16,
         right: isHorizontal ? 16 : 0,
       ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: () => _showMenuDetail(menu),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Image and badges section
-            ClipRRect(
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(12)),
-              child: Stack(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            offset: const Offset(0, 4),
+            blurRadius: 10,
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => _showMenuDetail(menu),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Image Container with Gradient Overlay
+              Stack(
                 children: [
-                  // Menu Image
-                  AspectRatio(
-                    aspectRatio: 16 / 9,
-                    child: menu.photo != null
-                        ? Image.network(
-                            menu.photo!,
-                            fit: BoxFit.cover,
-                          )
-                        : Container(
-                            color: Colors.grey[200],
-                            child: Icon(
-                              menu.type == 'food'
-                                  ? Icons.restaurant
-                                  : Icons.local_drink,
-                              size: 40,
-                              color: Colors.grey[400],
-                            ),
-                          ),
+                  ClipRRect(
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                    child: AspectRatio(
+                      aspectRatio: 16 / 9,
+                      child: Hero(
+                        tag: 'menu_${menu.id}',
+                        child: menu.photo != null
+                            ? Image.network(
+                                menu.photo!,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => _buildMenuImagePlaceholder(menu),
+                              )
+                            : _buildMenuImagePlaceholder(menu),
+                      ),
+                    ),
                   ),
-                  // Favorite Button
-                  Positioned(
-                    top: 8,
-                    right: 8,
-                    child: CircleAvatar(
-                      radius: 16,
-                      backgroundColor: Colors.white,
-                      child: IconButton(
-                        padding: EdgeInsets.zero,
-                        icon: Icon(
-                          _favoriteMenus.contains(menu.foodName)
-                              ? Icons.favorite
-                              : Icons.favorite_border,
-                          size: 20,
+                  // Gradient Overlay
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.transparent,
+                            Colors.black.withOpacity(0.3),
+                          ],
                         ),
-                        color: Colors.red,
-                        onPressed: () => _toggleFavorite(menu),
                       ),
                     ),
                   ),
                   // Category Badge
                   Positioned(
-                    top: 8,
-                    left: 8,
+                    top: 12,
+                    left: 12,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
-                        color: menu.type == 'food'
+                        color: menu.type == 'food' 
                             ? Colors.orange.withOpacity(0.9)
                             : Colors.blue.withOpacity(0.9),
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(20),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(
-                            menu.type == 'food'
-                                ? Icons.restaurant
-                                : Icons.local_drink,
+                            menu.type == 'food' ? Icons.restaurant : Icons.local_drink,
                             color: Colors.white,
-                            size: 16,
+                            size: 14,
                           ),
                           const SizedBox(width: 4),
                           Text(
@@ -537,103 +531,189 @@ class _StallDetailPageState extends State<StallDetailPage> {
                       ),
                     ),
                   ),
+                  // Favorite Button
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(20),
+                        onTap: () => _toggleFavorite(menu),
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.9),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            _favoriteMenus.contains(menu.foodName)
+                                ? Icons.favorite
+                                : Icons.favorite_border,
+                            size: 20,
+                            color: Colors.red,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
-            ),
-            // Content section
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Title and price row
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          menu.foodName,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      Text(
-                        'Rp ${menu.price.toStringAsFixed(0)}',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Theme.of(context).primaryColor,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  // Description
-                  Text(
-                    menu.description,
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                      fontSize: 14,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  // Add-ons section if available
-                  if (addons.isNotEmpty) ...[
-                    const SizedBox(height: 12),
+              // Content Section
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Title and Status
                     Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(Icons.add_circle_outline,
-                            size: 16, color: Colors.grey[600]),
-                        const SizedBox(width: 4),
-                        Text(
-                          '${addons.length} Add-ons available',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[600],
+                        Expanded(
+                          child: Text(
+                            menu.foodName,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                      ],
-                    ),
-                  ],
-                  const SizedBox(height: 12),
-                  // Action button
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      if (!menu.isAvailable)
-                        const Expanded(
-                          child: Text(
-                            'Not Available',
-                            style: TextStyle(
-                              color: Colors.red,
-                              fontSize: 12,
+                        if (!menu.isAvailable)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.red[50],
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text(
+                              'Out of Stock',
+                              style: TextStyle(
+                                color: Colors.red,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
                           ),
-                        ),
-                      ElevatedButton.icon(
-                        onPressed:
-                            menu.isAvailable ? () => _addToCart(menu) : null,
-                        icon: const Icon(Icons.add_shopping_cart, size: 18),
-                        label: const Text('Add'),
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 24,
-                            vertical: 12,
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    // Price and Rating
+                    Row(
+                      children: [
+                        Text(
+                          'Rp ${menu.price.toStringAsFixed(0)}',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Theme.of(context).primaryColor,
                           ),
+                        ),
+                        const SizedBox(width: 8),
+                        if (menu.hasRating) ...[
+                          const SizedBox(width: 8),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.star, color: Colors.amber, size: 16),
+                              const SizedBox(width: 4),
+                              Text(
+                                menu.formattedRating,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                '(${menu.totalRatings})',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    // Description
+                    Text(
+                      menu.description!,
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 14,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (addons.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      // Add-ons Preview
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: addons.take(2).map((addon) {
+                          return Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[100],
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.grey[300]!),
+                            ),
+                            child: Text(
+                              '${addon.addonName} +${addon.price.toStringAsFixed(0)}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[700],
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    // Action Button
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: menu.isAvailable ? () => _addToCart(menu) : null,
+                        icon: const Icon(Icons.add_shopping_cart, size: 18),
+                        label: const Text('Add to Cart'),
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8),
                           ),
                         ),
                       ),
-                    ],
-                  ),
-                ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMenuImagePlaceholder(Menu menu) {
+    return Container(
+      color: Colors.grey[200],
+      child: Center(
+        child: Icon(
+          menu.type == 'food' ? Icons.restaurant : Icons.local_drink,
+          size: 40,
+          color: Colors.grey[400],
         ),
       ),
     );
@@ -649,165 +729,212 @@ class _StallDetailPageState extends State<StallDetailPage> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => StatefulBuilder(
-        builder: (context, setModalState) => DraggableScrollableSheet(
-          initialChildSize: 0.9,
-          maxChildSize: 0.95,
-          minChildSize: 0.5,
-          builder: (context, scrollController) => Container(
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-            ),
-            child: Column(
-              children: [
-                // Handle bar
-                Center(
-                  child: Container(
-                    margin: const EdgeInsets.only(top: 8),
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.grey[300],
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
+        builder: (context, setModalState) => Container(
+          height: MediaQuery.of(context).size.height * 0.9,
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              // Drag Handle
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(top: 12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
                 ),
-                // Menu detail content
-                Expanded(
-                  child: CustomScrollView(
-                    controller: scrollController,
-                    slivers: [
-                      // Menu Image
-                      SliverToBoxAdapter(
-                        child: AspectRatio(
-                          aspectRatio: 16 / 9,
-                          child: menu.photo != null
-                              ? Image.network(
-                                  menu.photo!,
-                                  fit: BoxFit.cover,
-                                )
-                              : Container(
-                                  color: Colors.grey[200],
-                                  child: Icon(
-                                    menu.type == 'food'
-                                        ? Icons.restaurant
-                                        : Icons.local_drink,
-                                    size: 60,
-                                    color: Colors.grey,
-                                  ),
-                                ),
-                        ),
-                      ),
-                      // Menu Info
-                      SliverPadding(
-                        padding: const EdgeInsets.all(16),
-                        sliver: SliverList(
-                          delegate: SliverChildListDelegate([
-                            Text(
-                              menu.foodName,
-                              style: const TextStyle(
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                              ),
+              ),
+              Expanded(
+                child: CustomScrollView(
+                  slivers: [
+                    // Image Section
+                    SliverToBoxAdapter(
+                      child: Stack(
+                        children: [
+                          Hero(
+                            tag: 'menu_${menu.id}',
+                            child: AspectRatio(
+                              aspectRatio: 16 / 9,
+                              child: menu.photo != null
+                                  ? Image.network(menu.photo!, fit: BoxFit.cover)
+                                  : _buildMenuImagePlaceholder(menu),
                             ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Rp ${menu.price.toStringAsFixed(0)}',
-                              style: TextStyle(
-                                fontSize: 18,
-                                color: Theme.of(context).primaryColor,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              menu.description,
-                              style: TextStyle(
-                                color: Colors.grey[600],
-                                fontSize: 16,
-                              ),
-                            ),
-                            if (addons.isNotEmpty) ...[
-                              const SizedBox(height: 24),
-                              const Text(
-                                'Add-ons',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
+                          ),
+                          // Close Button
+                          Positioned(
+                            top: 16,
+                            right: 16,
+                            child: Material(
+                              color: Colors.white.withOpacity(0.9),
+                              borderRadius: BorderRadius.circular(20),
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(20),
+                                onTap: () => Navigator.pop(context),
+                                child: const Padding(
+                                  padding: EdgeInsets.all(8),
+                                  child: Icon(Icons.close),
                                 ),
                               ),
-                              const SizedBox(height: 8),
-                              ...addons.map((addon) => CheckboxListTile(
-                                    value: selectedAddons.contains(addon),
-                                    onChanged: (checked) {
-                                      setModalState(() {
-                                        if (checked ?? false) {
-                                          selectedAddons.add(addon);
-                                        } else {
-                                          selectedAddons.remove(addon);
-                                        }
-                                      });
-                                    },
-                                    title: Text(addon.addonName),
-                                    subtitle: Text(
-                                      '+ Rp ${addon.price.toStringAsFixed(0)}',
-                                    ),
-                                  )),
-                            ],
-                            const SizedBox(height: 24),
-                            TextField(
-                              controller: noteController,
-                              decoration: const InputDecoration(
-                                labelText: 'Special Instructions',
-                                hintText: 'e.g., No onions, extra spicy',
-                                border: OutlineInputBorder(),
-                              ),
-                              maxLines: 2,
                             ),
-                          ]),
-                        ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                ),
-                // Add to cart button with total price
-                SafeArea(
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.1),
-                          blurRadius: 10,
-                          offset: const Offset(0, -5),
-                        ),
-                      ],
                     ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
+
+                    // Content
+                    SliverPadding(
+                      padding: const EdgeInsets.all(16),
+                      sliver: SliverList(
+                        delegate: SliverChildListDelegate([
+                          // Title and Price Section
+                          Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Text(
-                                'Total Price',
-                                style: TextStyle(
-                                  color: Colors.grey,
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      menu.foodName,
+                                      style: const TextStyle(
+                                        fontSize: 24,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Rp ${menu.price.toStringAsFixed(0)}',
+                                      style: TextStyle(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.bold,
+                                        color: Theme.of(context).primaryColor,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                              Text(
-                                'Rp ${(menu.price + selectedAddons.fold(0.0, (sum, addon) => sum + addon.price)).toStringAsFixed(0)}',
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
+                              // Favorite Button
+                              IconButton(
+                                icon: Icon(
+                                  _favoriteMenus.contains(menu.foodName)
+                                      ? Icons.favorite
+                                      : Icons.favorite_border,
+                                  color: Colors.red,
                                 ),
+                                onPressed: () => _toggleFavorite(menu),
                               ),
                             ],
                           ),
+                          const SizedBox(height: 16),
+
+                          // Description
+                          Text(
+                            menu.description!,
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: Colors.grey[700],
+                              height: 1.5,
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+
+                          // Add-ons Section
+                          if (addons.isNotEmpty) ...[
+                            const Text(
+                              'Customize Your Order',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            ...addons.map((addon) => _buildAddonTile(
+                                  addon,
+                                  selectedAddons.contains(addon),
+                                  (checked) {
+                                    setModalState(() {
+                                      if (checked ?? false) {
+                                        selectedAddons.add(addon);
+                                      } else {
+                                        selectedAddons.remove(addon);
+                                      }
+                                    });
+                                  },
+                                )),
+                            const SizedBox(height: 24),
+                          ],
+
+                          // Special Instructions
+                          const Text(
+                            'Special Instructions',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: noteController,
+                            decoration: InputDecoration(
+                              hintText: 'E.g., No onions, extra spicy...',
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              fillColor: Colors.grey[50],
+                              filled: true,
+                            ),
+                            maxLines: 3,
+                          ),
+                        ]),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Bottom Bar
+              SafeArea(
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        offset: const Offset(0, -4),
+                        blurRadius: 8,
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text(
+                              'Total Price',
+                              style: TextStyle(
+                                color: Colors.grey,
+                                fontSize: 14,
+                              ),
+                            ),
+                            Text(
+                              'Rp ${(menu.price + selectedAddons.fold(0.0, (sum, addon) => sum + addon.price)).toStringAsFixed(0)}',
+                              style: const TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
                         ),
-                        ElevatedButton(
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: ElevatedButton(
                           onPressed: () {
                             _addToCart(
                               menu,
@@ -817,21 +944,57 @@ class _StallDetailPageState extends State<StallDetailPage> {
                             Navigator.pop(context);
                           },
                           style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 32,
-                              vertical: 12,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
                             ),
                           ),
-                          child: const Text('Add to Cart'),
+                          child: const Text(
+                            'Add to Cart',
+                            style: TextStyle(fontSize: 16),
+                          ),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildAddonTile(FoodAddon addon, bool isSelected, Function(bool?) onChanged) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: isSelected ? Colors.grey[50] : Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isSelected ? Theme.of(context).primaryColor : Colors.grey[300]!,
+        ),
+      ),
+      child: CheckboxListTile(
+        value: isSelected,
+        onChanged: onChanged,
+        title: Text(
+          addon.addonName,
+          style: const TextStyle(
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        subtitle: Text(
+          '+ Rp ${addon.price.toStringAsFixed(0)}',
+          style: TextStyle(
+            color: Theme.of(context).primaryColor,
+          ),
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        activeColor: Theme.of(context).primaryColor,
       ),
     );
   }

@@ -22,21 +22,21 @@ class FoodService {
         // Update existing menu
         final response = await _client
             .from('menu')
-            .update(menu.toJson(excludeId: true))
+            .update(menu.toMap())  // Change toJson to toMap
             .eq('food_name', menu.foodName)
             .select()
             .maybeSingle();
 
-        return Menu.fromJson(response ?? existingMenu);
+        return Menu.fromMap(response ?? existingMenu);  // Change fromJson to fromMap
       } else {
         // Insert new menu
         final response = await _client
             .from('menu')
-            .insert(menu.toJson(excludeId: true))
+            .insert(menu.toMap())  // Change toJson to toMap
             .select()
             .single();
 
-        return Menu.fromJson(response);
+        return Menu.fromMap(response);  // Change fromJson to fromMap
       }
     } catch (e) {
       throw Exception('Failed to insert/update menu: $e');
@@ -46,7 +46,7 @@ class FoodService {
   /// **🟢 Read: Get all menu items**
   Future<List<Menu>> getAllMenuItems() async {
     final response = await _client.from('menu').select();
-    return response.map<Menu>((json) => Menu.fromJson(json)).toList();
+    return response.map<Menu>((json) => Menu.fromMap(json)).toList();  // Change fromJson to fromMap
   }
 
   /// **🟢 Read: Get menu item by ID**

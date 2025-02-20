@@ -1,12 +1,18 @@
+import 'package:kantin/Models/transaction_model.dart';
+import 'package:kantin/Services/Database/refund_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:kantin/Models/Restaurant.dart';
 import 'package:kantin/utils/api_exception.dart';
 import 'package:kantin/models/enums/transaction_enums.dart';
 import 'package:kantin/utils/logger.dart'; // Add this import
 import 'package:kantin/utils/error_handler.dart' as error_handler; // Use alias
+import 'package:kantin/Models/student_models.dart';
+import 'package:kantin/Services/Database/studentService.dart';
 
 class TransactionService {
-  final _supabase = Supabase.instance.client;
+  final SupabaseClient _supabase = Supabase.instance.client;
+  final RefundService _refundService = RefundService();
+  final StudentService _studentService = StudentService();
   static bool _debug = false; // Set to false for release mode
 
   // Add helper method to convert enum to database value
@@ -109,15 +115,23 @@ class TransactionService {
 
   Future<void> cancelOrder(int transactionId, CancellationReason reason) async {
     try {
-      // First check current order status
+      // First check current order status and get order details
       final orderData = await _supabase
           .from('transactions')
-          .select('status, payment_status')
+          .select('''
+            *,
+            status,
+            payment_status,
+            total_amount,
+            student_id
+          ''')
           .eq('id', transactionId)
           .single();
 
       final currentStatus = orderData['status'];
       final paymentStatus = orderData['payment_status'];
+      final totalAmount = orderData['total_amount'];
+      final studentId = orderData['student_id'];
 
       // Validate cancellation
       if (currentStatus == TransactionStatus.cancelled.name) {
@@ -134,29 +148,47 @@ class TransactionService {
 
       try {
         // Update transaction status
+        final cancelledAt = DateTime.now().toIso8601String();
+        
+        // 1. Update transaction status
         await _supabase.from('transactions').update({
           'status': TransactionStatus.cancelled.name,
-          'updated_at': DateTime.now().toIso8601String(),
+          'updated_at': cancelledAt,
           'cancellation_reason': reason.name,
-          'cancelled_at': DateTime.now().toIso8601String(),
+          'cancelled_at': cancelledAt,
         }).eq('id', transactionId);
 
-        // Handle refund if payment was made
+        // 2. Create refund log
+        final refundStatus = paymentStatus == PaymentStatus.paid.name 
+            ? RefundStatus.pending.name 
+            : RefundStatus.processed.name;
+
+        await _refundService.createRefundRequest(
+          transactionId: transactionId,
+          reason: 'Order cancelled: ${reason.name}',
+          notes: '''
+            Payment Status: ${paymentStatus}
+            Amount: ${totalAmount}
+            Cancelled at: ${cancelledAt}
+            Student ID: ${studentId}
+          ''',
+          status: refundStatus, // Pass the appropriate status
+        );
+
+        // 3. Update payment status if paid
         if (paymentStatus == PaymentStatus.paid.name) {
-          // Update payment status to refunded
           await _supabase.from('transactions').update({
             'payment_status': PaymentStatus.refunded.name,
           }).eq('id', transactionId);
-
-          // Create refund log
-          await _supabase.from('refund_logs').insert({
-            'transaction_id': transactionId,
-            'reason': reason.name,
-            'status': 'pending',
-            'created_at': DateTime.now().toIso8601String(),
-            'notes': 'Cancellation initiated by customer',
-          });
         }
+
+        // 4. Create transaction progress entry
+        await _supabase.from('transaction_progress').insert({
+          'transaction_id': transactionId,
+          'status': TransactionStatus.cancelled.name,
+          'notes': 'Order cancelled by customer: ${reason.name}',
+          'timestamp': cancelledAt,
+        });
 
         await _supabase.rpc('commit_transaction');
       } catch (e) {
@@ -284,44 +316,96 @@ class TransactionService {
           .from('transactions')
           .select('''
             *,
-            transaction_details!inner (
-              id,
-              menu_id,
+            items:transaction_details( 
+              menu:menu(
+                id,
+                food_name
+              ),
               quantity,
               unit_price,
-              subtotal,
-              menu:menu!inner (
-                id,
-                food_name,
-                price
-              )
-            )
+              subtotal
+            ),
+            refund_logs!refund_logs_transaction_id_fkey(*)
           ''')
           .eq('student_id', studentId)
-          .or('status.eq.completed,status.eq.cancelled') // Updated status values
-          .order('created_at', ascending: false)
-          .limit(50);
+          .or('status.eq.completed,status.eq.cancelled') // Include both completed and cancelled orders
+          .order('created_at', ascending: false);
 
-      // Transform the response to match the expected format
-      final transformedResponse = response.map((order) {
-        final items = (order['transaction_details'] as List).map((detail) {
-          return {
-            'id': detail['id'],
-            'menu_name': detail['menu']['food_name'],
-            'quantity': detail['quantity'],
-            'price': detail['unit_price'],
-          };
+      // Transform response to match expected format
+      return List<Map<String, dynamic>>.from(response.map((order) {
+        final items = (order['items'] as List).map((item) => {
+          'menu_id': item['menu']['id'],
+          'menu_name': item['menu']['food_name'],
+          'quantity': item['quantity'],
+          'price': item['unit_price'],
         }).toList();
 
         return {
           ...order,
           'items': items,
         };
-      }).toList();
-
-      return List<Map<String, dynamic>>.from(transformedResponse);
+      }).toList());
     } catch (e) {
-      throw Exception('Failed to load order history: ${e.toString()}');
+      throw 'Failed to load order history: $e';
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getOrderProgressHistory(int transactionId) async {
+    try {
+      final response = await _supabase
+          .from('transaction_progress')
+          .select()
+          .eq('transaction_id', transactionId)
+          .order('timestamp', ascending: true);
+
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      throw 'Failed to load order progress history: $e';
+    }
+  }
+
+  Future<void> deleteOrderHistory(int transactionId) async {
+    try {
+      // First check if the order is completed or cancelled
+      final orderData = await _supabase
+          .from('transactions')
+          .select('status')
+          .eq('id', transactionId)
+          .single();
+
+      final status = orderData['status'];
+      if (status != 'completed' && status != 'cancelled') {
+        throw 'Can only delete completed or cancelled orders';
+      }
+
+      // Delete the order and its related records
+      await _supabase.rpc('begin_transaction');
+      try {
+        // Delete progress history
+        await _supabase
+            .from('transaction_progress')
+            .delete()
+            .eq('transaction_id', transactionId);
+
+        // Delete transaction details
+        await _supabase
+            .from('transaction_details')
+            .delete()
+            .eq('transaction_id', transactionId);
+
+        // Delete the transaction
+        await _supabase
+            .from('transactions')
+            .delete()
+            .eq('id', transactionId);
+
+        await _supabase.rpc('commit_transaction');
+      } catch (e) {
+        await _supabase.rpc('rollback_transaction');
+        throw e;
+      }
+    } catch (e) {
+      throw 'Failed to delete order history: $e';
     }
   }
 
@@ -380,6 +464,168 @@ class TransactionService {
       }
     } catch (e) {
       throw ApiException('Failed to create transaction details: $e');
+    }
+  }
+
+  // In transaction_service.dart
+  Stream<List<Transaction>> getStallTransactions(int stallId) {
+    print('Fetching transactions for stall: $stallId'); // Debug print
+    
+    return _supabase
+        .from('transactions')
+        .stream(primaryKey: ['id'])
+        .eq('stall_id', stallId)
+        .order('created_at', ascending: false)
+        .asyncMap((response) async {
+          print('Raw Supabase response: $response'); // Debug print
+          
+          final List<Transaction> transactions = [];
+          
+          for (final json in response) {
+            // Fetch transaction details
+            final details = await _supabase
+                .from('transaction_details')
+                .select('''
+                  *,
+                  menu (*),
+                  transaction_addon_details (
+                    *,
+                    addon:food_addons (*)
+                  )
+                ''')
+                .eq('transaction_id', json['id']);
+            
+            print('Fetched details for transaction ${json['id']}: $details'); // Debug print
+            
+            transactions.add(Transaction.fromJson({
+              ...json,
+              'transaction_details': details,
+            }));
+          }
+          
+          return transactions;
+        });
+  }
+
+  Stream<List<Transaction>> subscribeToNewOrders(int stallId) {
+    if (_debug) print('Subscribing to new orders for stall: $stallId');
+
+    return _supabase
+        .from('transactions')
+        .select('''
+          *,
+          transaction_details (
+            *,
+            menu (*),
+            transaction_addon_details (
+              *,
+              addon:food_addons (*)
+            )
+          )
+        ''')
+        .eq('stall_id', stallId)
+        .eq('status', TransactionStatus.pending.name)
+        .order('created_at', ascending: false)
+        .asStream()
+        .map((data) {
+          if (_debug) print('New orders data received: $data');
+          
+          try {
+            return data.map((item) => Transaction.fromJson(item)).toList();
+          } catch (e) {
+            print('Error processing orders: $e');
+            return <Transaction>[];
+          }
+        });
+  }
+
+  Future<void> updateOrderStatus(int transactionId, TransactionStatus status) async {
+    try {
+      Logger.info('Updating order $transactionId to status: ${status.name}');
+
+      await _supabase.from('transactions').update({
+        'status': status.name,
+        'updated_at': DateTime.now().toIso8601String(),
+      }).eq('id', transactionId);
+
+      await _supabase.from('transaction_progress').insert({
+        'transaction_id': transactionId,
+        'status': status.name,
+        'timestamp': DateTime.now().toIso8601String(),
+      });
+
+      Logger.info('Successfully updated order status');
+    } catch (e, stack) {
+      Logger.error('Failed to update order status: $e', stack);
+      throw ApiException('Failed to update order status: $e');
+    }
+  }
+
+  Stream<List<Transaction>> getStudentTransactions(int studentId) {
+    return _supabase
+        .from('transactions')
+        .stream(primaryKey: ['id'])
+        .eq('student_id', studentId)
+        .order('created_at', ascending: false)
+        .map((list) => list.map((item) => Transaction.fromJson(item)).toList());
+  }
+
+  Future<Transaction> getOrderDetailsById(int orderId) async {
+    try {
+      final response = await _supabase
+          .from('transactions')
+          .select('''
+            *,
+            transaction_details (
+              id,
+              menu_id,
+              quantity,
+              unit_price,
+              subtotal,
+              notes,
+              created_at,
+              menu (
+                id,
+                food_name,
+                price,
+                photo,
+                description
+              )
+            )
+          ''')
+          .eq('id', orderId)
+          .single();
+
+      print('Fetched order details: $response'); // Debug log
+      
+      // Add transaction_details to the response for proper parsing
+      final transaction = Transaction.fromJson(response);
+      print('Parsed transaction details count: ${transaction.details.length}');
+      
+      return transaction;
+
+    } catch (e) {
+      print('Error fetching order details: $e');
+      throw Exception('Failed to fetch order details: $e');
+    }
+  }
+
+  Future<List<TransactionDetail>> getTransactionDetails(int transactionId) async {
+    try {
+      final response = await _supabase
+          .from('transaction_details')
+          .select('''
+            *,
+            menu (*)
+          ''')
+          .eq('transaction_id', transactionId);
+
+      return (response as List)
+          .map((item) => TransactionDetail.fromJson(item))
+          .toList();
+    } catch (e) {
+      print('Error fetching transaction details: $e');
+      return [];
     }
   }
 }

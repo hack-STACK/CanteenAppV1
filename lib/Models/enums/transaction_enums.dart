@@ -1,11 +1,34 @@
-// Match exactly with database enum values
 enum TransactionStatus {
-  pending, // Order just placed
-  confirmed, // Restaurant confirmed the order
-  cooking, // Food is being prepared
-  delivering, // Order is out for delivery
-  completed, // Order completed successfully
-  cancelled // Order was cancelled
+  pending,
+  confirmed,
+  cooking,
+  delivering,
+  ready,
+  completed,
+  cancelled,
+}
+
+extension TransactionStatusExtension on TransactionStatus {
+  String get label {
+    switch (this) {
+      case TransactionStatus.pending:
+        return 'Pending';
+      case TransactionStatus.confirmed:
+        return 'Confirmed';
+      case TransactionStatus.cooking:
+        return 'Cooking';
+      case TransactionStatus.delivering:
+        return 'Delivering';
+      case TransactionStatus.ready:
+        return 'Ready';
+      case TransactionStatus.completed:
+        return 'Completed';
+      case TransactionStatus.cancelled:
+        return 'Cancelled';
+      default:
+        return '';
+    }
+  }
 }
 
 enum PaymentStatus {
@@ -51,3 +74,5 @@ enum UserRole {
   admin_stalls, // Restaurant admin
   student // Student user
 }
+
+

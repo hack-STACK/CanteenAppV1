@@ -539,7 +539,7 @@ class _MenuDetails extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         Text(
-          menu.description,
+          menu.description!,
           style: TextStyle(
             fontSize: 14,
             color: Colors.grey[600],

@@ -1530,9 +1530,9 @@ class _MyStorePageState extends State<MyStorePage>
                         const SizedBox(height: 4),
 
                         // Description
-                        if (menu.description.isNotEmpty)
+                        if (menu.description?.isNotEmpty == true)  // Fix null check here
                           Text(
-                            menu.description,
+                            menu.description!,
                             style: TextStyle(
                               fontSize: 13,
                               color: Colors.grey[600],

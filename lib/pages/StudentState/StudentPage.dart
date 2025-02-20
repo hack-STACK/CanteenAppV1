@@ -17,6 +17,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:kantin/pages/StudentState/OrderPage.dart'; // Add this import
 import 'package:kantin/widgets/student/food_category_grid.dart';
 import 'package:kantin/widgets/search_bar_delegate.dart';
+import 'package:kantin/widgets/student/student_profile_header.dart';
 
 class StudentPage extends StatefulWidget {
   const StudentPage({super.key});
@@ -405,123 +406,11 @@ class _HomepageState extends State<StudentPage> {
   }
 
   Widget _buildProfileSection() {
-    if (_isLoadingProfile) {
-      return Container(
-        padding: const EdgeInsets.all(16),
-        color: Theme.of(context).primaryColor.withOpacity(0.1),
-        child: Row(
-          children: [
-            const CircleAvatar(
-              radius: 30,
-              child: CircularProgressIndicator(),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    height: 20,
-                    width: 150,
-                    decoration: BoxDecoration(
-                      color: Colors.grey[300],
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    height: 16,
-                    width: 100,
-                    decoration: BoxDecoration(
-                      color: Colors.grey[300],
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return GestureDetector(
-      onTap: _currentStudent != null
-          ? () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) =>
-                      StudentProfilePage(student: _currentStudent!),
-                ),
-              ).then((_) =>
-                  _loadStudentData()) // Reload data when returning from profile page
-          : () {
-              // Show message to complete profile if no student data
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: const Text('Please complete your profile'),
-                  action: SnackBarAction(
-                    label: 'Complete',
-                    onPressed: () => _navigateToProfileSetup(),
-                  ),
-                ),
-              );
-            },
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        color: Theme.of(context).primaryColor.withOpacity(0.1),
-        child: Row(
-          children: [
-            CircleAvatar(
-              radius: 30,
-              backgroundColor: Colors.grey[200],
-              child: _currentStudent?.studentImage != null &&
-                      _currentStudent!.studentImage!.isNotEmpty
-                  ? ClipOval(
-                      child: Image.network(
-                        _currentStudent!.studentImage!,
-                        width: 60,
-                        height: 60,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return AvatarGenerator.generateStallAvatar(
-                            _currentStudent?.studentName ?? 'Profile',
-                            size: 60,
-                          );
-                        },
-                      ),
-                    )
-                  : AvatarGenerator.generateStallAvatar(
-                      _currentStudent?.studentName ?? 'Profile',
-                      size: 60,
-                    ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _currentStudent?.studentName ?? 'Complete Your Profile',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  if (_currentStudent?.studentAddress != null)
-                    Text(
-                      _currentStudent!.studentAddress,
-                      style: TextStyle(color: Colors.grey[600]),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                ],
-              ),
-            ),
-            const Icon(Icons.chevron_right),
-          ],
-        ),
-      ),
+    return StudentProfileHeader(
+      student: _currentStudent,
+      isLoading: _isLoadingProfile,
+      onProfileComplete: _navigateToProfileSetup,
+      onRefresh: _loadStudentData,
     );
   }
 
@@ -552,7 +441,7 @@ class _HomepageState extends State<StudentPage> {
       ),
       flexibleSpace: FlexibleSpaceBar(
         title: Text(
-          'Campus Canteen',
+          'Telkom Canteen',
           style: TextStyle(
             color: _isScrolled ? Colors.black : Colors.white,
             fontWeight: FontWeight.bold,
@@ -616,12 +505,11 @@ class _HomepageState extends State<StudentPage> {
   @override
   Widget build(BuildContext context) {
     return ScaffoldMessenger(
-      key:
-          _scaffoldMessengerKey, // Rename the existing scaffoldKey to scaffoldMessengerKey
+      key: _scaffoldMessengerKey,
       child: Scaffold(
-        key: _scaffoldKey, // Add this key to the Scaffold
+        key: _scaffoldKey,
         backgroundColor: Colors.grey[50],
-        drawer: const MyDrawer(), // Add this line to include the drawer
+        drawer: const MyDrawer(),
         body: RefreshIndicator(
           onRefresh: () async {
             await Future.wait([
@@ -634,6 +522,7 @@ class _HomepageState extends State<StudentPage> {
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
               _buildAppBar(),
+              SliverToBoxAdapter(child: _buildProfileSection()), // Add this line
               _buildSearchBar(),
               SliverToBoxAdapter(child: _buildCategories()),
               SliverToBoxAdapter(child: _buildBannerCarousel()),

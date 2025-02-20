@@ -120,8 +120,7 @@ class _ApplyDiscountScreenState extends State<ApplyDiscountScreen> {
     return menus
         .where((menu) =>
             menu.foodName.toLowerCase().contains(query.toLowerCase()) ||
-            (menu.description.toLowerCase().contains(query.toLowerCase()) ??
-                false))
+            (menu.description?.toLowerCase() ?? '').contains(query)) // Fix null check here
         .toList();
   }
 

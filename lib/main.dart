@@ -9,6 +9,7 @@ import 'package:kantin/Themes/theme_providers.dart';
 import 'package:kantin/Models/Restaurant.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:kantin/services/supabase_config.dart';
+import 'package:overlay_support/overlay_support.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -40,19 +41,28 @@ void main() async {
     return;
   }
 
-  runApp(
-    MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (context) => ThemeProviders()),
-        ChangeNotifierProvider(create: (context) => Restaurant()),
-        ChangeNotifierProvider(
-          create: (context) => RoleProvider(
-              initialRole: 'student'), // Set default role to 'student'
-        ),
-      ],
-      child: const MainApp(),
-    ),
-  );
+  runApp(const MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return OverlaySupport.global(
+      child: MultiProvider(
+        providers: [
+          ChangeNotifierProvider(create: (context) => ThemeProviders()),
+          ChangeNotifierProvider(create: (context) => Restaurant()),
+          ChangeNotifierProvider(
+            create: (context) => RoleProvider(
+                initialRole: 'student'), // Set default role to 'student'
+          ),
+        ],
+        child: const MainApp(),
+      ),
+    );
+  }
 }
 
 class MainApp extends StatelessWidget {

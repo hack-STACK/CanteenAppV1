@@ -6,7 +6,9 @@ import 'package:kantin/pages/StudentState/Setting_Page.dart';
 import 'package:kantin/pages/StudentState/OrderPage.dart'; // Add this import
 
 class MyDrawer extends StatelessWidget {
-  const MyDrawer({super.key});
+  final int studentId; // Add this field
+
+  const MyDrawer({super.key, required this.studentId}); // Update constructor
 
   void logout(BuildContext context) async {
     final authService = AuthService();
@@ -100,7 +102,9 @@ class MyDrawer extends StatelessWidget {
               Navigator.pop(context); // Close drawer
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => const OrderPage()),
+                MaterialPageRoute(
+                    builder: (context) =>
+                        OrderPage(studentId: studentId)), // Pass studentId
               );
             },
           ),

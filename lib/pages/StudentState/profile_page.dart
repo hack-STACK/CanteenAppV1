@@ -7,8 +7,8 @@ import 'package:kantin/utils/avatar_generator.dart';
 
 class StudentProfilePage extends StatefulWidget {
   final StudentModel student;
-  
-  const StudentProfilePage({Key? key, required this.student}) : super(key: key);
+
+  const StudentProfilePage({super.key, required this.student});
 
   @override
   State<StudentProfilePage> createState() => _StudentProfilePageState();
@@ -27,8 +27,10 @@ class _StudentProfilePageState extends State<StudentProfilePage> {
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.student.studentName);
-    _addressController = TextEditingController(text: widget.student.studentAddress);
-    _phoneController = TextEditingController(text: widget.student.studentPhoneNumber);
+    _addressController =
+        TextEditingController(text: widget.student.studentAddress);
+    _phoneController =
+        TextEditingController(text: widget.student.studentPhoneNumber);
   }
 
   @override
@@ -63,9 +65,11 @@ class _StudentProfilePageState extends State<StudentProfilePage> {
           ),
         );
 
-        final fileName = 'student_${widget.student.id}_${DateTime.now().millisecondsSinceEpoch}.jpg';
-        final imageUrl = await _studentService.uploadStudentImage(image.path, fileName);
-        
+        final fileName =
+            'student_${widget.student.id}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+        final imageUrl =
+            await _studentService.uploadStudentImage(image.path, fileName);
+
         if (imageUrl != null && mounted) {
           final updatedStudent = StudentModel(
             id: widget.student.id,
@@ -77,7 +81,7 @@ class _StudentProfilePageState extends State<StudentProfilePage> {
           );
 
           await _studentService.updateStudent(updatedStudent);
-          
+
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
@@ -128,7 +132,7 @@ class _StudentProfilePageState extends State<StudentProfilePage> {
       );
 
       await _studentService.updateStudent(updatedStudent);
-      
+
       if (mounted) {
         setState(() => _isEditing = false);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -178,8 +182,8 @@ class _StudentProfilePageState extends State<StudentProfilePage> {
           child: CircleAvatar(
             radius: 60,
             backgroundColor: Colors.grey[200],
-            child: widget.student.studentImage != null && 
-                   widget.student.studentImage!.isNotEmpty
+            child: widget.student.studentImage != null &&
+                    widget.student.studentImage!.isNotEmpty
                 ? ClipOval(
                     child: Image.network(
                       widget.student.studentImage!,
@@ -208,13 +212,13 @@ class _StudentProfilePageState extends State<StudentProfilePage> {
               radius: 20,
               backgroundColor: Theme.of(context).primaryColor,
               child: IconButton(
-                icon: const Icon(Icons.camera_alt, size: 20, color: Colors.white),
+                icon:
+                    const Icon(Icons.camera_alt, size: 20, color: Colors.white),
                 onPressed: _isLoading ? null : _pickImage,
               ),
             ),
           ),
-        if (_isLoading)
-          const CircularProgressIndicator(),
+        if (_isLoading) const CircularProgressIndicator(),
       ],
     );
   }

@@ -10,13 +10,13 @@ class CancelOrderDialog extends StatelessWidget {
   final bool isPaid;
 
   const CancelOrderDialog({
-    Key? key,
+    super.key,
     required this.transactionId,
     required this.transactionService,
     required this.onCancelled,
     this.orderAmount,
     this.isPaid = false,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

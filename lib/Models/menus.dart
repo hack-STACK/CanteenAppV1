@@ -91,21 +91,37 @@ class Menu {
     return map;
   }
 
-  // Add fromJson factory constructor
+  // Update fromJson factory constructor with better null handling
   factory Menu.fromJson(Map<String, dynamic> json) {
-    return Menu(
-      id: json['id'] as int?,
-      foodName: json['food_name'] as String,
-      price: (json['price'] as num).toDouble(),
-      type: json['type'] as String,
-      photo: json['photo'] as String?,
-      description: json['description'] as String?,
-      stallId: json['stall_id'] as int,
-      isAvailable: json['is_available'] as bool? ?? true,
-      category: json['category'] as String?,
-      rating: (json['rating'] as num?)?.toDouble() ?? defaultRating,
-      totalRatings: json['total_ratings'] as int? ?? defaultTotalRatings,
-    );
+    try {
+      final stallData = json['stall'] as Map<String, dynamic>?;
+      return Menu(
+        id: json['id'] as int?,
+        foodName: json['food_name'] as String? ?? 'Unknown Item',
+        price: (json['price'] as num?)?.toDouble() ?? 0.0,
+        type: (json['type'] as String?) ?? 'food',
+        photo: json['photo'] as String?,
+        description: json['description'] as String?,
+        stallId: stallData?['id'] as int? ?? 0,
+        isAvailable: json['is_available'] as bool? ?? true,
+        category: json['category'] as String?,
+        rating: (json['rating'] as num?)?.toDouble() ?? defaultRating,
+        totalRatings: json['total_ratings'] as int? ?? defaultTotalRatings,
+        addons: [], // Initialize empty addons list
+      );
+    } catch (e) {
+      print('Error creating Menu from JSON: $e');
+      print('JSON data: $json');
+      // Return a default menu item in case of error
+      return Menu(
+        id: 0,
+        foodName: 'Error Loading Item',
+        price: 0,
+        type: 'food',
+        stallId: 0,
+        isAvailable: false,
+      );
+    }
   }
 
   Menu copyWith({

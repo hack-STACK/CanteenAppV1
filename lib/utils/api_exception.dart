@@ -10,19 +10,18 @@ class ApiException implements Exception {
 }
 
 class ValidationException extends ApiException {
-  ValidationException(String message)
-      : super(message, code: 'VALIDATION_ERROR');
+  ValidationException(super.message) : super(code: 'VALIDATION_ERROR');
 }
 
 class DatabaseException extends ApiException {
-  DatabaseException(String message, {dynamic originalError})
-      : super(message, code: 'DATABASE_ERROR', details: originalError);
+  DatabaseException(super.message, {dynamic originalError})
+      : super(code: 'DATABASE_ERROR', details: originalError);
 }
 
 class TransactionError extends ApiException {
-  TransactionError(String message, {String? code}) : super(message, code: code);
+  TransactionError(super.message, {super.code});
 }
 
 class PaymentError extends ApiException {
-  PaymentError(String message, {String? code}) : super(message, code: code);
+  PaymentError(super.message, {super.code});
 }

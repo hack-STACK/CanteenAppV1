@@ -1,20 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_credit_card/flutter_credit_card.dart';
-import 'package:kantin/Component/my_button.dart';
 import 'package:kantin/pages/StudentState/StudentPage.dart';
-import 'package:kantin/pages/StudentState/delivery_page.dart';
+import 'package:kantin/utils/logger.dart';
 import 'package:provider/provider.dart';
 import 'package:kantin/Models/Restaurant.dart';
 import 'package:kantin/Services/Database/transaction_service.dart';
 import 'package:kantin/models/enums/transaction_enums.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:kantin/pages/StudentState/payment_selection_page.dart';
 import 'dart:async'; // Add this import for TimeoutException
 import 'package:kantin/utils/error_handler.dart';
 import 'package:kantin/widgets/loading_overlay.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 
 class PaymentPage extends StatefulWidget {
-  const PaymentPage({super.key});
+  final int StudentId; // Make this non-nullable
+
+  const PaymentPage({
+    super.key,
+    required this.StudentId, // Required parameter
+  });
 
   @override
   State<PaymentPage> createState() => _PaymentPageState();
@@ -22,20 +26,30 @@ class PaymentPage extends StatefulWidget {
 
 class _PaymentPageState extends State<PaymentPage>
     with SingleTickerProviderStateMixin {
-  GlobalKey<FormState> formKey = GlobalKey<FormState>();
+  // Initialize controllers and animation properly
+  late final AnimationController _controller;
+  late final Animation<double> _animation;
+  late final PageController _pageController;
+
+  // Initialize form-related variables
+  final GlobalKey<FormState> formKey = GlobalKey<FormState>();
   String cardNumber = '';
   String expiryDate = '';
   String cardHolderName = '';
   String cvvCode = '';
   bool isCvvFocused = false;
-  bool isLoading = false; // Loading state
-  late AnimationController _controller;
-  late Animation<double> _animation;
+
+  // Initialize state variables with default values
+  bool isLoading = false;
+  PaymentMethod _selectedPaymentMethod = PaymentMethod.e_wallet;
+  OrderType _selectedOrderType = OrderType.delivery;
+  String? _errorMessage;
+  bool _isLoadingStudentData = false;
+  Map<String, dynamic>? _studentData;
+  int _currentStep = 0;
 
   final TransactionService _transactionService = TransactionService();
-  PaymentMethod _selectedPaymentMethod = PaymentMethod.e_wallet;
-  bool _isProcessing = false;
-  String? _errorMessage;
+  final bool _isProcessing = false;
 
   // Add the missing controller
   final TextEditingController noteController = TextEditingController();
@@ -43,16 +57,8 @@ class _PaymentPageState extends State<PaymentPage>
   final _supabase = Supabase.instance.client;
 
   // Add new properties for UI state
-  bool _isLoadingStudentData = false;
-  Map<String, dynamic>? _studentData;
-  final _pageController = PageController();
-  int _currentStep = 0;
-
-  // Add this to track payment steps
-  bool _isPaymentConfirmed = false;
+  final bool _isPaymentConfirmed = false;
   bool _isPaymentProcessing = false;
-
-  OrderType _selectedOrderType = OrderType.delivery;
 
   // Update steps number and names
   final List<String> _steps = ['Order', 'Type', 'Payment', 'Confirm'];
@@ -66,49 +72,42 @@ class _PaymentPageState extends State<PaymentPage>
   final GlobalKey<ScaffoldMessengerState> _scaffoldKey =
       GlobalKey<ScaffoldMessengerState>();
 
+  // Add logger
+  final _logger = Logger();
+
+  // Add retry mechanism
+  int _retryAttempts = 0;
+  static const maxRetryAttempts = 3;
+
+  // Add transaction logging
+  String? _transactionLog;
+
   @override
   void initState() {
     super.initState();
+
+    _logger
+        .info('Initializing PaymentPage with StudentId: ${widget.StudentId}');
+
+    // Initialize controllers
     _controller = AnimationController(
       duration: const Duration(milliseconds: 300),
       vsync: this,
     );
+
     _animation = Tween<double>(begin: 1.0, end: 1.1).animate(_controller);
 
-    // Initialize payment method
-    _selectedPaymentMethod = PaymentMethod.e_wallet;
+    _pageController = PageController(initialPage: 0);
 
+    // Load initial data
     _loadStudentData();
-  }
-
-  Future<void> _loadStudentData() async {
-    setState(() => _isLoadingStudentData = true);
-
-    try {
-      // Use fixed student ID directly
-      final data = await _supabase
-          .from('students')
-          .select()
-          .eq('id', 1) // Replace with your actual student ID
-          .single();
-
-      setState(() {
-        _studentData = data;
-        _isLoadingStudentData = false;
-      });
-    } catch (e) {
-      print('Error loading student data: $e');
-      setState(() {
-        _isLoadingStudentData = false;
-        _errorMessage = e.toString();
-      });
-    }
   }
 
   @override
   void dispose() {
     noteController.dispose(); // Add this
     _controller.dispose();
+    _pageController.dispose();
     super.dispose();
   }
 
@@ -126,12 +125,6 @@ class _PaymentPageState extends State<PaymentPage>
     }
   }
 
-  // Simplified method - no need for authentication checks
-  Future<int> _getCurrentStudentId() async {
-    // Just return the fixed student ID since we're not using auth
-    return 1; // Replace with your actual student ID
-  }
-
   // Add method to get stall ID from cart
   int? _getStallId(Restaurant restaurant) {
     if (restaurant.cart.isEmpty) {
@@ -140,10 +133,6 @@ class _PaymentPageState extends State<PaymentPage>
     }
 
     final firstItem = restaurant.cart.first;
-    if (firstItem.menu.stallId == null) {
-      print('Debug: Stall ID is null for menu item');
-      return null;
-    }
 
     return firstItem.menu.stallId;
   }
@@ -160,17 +149,9 @@ class _PaymentPageState extends State<PaymentPage>
       _moveToNextStep();
     } else if (_currentStep == 1) {
       // Order type selection
-      if (_selectedOrderType == null) {
-        _showErrorSnackbar('Please select an order type');
-        return;
-      }
       _moveToNextStep();
     } else if (_currentStep == 2) {
       // Payment method selection
-      if (_selectedPaymentMethod == null) {
-        _showErrorSnackbar('Please select a payment method');
-        return;
-      }
       if (_selectedPaymentMethod == PaymentMethod.credit_card) {
         _moveToNextStep();
       } else {
@@ -263,7 +244,7 @@ class _PaymentPageState extends State<PaymentPage>
 
   bool _validateOrder(Restaurant restaurant) {
     if (restaurant.cart.isEmpty) {
-      _showError('Your cart is empty');
+      _showErrorSnackbar('Your cart is empty');
       return false;
     }
 
@@ -282,43 +263,89 @@ class _PaymentPageState extends State<PaymentPage>
       barrierDismissible: false,
       builder: (context) => WillPopScope(
         onWillPop: () async => false,
-        child: const LoadingOverlay(
+        child: LoadingOverlay(
           isLoading: true,
-          message: 'Processing your payment...\nPlease wait',
-          child: SizedBox.shrink(), // Add required child parameter
+          message: _transactionLog ?? 'Processing your payment...\nPlease wait',
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator().animate().fadeIn().scale(),
+              if (_transactionLog != null)
+                Text(_transactionLog!).animate().fadeIn().slideY(),
+            ],
+          ),
         ),
       ),
     );
   }
 
   void _handleError(dynamic error) {
-    String message = ErrorHandler.getErrorMessage(error);
-    _showError(message);
+    final message = ErrorHandler.getErrorMessage(error);
+    _logger.error('Payment Error', error);
 
-    // Log error for debugging
-    print('Payment Error: $error');
+    _showErrorDialog(
+      title: 'Payment Failed',
+      message: message,
+      error: error,
+      retryAction: error is! TimeoutException ? _retryPayment : null,
+    );
   }
 
-  void _showError(String message) {
-    if (!mounted) return;
+  Future<void> _retryPayment() async {
+    if (_retryAttempts >= maxRetryAttempts) {
+      _showError('Maximum retry attempts reached. Please try again later.');
+      return;
+    }
 
-    _scaffoldKey.currentState?.showSnackBar(
-      SnackBar(
-        content: Row(
+    _retryAttempts++;
+    await _processPayment();
+  }
+
+  void _showErrorDialog({
+    required String title,
+    required String message,
+    dynamic error,
+    VoidCallback? retryAction,
+  }) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Icon(Icons.error_outline, color: Colors.white),
-            const SizedBox(width: 8),
-            Expanded(child: Text(message)),
+            const Icon(Icons.error_outline, color: Colors.red, size: 48)
+                .animate()
+                .shake(),
+            const SizedBox(height: 16),
+            Text(message),
+            if (error != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Error details: ${error.toString()}',
+                style: TextStyle(
+                  color: Colors.grey[600],
+                  fontSize: 12,
+                ),
+              ),
+            ],
           ],
         ),
-        backgroundColor: Colors.red,
-        duration: const Duration(seconds: 4),
-        behavior: SnackBarBehavior.floating,
-        action: SnackBarAction(
-          label: 'Dismiss',
-          textColor: Colors.white,
-          onPressed: () => _scaffoldKey.currentState?.hideCurrentSnackBar(),
-        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+          if (retryAction != null)
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
+                retryAction();
+              },
+              child: const Text('Retry'),
+            ),
+        ],
       ),
     );
   }
@@ -326,37 +353,120 @@ class _PaymentPageState extends State<PaymentPage>
   // Improved transaction submission
   Future<bool> _submitTransaction(Restaurant restaurant) async {
     try {
+      _logger.info('Starting transaction submission');
+      setState(() => _transactionLog = 'Initializing transaction...');
+
+      if (!_validateTransaction(restaurant)) {
+        throw Exception('Transaction validation failed');
+      }
+
       final stallId = _getStallId(restaurant);
-      if (stallId == null) throw Exception('Invalid stall ID');
+      if (stallId == null) {
+        _logger.error('Invalid stall ID');
+        throw Exception('Invalid stall configuration');
+      }
 
-      final studentId = await _getCurrentStudentId();
+      _logger.debug(
+          'Processing transaction for student: ${widget.StudentId}, stall: $stallId');
 
-      final transactionId = await _transactionService.createTransaction(
-        studentId: studentId,
-        stallId: stallId,
-        totalAmount: restaurant.calculateSubtotal(),
-        orderType: _selectedOrderType,
-        deliveryAddress: _selectedOrderType == OrderType.delivery
-            ? restaurant.deliveryAddress
-            : null,
-        notes: noteController.text,
-        items: restaurant.cart,
-      );
+      // Create transaction with retry mechanism
+      int attempts = 0;
+      late int transactionId;
 
-      // Update transaction payment (fix type by converting to String)
+      while (attempts < maxRetryAttempts) {
+        try {
+          setState(() => _transactionLog =
+              'Creating transaction (Attempt ${attempts + 1})...');
+
+          transactionId = await _transactionService.createTransaction(
+            studentId: widget.StudentId, // Use widget.StudentId directly
+            stallId: stallId,
+            totalAmount: restaurant.calculateSubtotal(),
+            orderType: _selectedOrderType,
+            deliveryAddress: _selectedOrderType == OrderType.delivery
+                ? restaurant.deliveryAddress
+                : null,
+            notes: noteController.text,
+            items: _mapCartItems(restaurant.cart),
+          );
+
+          _logger.info('Transaction created successfully: $transactionId');
+          break;
+        } catch (e) {
+          attempts++;
+          if (attempts >= maxRetryAttempts) rethrow;
+          _logger.warn('Retry attempt $attempts: ${e.toString()}');
+          await Future.delayed(Duration(seconds: attempts));
+        }
+      }
+
+      // Update payment status
+      setState(() => _transactionLog = 'Processing payment...');
       await _transactionService.updateTransactionPayment(
         transactionId,
         paymentStatus: PaymentStatus.paid,
         paymentMethod: _selectedPaymentMethod,
       );
 
-      _transactionId =
-          transactionId.toString(); // Convert to String when storing
+      _logger.info('Payment processed successfully');
+      _transactionId = transactionId.toString();
 
       return true;
-    } catch (e) {
-      throw Exception('Failed to process payment: ${e.toString()}');
+    } catch (e, stackTrace) {
+      _logger.error('Transaction failed', e, stackTrace);
+      throw _handleTransactionError(e);
     }
+  }
+
+  Exception _handleTransactionError(dynamic error) {
+    if (error is PostgrestException) {
+      switch (error.code) {
+        case 'PGRST204':
+          return Exception('Database schema mismatch. Please contact support.');
+        case 'PGRST116':
+          return Exception('Invalid data format. Please check your input.');
+        default:
+          return Exception('Database error: ${error.message}');
+      }
+    }
+    if (error is TimeoutException) {
+      return Exception(
+          'Connection timed out. Please check your internet connection.');
+    }
+    return Exception('Payment processing failed: ${error.toString()}');
+  }
+
+  bool _validateTransaction(Restaurant restaurant) {
+    if (restaurant.cart.isEmpty) {
+      throw Exception('Cart is empty');
+    }
+
+    if (_selectedOrderType == OrderType.delivery &&
+        restaurant.deliveryAddress.trim().isEmpty) {
+      throw Exception('Delivery address is required');
+    }
+
+    for (var item in restaurant.cart) {
+      if (item.quantity <= 0) {
+        throw Exception('Invalid quantity for ${item.menu.foodName}');
+      }
+      if (item.menu.price <= 0) {
+        throw Exception('Invalid price for ${item.menu.foodName}');
+      }
+    }
+
+    return true;
+  }
+
+  List<CartItem> _mapCartItems(List<CartItem> cart) {
+    return cart
+        .map((item) => CartItem(
+              menu: item.menu,
+              quantity: item.quantity,
+              selectedAddons: item.selectedAddons,
+              note: item.note,
+            ))
+        .toList();
   }
 
   // Add navigation methods
@@ -375,6 +485,24 @@ class _PaymentPageState extends State<PaymentPage>
   }
 
   // Add this method for showing errors
+  void _showError(String message) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.error_outline, color: Colors.white),
+            const SizedBox(width: 8),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        backgroundColor: Colors.red,
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
   void _showErrorSnackbar(String message) {
     if (!mounted) return;
 
@@ -471,8 +599,10 @@ class _PaymentPageState extends State<PaymentPage>
     return result ?? false;
   }
 
+  // Ensure proper null checks in build method
   @override
   Widget build(BuildContext context) {
+    // Add null check for context
     if (_isPaymentProcessing) {
       return _buildProcessingScreen();
     }
@@ -484,32 +614,35 @@ class _PaymentPageState extends State<PaymentPage>
           title: const Text('Checkout'),
           elevation: 0,
         ),
-        body: _isProcessing
-            ? _buildProcessingState()
-            : Column(
-                children: [
-                  _buildStepIndicator(),
-                  Expanded(
-                    child: PageView(
-                      controller: _pageController,
-                      physics: const NeverScrollableScrollPhysics(),
-                      onPageChanged: (index) {
-                        // Keep step indicator in sync with page changes
-                        setState(() => _currentStep = index);
-                      },
-                      children: [
-                        _buildOrderSummaryPage(),
-                        _buildOrderTypePage(),
-                        _buildPaymentMethodPage(),
-                        if (_selectedPaymentMethod == PaymentMethod.credit_card)
-                          _buildPaymentDetailsPage(),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+        body: _isLoadingStudentData
+            ? const Center(child: CircularProgressIndicator())
+            : _buildBody(),
         bottomNavigationBar: _buildBottomBar(),
       ),
+    );
+  }
+
+  Widget _buildBody() {
+    return Column(
+      children: [
+        _buildStepIndicator(),
+        Expanded(
+          child: PageView(
+            controller: _pageController,
+            physics: const NeverScrollableScrollPhysics(),
+            onPageChanged: (index) {
+              setState(() => _currentStep = index);
+            },
+            children: [
+              _buildOrderSummaryPage(),
+              _buildOrderTypePage(),
+              _buildPaymentMethodPage(),
+              if (_selectedPaymentMethod == PaymentMethod.credit_card)
+                _buildPaymentDetailsPage(),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -1009,9 +1142,10 @@ class _PaymentPageState extends State<PaymentPage>
     );
   }
 
+  // Add null safety to price calculations
   Widget _buildPriceSummary(Restaurant restaurant) {
     final subtotal = restaurant.calculateSubtotal();
-    final deliveryFee = 2000.0; // Example delivery fee
+    final deliveryFee = _selectedOrderType == OrderType.delivery ? 2000.0 : 0.0;
     final total = subtotal + deliveryFee;
 
     return Card(
@@ -1020,7 +1154,8 @@ class _PaymentPageState extends State<PaymentPage>
         child: Column(
           children: [
             _buildPriceRow('Subtotal', subtotal),
-            _buildPriceRow('Delivery Fee', deliveryFee),
+            if (_selectedOrderType == OrderType.delivery)
+              _buildPriceRow('Delivery Fee', deliveryFee),
             const Divider(height: 16),
             _buildPriceRow('Total', total, isTotal: true),
           ],
@@ -1133,5 +1268,34 @@ class _PaymentPageState extends State<PaymentPage>
         ),
       ),
     );
+  }
+
+  // Ensure safe state updates
+  Future<void> _loadStudentData() async {
+    if (!mounted) return;
+
+    setState(() => _isLoadingStudentData = true);
+
+    try {
+      final data = await _supabase
+          .from('students')
+          .select('*, user:id_user (*)')
+          .eq('id', widget.StudentId)
+          .single();
+
+      if (!mounted) return;
+
+      setState(() {
+        _studentData = data;
+        _isLoadingStudentData = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _errorMessage = 'Failed to load student data: ${e.toString()}';
+        _isLoadingStudentData = false;
+      });
+    }
   }
 }

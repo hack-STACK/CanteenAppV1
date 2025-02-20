@@ -1,17 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:timeline_tile/timeline_tile.dart';
-import 'package:kantin/models/enums/transaction_enums.dart';
 
 class OrderProgressDialog extends StatelessWidget {
   final Map<String, dynamic> order;
   final List<Map<String, dynamic>> progressHistory;
 
   const OrderProgressDialog({
-    Key? key,
+    super.key,
     required this.order,
     required this.progressHistory,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -33,7 +32,8 @@ class OrderProgressDialog extends StatelessWidget {
                     return TimelineTile(
                       alignment: TimelineAlign.start,
                       isFirst: progressHistory.indexOf(progress) == 0,
-                      isLast: progressHistory.indexOf(progress) == progressHistory.length - 1,
+                      isLast: progressHistory.indexOf(progress) ==
+                          progressHistory.length - 1,
                       indicatorStyle: IndicatorStyle(
                         width: 20,
                         color: Theme.of(context).primaryColor,
@@ -53,8 +53,8 @@ class OrderProgressDialog extends StatelessWidget {
                               ),
                             ),
                             Text(
-                              DateFormat('MMM d, y h:mm a')
-                                  .format(DateTime.parse(progress['timestamp'])),
+                              DateFormat('MMM d, y h:mm a').format(
+                                  DateTime.parse(progress['timestamp'])),
                               style: Theme.of(context).textTheme.bodySmall,
                             ),
                             if (progress['notes'] != null)

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:kantin/Models/Stan_model.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:kantin/utils/avatar_generator.dart';
 
 class AnimatedStallTile extends StatefulWidget {

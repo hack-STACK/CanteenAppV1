@@ -1,14 +1,16 @@
+import 'package:kantin/utils/logger.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-enum RefundStatus {
-  pending,
-  approved,
-  rejected,
-  processed
-}
+enum RefundStatus { pending, approved, rejected, processed }
 
 class RefundService {
   final _supabase = Supabase.instance.client;
+  final _logger = Logger();
+
+  // Timeout constants
+  static const pendingTimeout = Duration(minutes: 5);
+  static const confirmedTimeout = Duration(minutes: 15);
+  static const cookingTimeout = Duration(minutes: 30);
 
   Future<void> createRefundRequest({
     required int transactionId,
@@ -20,7 +22,9 @@ class RefundService {
       await _supabase.from('refund_logs').insert({
         'transaction_id': transactionId,
         'reason': reason,
-        'status': status ?? RefundStatus.pending.name, // Use provided status or default to pending
+        'status': status ??
+            RefundStatus
+                .pending.name, // Use provided status or default to pending
         'notes': notes,
         'created_at': DateTime.now().toIso8601String(),
       });
@@ -44,14 +48,15 @@ class RefundService {
     }
   }
 
-  Future<List<Map<String, dynamic>>> getRefundsByTransactionId(int transactionId) async {
+  Future<List<Map<String, dynamic>>> getRefundsByTransactionId(
+      int transactionId) async {
     try {
       final response = await _supabase
           .from('refund_logs')
           .select()
           .eq('transaction_id', transactionId)
           .order('created_at', ascending: false);
-      
+
       return List<Map<String, dynamic>>.from(response);
     } catch (e) {
       throw Exception('Failed to get refund history: $e');
@@ -65,28 +70,30 @@ class RefundService {
           .select()
           .eq('id', refundId)
           .single();
-      
+
       return response;
     } catch (e) {
       throw Exception('Failed to get refund details: $e');
     }
   }
 
-  Future<List<Map<String, dynamic>>> getRefundsByStatus(RefundStatus status) async {
+  Future<List<Map<String, dynamic>>> getRefundsByStatus(
+      RefundStatus status) async {
     try {
       final response = await _supabase
           .from('refund_logs')
           .select()
           .eq('status', status.name)
           .order('created_at', ascending: false);
-      
+
       return List<Map<String, dynamic>>.from(response);
     } catch (e) {
       throw Exception('Failed to get refunds by status: $e');
     }
   }
 
-  Stream<List<Map<String, dynamic>>> streamRefundsByStatus(RefundStatus status) {
+  Stream<List<Map<String, dynamic>>> streamRefundsByStatus(
+      RefundStatus status) {
     return _supabase
         .from('refund_logs')
         .stream(primaryKey: ['id'])
@@ -105,13 +112,7 @@ class RefundService {
 
   Future<Map<String, int>> getRefundStatistics() async {
     try {
-      final response = await _supabase
-          .from('refund_logs')
-          .select('status');  // Remove throwOnError
-
-      if (response == null) {
-        throw Exception('Failed to fetch refund statistics');
-      }
+      final response = await _supabase.from('refund_logs').select('status');
 
       final stats = {
         'pending': 0,
@@ -128,6 +129,94 @@ class RefundService {
       return stats;
     } catch (e) {
       throw Exception('Failed to get refund statistics: $e');
+    }
+  }
+
+  Future<void> checkAndProcessAutomaticRefunds() async {
+    try {
+      final now = DateTime.now();
+
+      // Get eligible transactions
+      final response = await _supabase
+          .from('transactions')
+          .select()
+          .eq('refund_eligible', true)
+          .not('status', 'in', ['completed', 'cancelled']);
+
+      final transactions = List<Map<String, dynamic>>.from(response);
+
+      for (final transaction in transactions) {
+        final lastStatusChange =
+            DateTime.parse(transaction['last_status_change']);
+        final status = transaction['status'];
+
+        final timeout = _getTimeoutForStatus(status);
+        final timeElapsed = now.difference(lastStatusChange);
+
+        if (timeElapsed > timeout) {
+          await _processAutomaticRefund(transaction);
+        }
+      }
+    } catch (e, stack) {
+      _logger.error('Error processing automatic refunds', e, stack);
+    }
+  }
+
+  Duration _getTimeoutForStatus(String status) {
+    switch (status.toLowerCase()) {
+      case 'pending':
+        return pendingTimeout;
+      case 'confirmed':
+        return confirmedTimeout;
+      case 'cooking':
+        return cookingTimeout;
+      default:
+        return pendingTimeout;
+    }
+  }
+
+  Future<void> _processAutomaticRefund(Map<String, dynamic> transaction) async {
+    try {
+      await _supabase.rpc('begin_transaction');
+
+      // Create refund record
+      final refundResponse = await _supabase
+          .from('refunds')
+          .insert({
+            'transaction_id': transaction['id'],
+            'amount': transaction['total_amount'],
+            'reason': 'Automatic refund due to timeout',
+            'status': 'approved',
+            'notes':
+                'System generated refund after ${_getTimeoutForStatus(transaction['status']).inMinutes} minutes',
+          })
+          .select()
+          .single();
+
+      // Update transaction status
+      await _supabase.from('transactions').update({
+        'status': 'cancelled',
+        'refund_eligible': false,
+        'cancellation_reason': 'Automatic timeout cancellation',
+        'cancelled_at': DateTime.now().toIso8601String(),
+      }).eq('id', transaction['id']);
+
+      // Add to transaction progress
+      await _supabase.from('transaction_progress').insert({
+        'transaction_id': transaction['id'],
+        'status': 'cancelled',
+        'notes': 'Automatic cancellation due to timeout',
+        'timestamp': DateTime.now().toIso8601String(),
+      });
+
+      await _supabase.rpc('commit_transaction');
+
+      _logger.info(
+          'Automatic refund processed for transaction ${transaction['id']}');
+    } catch (e, stack) {
+      await _supabase.rpc('rollback_transaction');
+      _logger.error('Failed to process automatic refund', e, stack);
+      throw Exception('Failed to process automatic refund: $e');
     }
   }
 }

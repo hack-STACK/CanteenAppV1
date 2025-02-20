@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:kantin/Component/my_Quantitty_Selector.dart';
 import 'package:kantin/Models/Restaurant.dart' as restaurant_model;
-import 'package:kantin/Models/cartItem.dart';
 import 'package:provider/provider.dart';
 
 class MyCartTile extends StatelessWidget {
@@ -79,7 +78,8 @@ class MyCartTile extends StatelessWidget {
                       restaurant.removeFromCart(cartItem);
                     },
                     onAdd: () {
-                      restaurant.addToCart(cartItem.menu, addons: cartItem.selectedAddons);
+                      restaurant.addToCart(cartItem.menu,
+                          addons: cartItem.selectedAddons);
                     },
                   ),
                 ],
@@ -87,7 +87,8 @@ class MyCartTile extends StatelessWidget {
             ),
             if (cartItem.selectedAddons.isNotEmpty)
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 child: SizedBox(
                   height: 50,
                   child: ListView(
@@ -109,8 +110,12 @@ class MyCartTile extends StatelessWidget {
                             ),
                           ),
                           onSelected: (bool selected) {},
-                          backgroundColor: Theme.of(context).colorScheme.secondary,
-                          selectedColor: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+                          backgroundColor:
+                              Theme.of(context).colorScheme.secondary,
+                          selectedColor: Theme.of(context)
+                              .colorScheme
+                              .primary
+                              .withOpacity(0.2),
                           labelStyle: TextStyle(
                             color: Theme.of(context).colorScheme.onSecondary,
                             fontSize: 12,

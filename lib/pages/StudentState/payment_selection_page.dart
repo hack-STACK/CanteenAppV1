@@ -6,10 +6,10 @@ class PaymentSelectionPage extends StatefulWidget {
   final Function(PaymentMethod) onPaymentSelected;
 
   const PaymentSelectionPage({
-    Key? key,
+    super.key,
     required this.amount,
     required this.onPaymentSelected,
-  }) : super(key: key);
+  });
 
   @override
   State<PaymentSelectionPage> createState() => _PaymentSelectionPageState();

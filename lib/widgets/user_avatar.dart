@@ -1,86 +1,41 @@
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:kantin/Services/Database/studentService.dart';
+import 'package:kantin/Services/Database/student_service.dart';
 import 'package:kantin/Models/student_models.dart';
 
 class UserAvatar extends StatelessWidget {
   final int studentId;
   final double size;
+  final bool showBorder; // Add this
+  final _studentService = StudentService();
 
-  const UserAvatar({
-    Key? key,
+  UserAvatar({
+    super.key,
     required this.studentId,
     this.size = 40,
-  }) : super(key: key);
+    this.showBorder = false, // Add this
+  });
 
   @override
   Widget build(BuildContext context) {
-    final studentService = StudentService();
-
     return FutureBuilder<StudentModel?>(
-      future: studentService.getStudentById(studentId),
+      future: _studentService.getStudentById(studentId),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return _buildSkeleton();
+          return _buildPlaceholder();
         }
 
-        final student = snapshot.data;
-        if (student == null) {
-          return _buildDefaultAvatar();
+        if (snapshot.hasError || snapshot.data == null) {
+          return _buildErrorAvatar();
         }
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (student.studentImage != null)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(size / 2),
-                child: CachedNetworkImage(
-                  imageUrl: student.studentImage!,
-                  width: size,
-                  height: size,
-                  fit: BoxFit.cover,
-                  placeholder: (context, url) => _buildSkeleton(),
-                  errorWidget: (context, url, error) => _buildDefaultAvatar(),
-                ),
-              )
-            else
-              _buildDefaultAvatar(),
-            if (size > 30) ...[
-              const SizedBox(height: 4),
-              Text(
-                student.studentName,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w500,
-                  fontSize: 12,
-                ),
-              ),
-              Text(
-                student.studentPhoneNumber,
-                style: TextStyle(
-                  color: Colors.grey[600],
-                  fontSize: 11,
-                ),
-              ),
-            ],
-          ],
-        );
+        final student = snapshot.data!;
+        return _buildAvatar(student);
       },
     );
   }
 
-  Widget _buildSkeleton() {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: Colors.grey[300],
-        shape: BoxShape.circle,
-      ),
-    );
-  }
-
-  Widget _buildDefaultAvatar() {
+  Widget _buildPlaceholder() {
     return Container(
       width: size,
       height: size,
@@ -88,11 +43,98 @@ class UserAvatar extends StatelessWidget {
         color: Colors.grey[200],
         shape: BoxShape.circle,
       ),
-      child: Icon(
-        Icons.person,
-        size: size * 0.6,
-        color: Colors.grey[400],
+      child: Center(
+        child: SizedBox(
+          width: size * 0.5,
+          height: size * 0.5,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: Colors.grey[400],
+          ),
+        ),
       ),
     );
   }
+
+  Widget _buildErrorAvatar() {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: Colors.grey[300],
+        shape: BoxShape.circle,
+      ),
+      child: Icon(
+        Icons.error_outline,
+        size: size * 0.5,
+        color: Colors.grey[600],
+      ),
+    );
+  }
+
+  Widget _buildAvatar(StudentModel student) {
+    final String initials = _getInitials(student.studentName);
+    final avatar = student.studentImage != null
+        ? CircleAvatar(
+            radius: size / 2,
+            backgroundImage: NetworkImage(student.studentImage!),
+            backgroundColor: Colors.grey[200],
+            onBackgroundImageError: (_, __) => _buildInitialsAvatar(initials),
+          )
+        : _buildInitialsAvatar(initials);
+
+    if (!showBorder) return avatar;
+
+    return Container(
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: Colors.white,
+          width: 2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withAlpha(50),
+            blurRadius: 4,
+          ),
+        ],
+      ),
+      child: avatar,
+    );
+  }
+
+  Widget _buildInitialsAvatar(String initials) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.blue[400]!, Colors.blue[600]!],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        shape: BoxShape.circle,
+      ),
+      child: Center(
+        child: Text(
+          initials,
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: size * 0.4,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _getInitials(String name) {
+    final names = name.split(' ');
+    if (names.length >= 2) {
+      return '${names[0][0]}${names[1][0]}'.toUpperCase();
+    }
+    return name.substring(0, min(2, name.length)).toUpperCase();
+  }
+
+  int min(int a, int b) => a < b ? a : b;
 }

@@ -2,14 +2,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:kantin/Models/transaction_model.dart';
 import 'package:kantin/Services/Database/transaction_service.dart';
-import 'package:kantin/Services/transaction_service.dart';
 import 'package:kantin/models/enums/transaction_enums.dart';
 
 class OrderManagementPage extends StatefulWidget {
   final int stallId;
 
-  const OrderManagementPage({Key? key, required this.stallId})
-      : super(key: key);
+  const OrderManagementPage({super.key, required this.stallId});
 
   @override
   State<OrderManagementPage> createState() => _OrderManagementPageState();
@@ -103,10 +101,10 @@ class OrderManagementCard extends StatelessWidget {
       onStatusUpdate; // Change parameter type here
 
   const OrderManagementCard({
-    Key? key,
+    super.key,
     required this.order,
     required this.onStatusUpdate,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

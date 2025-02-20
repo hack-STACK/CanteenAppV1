@@ -2,10 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:kantin/Services/rating_service.dart';
 import 'package:intl/intl.dart';
-import 'package:kantin/widgets/rating_indicator.dart';
 
 class ReviewHistoryTab extends StatefulWidget {
-  const ReviewHistoryTab({Key? key}) : super(key: key);
+  const ReviewHistoryTab({super.key});
 
   @override
   State<ReviewHistoryTab> createState() => _ReviewHistoryTabState();
@@ -128,7 +127,8 @@ class _ReviewHistoryTabState extends State<ReviewHistoryTab> {
                   ),
                   onRatingUpdate: (_) {},
                 ),
-                if (review['comment'] != null && review['comment'].isNotEmpty) ...[
+                if (review['comment'] != null &&
+                    review['comment'].isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Text(
                     review['comment'],

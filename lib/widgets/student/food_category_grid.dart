@@ -5,10 +5,10 @@ class FoodCategoryGrid extends StatelessWidget {
   final String selectedCategory;
 
   const FoodCategoryGrid({
-    Key? key,
+    super.key,
     required this.onCategorySelected,
     required this.selectedCategory,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

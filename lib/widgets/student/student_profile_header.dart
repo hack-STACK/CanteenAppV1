@@ -10,12 +10,12 @@ class StudentProfileHeader extends StatelessWidget {
   final VoidCallback onRefresh;
 
   const StudentProfileHeader({
-    Key? key,
+    super.key,
     required this.student,
     required this.isLoading,
     required this.onProfileComplete,
     required this.onRefresh,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -197,7 +197,7 @@ class StudentProfileHeader extends StatelessWidget {
 class ShimmerCircle extends StatelessWidget {
   final double size;
 
-  const ShimmerCircle({Key? key, required this.size}) : super(key: key);
+  const ShimmerCircle({super.key, required this.size});
 
   @override
   Widget build(BuildContext context) {
@@ -216,8 +216,7 @@ class ShimmerLine extends StatelessWidget {
   final double width;
   final double height;
 
-  const ShimmerLine({Key? key, required this.width, required this.height})
-      : super(key: key);
+  const ShimmerLine({super.key, required this.width, required this.height});
 
   @override
   Widget build(BuildContext context) {

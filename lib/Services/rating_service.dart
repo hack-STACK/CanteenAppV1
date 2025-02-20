@@ -15,21 +15,19 @@ class RatingService {
         throw Exception('Rating must be between 1 and 5');
       }
 
-      await _supabase
-          .from('menu_ratings')
-          .upsert({
-            'menu_id': menuId,
-            'user_id': userId,
-            'rating': rating,
-            'comment': comment.isEmpty ? null : comment,
-            'created_at': DateTime.now().toIso8601String(),
-          }, 
-          onConflict: 'menu_id,user_id'); // Fixed: Pass as parameter to upsert
-          
+      await _supabase.from('menu_ratings').upsert({
+        'menu_id': menuId,
+        'user_id': userId,
+        'rating': rating,
+        'comment': comment.isEmpty ? null : comment,
+        'created_at': DateTime.now().toIso8601String(),
+      }, onConflict: 'menu_id,user_id'); // Fixed: Pass as parameter to upsert
     } on PostgrestException catch (e) {
-      if (e.code == '23503') { // Foreign key violation
+      if (e.code == '23503') {
+        // Foreign key violation
         throw Exception('Menu not found');
-      } else if (e.code == '23514') { // Check constraint violation
+      } else if (e.code == '23514') {
+        // Check constraint violation
         throw Exception('Invalid rating value');
       }
       throw Exception('Failed to submit rating: ${e.message}');
@@ -59,12 +57,10 @@ class RatingService {
 
   Future<Map<String, dynamic>> getMenuRatingSummary(int menuId) async {
     try {
-      final response = await _supabase.rpc(
-        'get_menu_rating_summary',
-        params: {'menu_id_param': menuId}
-      ).select();
+      final response = await _supabase.rpc('get_menu_rating_summary',
+          params: {'menu_id_param': menuId}).select();
 
-      if (response == null || response.isEmpty) {
+      if (response.isEmpty) {
         return {
           'average': 0.0,
           'count': 0,
@@ -90,9 +86,7 @@ class RatingService {
       final userId = _authService.currentUserId;
       if (userId == null) throw Exception('User not authenticated');
 
-      final response = await _supabase
-          .from('menu_ratings')
-          .select('''
+      final response = await _supabase.from('menu_ratings').select('''
             id,
             menu_id,
             rating,
@@ -102,9 +96,7 @@ class RatingService {
               id,
               food_name
             )
-          ''')
-          .eq('user_id', userId)
-          .order('created_at', ascending: false);
+          ''').eq('user_id', userId).order('created_at', ascending: false);
 
       return (response as List).map((item) {
         final menu = item['menu'] as Map<String, dynamic>;
@@ -114,7 +106,8 @@ class RatingService {
           'rating': (item['rating'] as num).toDouble(),
           'comment': item['comment'],
           'created_at': item['created_at'],
-          'menu_name': menu['food_name'], // Changed to match your menu table column name
+          'menu_name':
+              menu['food_name'], // Changed to match your menu table column name
         };
       }).toList();
     } catch (e) {
@@ -129,10 +122,8 @@ class RatingService {
       final userId = _authService.currentUserId;
       if (userId == null) throw Exception('User not authenticated');
 
-      await _supabase
-          .from('menu_ratings')
-          .delete()
-          .match({'id': ratingId, 'user_id': userId}); // Ensure user owns the rating
+      await _supabase.from('menu_ratings').delete().match(
+          {'id': ratingId, 'user_id': userId}); // Ensure user owns the rating
     } catch (e) {
       throw Exception('Failed to delete rating: $e');
     }

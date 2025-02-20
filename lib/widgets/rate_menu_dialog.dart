@@ -7,10 +7,10 @@ class RateMenuDialog extends StatefulWidget {
   final int menuId;
 
   const RateMenuDialog({
-    Key? key,
+    super.key,
     required this.menuName,
     required this.menuId,
-  }) : super(key: key);
+  });
 
   @override
   State<RateMenuDialog> createState() => _RateMenuDialogState();
@@ -78,7 +78,8 @@ class _RateMenuDialogState extends State<RateMenuDialog> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               decoration: BoxDecoration(
                 color: Theme.of(context).primaryColor.withOpacity(0.1),
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(16)),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -100,7 +101,8 @@ class _RateMenuDialogState extends State<RateMenuDialog> {
             ),
             // Content
             Expanded(
-              child: SingleChildScrollView( // Wrap content in SingleChildScrollView
+              child: SingleChildScrollView(
+                // Wrap content in SingleChildScrollView
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
                   child: Column(
@@ -108,13 +110,14 @@ class _RateMenuDialogState extends State<RateMenuDialog> {
                     children: [
                       // Menu name
                       Container(
-                        height: 40, 
+                        height: 40,
                         alignment: Alignment.center,
                         child: Text(
                           widget.menuName,
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w500,
-                              ),
+                          style:
+                              Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.w500,
+                                  ),
                           textAlign: TextAlign.center,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -139,7 +142,8 @@ class _RateMenuDialogState extends State<RateMenuDialog> {
                               allowHalfRating: false,
                               itemCount: 5,
                               itemSize: 40,
-                              itemPadding: const EdgeInsets.symmetric(horizontal: 4),
+                              itemPadding:
+                                  const EdgeInsets.symmetric(horizontal: 4),
                               itemBuilder: (context, _) => Icon(
                                 Icons.star_rounded,
                                 color: Colors.amber.shade600,
@@ -176,7 +180,8 @@ class _RateMenuDialogState extends State<RateMenuDialog> {
                                         ),
                                       ),
                                       selected: _selectedQuickReview == review,
-                                      selectedColor: Theme.of(context).primaryColor,
+                                      selectedColor:
+                                          Theme.of(context).primaryColor,
                                       backgroundColor: Colors.grey.shade100,
                                       padding: const EdgeInsets.symmetric(
                                         horizontal: 12,
@@ -206,7 +211,8 @@ class _RateMenuDialogState extends State<RateMenuDialog> {
                           child: TextField(
                             controller: _commentController,
                             decoration: InputDecoration(
-                              hintText: 'Add more details to your review (optional)',
+                              hintText:
+                                  'Add more details to your review (optional)',
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                               ),

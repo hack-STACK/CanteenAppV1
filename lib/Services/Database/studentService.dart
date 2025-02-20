@@ -42,14 +42,25 @@ class StudentService {
 
   Future<StudentModel?> getStudentById(int id) async {
     try {
-      final response =
-          await _supabaseClient.from('students').select().eq('id', id).single();
+      print('Debug: Fetching student with ID: $id');
 
-      return StudentModel.fromMap(response);
+      final response = await _supabaseClient
+          .from('students')
+          .select()
+          .eq('id', id) // Use 'id' not 'id_user'
+          .single();
+
+      print('Debug: Student response - $response');
+
+      final student = StudentModel.fromMap(response);
+      print(
+          'Debug: Mapped student - ID: ${student.id}, Name: ${student.studentName}');
+
+      return student;
     } catch (e) {
       print('Error getting student by ID: $e');
       if (e is PostgrestException && e.code == 'PGRST116') {
-        return null; // Return null if no student found
+        return null;
       }
       throw Exception('Failed to fetch student: $e');
     }
@@ -74,17 +85,13 @@ class StudentService {
   Future<List<StudentModel>> getStudentsByUserId(int userId) async {
     try {
       print('Debug: Fetching students for user ID - $userId');
-      
+
       final response = await _supabaseClient
           .from('students')
           .select()
-          .eq('id_user', userId);
+          .eq('id_user', userId); // This is correct for querying by user ID
 
       print('Debug: Raw response from students table - $response');
-
-      if (response == null) {
-        return [];
-      }
 
       return (response as List)
           .map((studentMap) => StudentModel.fromMap(studentMap))
@@ -97,7 +104,6 @@ class StudentService {
 
   Future<StudentModel> updateStudent(StudentModel updatedStudent) async {
     try {
-      // Validate required fields
       if (updatedStudent.studentName.isEmpty ||
           updatedStudent.studentAddress.isEmpty ||
           updatedStudent.studentPhoneNumber.isEmpty) {
@@ -107,7 +113,7 @@ class StudentService {
       final response = await _supabaseClient
           .from('students')
           .update(updatedStudent.toMap())
-          .eq('id', updatedStudent.userId) // Corrected getter
+          .eq('id', updatedStudent.id) // Use 'id' instead of 'userId'
           .select()
           .single();
 
@@ -148,43 +154,24 @@ class StudentService {
     }
   }
 
-  Future<String?> uploadStudentImageOld(String filePath, String fileName) async {
-    try {
-      final response = await _supabaseClient.storage
-          .from('student-images')
-          .upload(fileName, File(filePath));
-
-      if (response != null) {
-        throw Exception('Failed to upload student image: ${response}');
-      }
-
-      // Get the public URL of the uploaded image
-      final imageUrl =
-          _supabaseClient.storage.from('student-images').getPublicUrl(fileName);
-
-      return imageUrl;
-    } catch (e) {
-      print('Error uploading student image: $e');
-      throw Exception('Failed to upload student image: $e');
-    }
-  }
-
   Future<String?> uploadStudentImage(String filePath, String fileName) async {
     try {
       final file = File(filePath);
       final fileSize = await file.length();
-      
+
       // Check file size (limit to 5MB)
       if (fileSize > 5 * 1024 * 1024) {
-        throw Exception('Image size too large. Please choose an image under 5MB.');
+        throw Exception(
+            'Image size too large. Please choose an image under 5MB.');
       }
 
       final response = await _supabaseClient.storage
           .from('student-images')
-          .upload(fileName, file, fileOptions: const FileOptions(
-            cacheControl: '3600',
-            upsert: false,
-          ));
+          .upload(fileName, file,
+              fileOptions: const FileOptions(
+                cacheControl: '3600',
+                upsert: false,
+              ));
 
       if (response.isEmpty) {
         // Get the public URL of the uploaded image

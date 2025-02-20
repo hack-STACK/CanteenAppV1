@@ -1,8 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:carousel_slider/carousel_slider.dart';
-import 'package:kantin/Component/my_Description_Box.dart';
-import 'package:kantin/Component/my_Silver_App_Bar.dart';
-import 'package:kantin/Component/my_current_location.dart';
 import 'package:kantin/Component/my_drawer.dart';
 import 'package:kantin/Component/my_stall_tile.dart';
 import 'package:kantin/Models/Stan_model.dart';
@@ -12,10 +9,8 @@ import 'package:kantin/pages/StudentState/Stalldetailpage.dart';
 import 'package:kantin/utils/avatar_generator.dart';
 import 'package:kantin/utils/banner_generator.dart';
 import 'package:kantin/Services/Database/studentService.dart';
-import 'package:kantin/pages/StudentState/profile_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:kantin/pages/StudentState/OrderPage.dart'; // Add this import
-import 'package:kantin/widgets/student/food_category_grid.dart';
+// Add this import
 import 'package:kantin/widgets/search_bar_delegate.dart';
 import 'package:kantin/widgets/student/student_profile_header.dart';
 
@@ -53,7 +48,7 @@ class _HomepageState extends State<StudentPage> {
 
   final ScrollController _scrollController = ScrollController();
   bool _isScrolled = false;
-  String _selectedCategory = 'All';
+  final String _selectedCategory = 'All';
   final List<String> _recentSearches = [];
   final GlobalKey<ScaffoldMessengerState> _scaffoldMessengerKey =
       GlobalKey<ScaffoldMessengerState>();
@@ -343,7 +338,11 @@ class _HomepageState extends State<StudentPage> {
                     onTap: () => Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => StallDetailPage(stall: stall),
+                        builder: (context) => StallDetailPage(
+                          stall: stall,
+                          StudentId: _currentStudent?.id ??
+                              0, // Add the StudentId parameter
+                        ),
                       ),
                     ),
                     child: Column(
@@ -509,7 +508,7 @@ class _HomepageState extends State<StudentPage> {
       child: Scaffold(
         key: _scaffoldKey,
         backgroundColor: Colors.grey[50],
-        drawer: const MyDrawer(),
+        drawer: MyDrawer(studentId: _currentStudent?.id ?? 0),
         body: RefreshIndicator(
           onRefresh: () async {
             await Future.wait([
@@ -522,7 +521,8 @@ class _HomepageState extends State<StudentPage> {
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
               _buildAppBar(),
-              SliverToBoxAdapter(child: _buildProfileSection()), // Add this line
+              SliverToBoxAdapter(
+                  child: _buildProfileSection()), // Add this line
               _buildSearchBar(),
               SliverToBoxAdapter(child: _buildCategories()),
               SliverToBoxAdapter(child: _buildBannerCarousel()),
@@ -574,7 +574,11 @@ class _HomepageState extends State<StudentPage> {
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (context) => StallDetailPage(stall: _stalls[index]),
+                builder: (context) => StallDetailPage(
+                  stall: _stalls[index],
+                  StudentId:
+                      _currentStudent?.id ?? 0, // Add the StudentId parameter
+                ),
               ),
             ),
           ),

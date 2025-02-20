@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+
 enum TransactionStatus {
   pending,
   confirmed,
@@ -38,10 +40,37 @@ enum PaymentStatus {
 }
 
 enum PaymentMethod {
-  cash, // Cash on delivery
-  e_wallet, // Digital wallet payment
-  bank_transfer, // Bank transfer
-  credit_card // Credit card payment
+  cash,
+  e_wallet,
+  bank_transfer,
+  credit_card;
+
+  String get label {
+    return switch (this) {
+      PaymentMethod.cash => 'Cash',
+      PaymentMethod.e_wallet => 'E-Wallet',
+      PaymentMethod.bank_transfer => 'Bank Transfer',
+      PaymentMethod.credit_card => 'Credit Card',
+    };
+  }
+
+  IconData get icon {
+    return switch (this) {
+      PaymentMethod.cash => Icons.money,
+      PaymentMethod.e_wallet => Icons.account_balance_wallet,
+      PaymentMethod.bank_transfer => Icons.account_balance,
+      PaymentMethod.credit_card => Icons.credit_card,
+    };
+  }
+
+  Color get color {
+    return switch (this) {
+      PaymentMethod.cash => Colors.green,
+      PaymentMethod.e_wallet => Colors.blue,
+      PaymentMethod.bank_transfer => Colors.purple,
+      PaymentMethod.credit_card => Colors.orange,
+    };
+  }
 }
 
 enum OrderType {
@@ -74,5 +103,3 @@ enum UserRole {
   admin_stalls, // Restaurant admin
   student // Student user
 }
-
-

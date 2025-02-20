@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:kantin/Models/transaction_model.dart';
 import 'package:kantin/Services/Database/transaction_service.dart';
-import 'package:kantin/Services/transaction_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart'; // Add for number formatting
 

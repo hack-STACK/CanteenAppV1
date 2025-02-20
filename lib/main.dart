@@ -8,8 +8,8 @@ import 'package:provider/provider.dart';
 import 'package:kantin/Themes/theme_providers.dart';
 import 'package:kantin/Models/Restaurant.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:kantin/services/supabase_config.dart';
 import 'package:overlay_support/overlay_support.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -22,10 +22,14 @@ void main() async {
     throw Exception('Environment variables for Supabase are not set');
   }
 
-  // Initialize Supabase
-  await initializeSupabase(
-    dotenv.env['SUPABASE_URL']!,
-    dotenv.env['SUPABASE_ANON_KEY']!,
+  // Initialize Supabase with environment variables
+  await Supabase.initialize(
+    url: dotenv.env['SUPABASE_URL']!,
+    anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
+    realtimeClientOptions: const RealtimeClientOptions(
+      eventsPerSecond: 10,
+      timeout: Duration(seconds: 30),
+    ),
   );
 
   // Initialize Firebase

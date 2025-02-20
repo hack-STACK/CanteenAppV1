@@ -6,11 +6,11 @@ class ErrorDialog extends StatelessWidget {
   final VoidCallback? onRetry;
 
   const ErrorDialog({
-    Key? key,
+    super.key,
     this.title = 'Error',
     required this.message,
     this.onRetry,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

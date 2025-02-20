@@ -6,7 +6,8 @@ import 'package:provider/provider.dart';
 enum CartState { loading, empty, error, ready }
 
 class FoodCartPage extends StatefulWidget {
-  const FoodCartPage({super.key});
+  const FoodCartPage({super.key, required this.StudentId});
+  final int StudentId;
 
   @override
   State<FoodCartPage> createState() => _FoodCartPageState();
@@ -485,7 +486,9 @@ class _FoodCartPageState extends State<FoodCartPage> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => const PaymentPage(),
+        builder: (context) => PaymentPage(
+          StudentId: widget.StudentId,
+        ),
       ),
     );
   }

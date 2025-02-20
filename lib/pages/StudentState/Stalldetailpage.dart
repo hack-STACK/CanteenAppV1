@@ -2,13 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:kantin/Models/Stan_model.dart';
 import 'package:kantin/Models/menus.dart';
 import 'package:kantin/Services/Database/foodService.dart';
-import 'package:flutter/services.dart';
 import 'package:kantin/Models/menus_addon.dart'; // Add this import
-import 'dart:ui';
 import 'package:provider/provider.dart';
 import 'package:kantin/Models/Restaurant.dart';
 import 'package:kantin/pages/StudentState/food_cart.dart';
-import 'package:kantin/utils/avatar_generator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart'; // Add this import
 
 // Add this class to manage cart items better
@@ -37,8 +34,10 @@ enum LoadingState { initial, loading, loaded, error }
 
 class StallDetailPage extends StatefulWidget {
   final Stan stall;
+  final int StudentId;
 
-  const StallDetailPage({Key? key, required this.stall}) : super(key: key);
+  const StallDetailPage(
+      {super.key, required this.stall, required this.StudentId});
 
   @override
   State<StallDetailPage> createState() => _StallDetailPageState();
@@ -50,7 +49,7 @@ class _StallDetailPageState extends State<StallDetailPage> {
   String? _errorMessage;
 
   List<Menu> _menus = [];
-  bool _isLoading = true;
+  final bool _isLoading = true;
   String _selectedCategory = 'All';
   final ScrollController _scrollController = ScrollController();
   bool _isCollapsed = false;
@@ -59,19 +58,19 @@ class _StallDetailPageState extends State<StallDetailPage> {
     'Foods': [],
     'Drinks': [],
   };
-  Map<int, List<FoodAddon>> _menuAddons = {};
-  TextEditingController _searchController = TextEditingController();
+  final Map<int, List<FoodAddon>> _menuAddons = {};
+  final TextEditingController _searchController = TextEditingController();
   bool _showSearch = false;
   String _sortBy = 'recommended'; // 'recommended', 'price_asc', 'price_desc'
-  Set<String> _favoriteMenus = {};
-  List<Menu> _recommendedMenus = [];
+  final Set<String> _favoriteMenus = {};
+  final List<Menu> _recommendedMenus = [];
   final GlobalKey<ScaffoldMessengerState> _scaffoldKey =
       GlobalKey<ScaffoldMessengerState>();
   final _supabase = Supabase.instance.client;
   // Add this variable to store cart count
   late int _cartItemCount;
   // Add this property for scroll tracking
-  bool _isScrolled = false;
+  final bool _isScrolled = false;
 
   @override
   void initState() {
@@ -124,30 +123,28 @@ class _StallDetailPageState extends State<StallDetailPage> {
               .select()
               .eq('menu_id', menu.id!);
 
-          if (addonsResponse != null) {
-            List<FoodAddon> addons = [];
+          List<FoodAddon> addons = [];
 
-            for (var item in (addonsResponse as List)) {
-              try {
-                addons.add(FoodAddon.fromMap({
-                  'id': item['id'],
-                  'menu_id': item['menu_id'],
-                  'addon_name': item['addon_name'],
-                  'price': item['price'],
-                  'is_required': item['is_required'],
-                  'stock_quantity': item['stock_quantity'],
-                  'is_available': item['is_available'],
-                  'Description': item['Description'],
-                }));
-              } catch (e) {
-                print('Error parsing addon data: $e');
-                print('Problematic addon data: $item');
-              }
+          for (var item in (addonsResponse as List)) {
+            try {
+              addons.add(FoodAddon.fromMap({
+                'id': item['id'],
+                'menu_id': item['menu_id'],
+                'addon_name': item['addon_name'],
+                'price': item['price'],
+                'is_required': item['is_required'],
+                'stock_quantity': item['stock_quantity'],
+                'is_available': item['is_available'],
+                'Description': item['Description'],
+              }));
+            } catch (e) {
+              print('Error parsing addon data: $e');
+              print('Problematic addon data: $item');
             }
+          }
 
-            if (addons.isNotEmpty) {
-              _menuAddons[menu.id!] = addons;
-            }
+          if (addons.isNotEmpty) {
+            _menuAddons[menu.id!] = addons;
           }
         } catch (e, stackTrace) {
           print('Error loading addons for menu ${menu.id}: $e');
@@ -467,7 +464,8 @@ class _StallDetailPageState extends State<StallDetailPage> {
               Stack(
                 children: [
                   ClipRRect(
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                    borderRadius:
+                        const BorderRadius.vertical(top: Radius.circular(16)),
                     child: AspectRatio(
                       aspectRatio: 16 / 9,
                       child: Hero(
@@ -476,7 +474,8 @@ class _StallDetailPageState extends State<StallDetailPage> {
                             ? Image.network(
                                 menu.photo!,
                                 fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => _buildMenuImagePlaceholder(menu),
+                                errorBuilder: (_, __, ___) =>
+                                    _buildMenuImagePlaceholder(menu),
                               )
                             : _buildMenuImagePlaceholder(menu),
                       ),
@@ -486,7 +485,8 @@ class _StallDetailPageState extends State<StallDetailPage> {
                   Positioned.fill(
                     child: DecoratedBox(
                       decoration: BoxDecoration(
-                        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                        borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(16)),
                         gradient: LinearGradient(
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
@@ -503,9 +503,10 @@ class _StallDetailPageState extends State<StallDetailPage> {
                     top: 12,
                     left: 12,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
-                        color: menu.type == 'food' 
+                        color: menu.type == 'food'
                             ? Colors.orange.withOpacity(0.9)
                             : Colors.blue.withOpacity(0.9),
                         borderRadius: BorderRadius.circular(20),
@@ -514,7 +515,9 @@ class _StallDetailPageState extends State<StallDetailPage> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(
-                            menu.type == 'food' ? Icons.restaurant : Icons.local_drink,
+                            menu.type == 'food'
+                                ? Icons.restaurant
+                                : Icons.local_drink,
                             color: Colors.white,
                             size: 14,
                           ),
@@ -619,7 +622,8 @@ class _StallDetailPageState extends State<StallDetailPage> {
                           Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(Icons.star, color: Colors.amber, size: 16),
+                              const Icon(Icons.star,
+                                  color: Colors.amber, size: 16),
                               const SizedBox(width: 4),
                               Text(
                                 menu.formattedRating,
@@ -685,7 +689,8 @@ class _StallDetailPageState extends State<StallDetailPage> {
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
-                        onPressed: menu.isAvailable ? () => _addToCart(menu) : null,
+                        onPressed:
+                            menu.isAvailable ? () => _addToCart(menu) : null,
                         icon: const Icon(Icons.add_shopping_cart, size: 18),
                         label: const Text('Add to Cart'),
                         style: ElevatedButton.styleFrom(
@@ -759,7 +764,8 @@ class _StallDetailPageState extends State<StallDetailPage> {
                             child: AspectRatio(
                               aspectRatio: 16 / 9,
                               child: menu.photo != null
-                                  ? Image.network(menu.photo!, fit: BoxFit.cover)
+                                  ? Image.network(menu.photo!,
+                                      fit: BoxFit.cover)
                                   : _buildMenuImagePlaceholder(menu),
                             ),
                           ),
@@ -966,14 +972,16 @@ class _StallDetailPageState extends State<StallDetailPage> {
     );
   }
 
-  Widget _buildAddonTile(FoodAddon addon, bool isSelected, Function(bool?) onChanged) {
+  Widget _buildAddonTile(
+      FoodAddon addon, bool isSelected, Function(bool?) onChanged) {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
         color: isSelected ? Colors.grey[50] : Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: isSelected ? Theme.of(context).primaryColor : Colors.grey[300]!,
+          color:
+              isSelected ? Theme.of(context).primaryColor : Colors.grey[300]!,
         ),
       ),
       child: CheckboxListTile(
@@ -1003,7 +1011,10 @@ class _StallDetailPageState extends State<StallDetailPage> {
   void _showCart() {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => const FoodCartPage()),
+      MaterialPageRoute(
+          builder: (context) => FoodCartPage(
+                StudentId: widget.StudentId,
+              )),
     );
   }
 

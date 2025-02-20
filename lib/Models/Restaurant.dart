@@ -8,19 +8,33 @@ class CartItem {
   final Menu menu;
   final List<FoodAddon> selectedAddons;
   final String? note;
-  int quantity;
+  final int quantity;
 
-  CartItem({
+  const CartItem({
     required this.menu,
     this.selectedAddons = const [],
     this.note,
     this.quantity = 1,
   });
 
+  CartItem copyWith({
+    Menu? menu,
+    List<FoodAddon>? selectedAddons,
+    String? note,
+    int? quantity,
+  }) {
+    return CartItem(
+      menu: menu ?? this.menu,
+      selectedAddons: selectedAddons ?? this.selectedAddons,
+      note: note ?? this.note,
+      quantity: quantity ?? this.quantity,
+    );
+  }
+
   double get totalPrice {
     double addonPrice =
-        selectedAddons.fold(0, (sum, addon) => sum + addon.price);
-    return (menu.price + addonPrice) * quantity;
+        selectedAddons.fold(0, (sum, addon) => sum + (addon.price * quantity));
+    return (menu.price * quantity) + addonPrice;
   }
 }
 
@@ -74,7 +88,9 @@ class Restaurant extends ChangeNotifier {
     );
 
     if (existingItemIndex != -1) {
-      _cart[existingItemIndex].quantity++;
+      final existingItem = _cart[existingItemIndex];
+      _cart[existingItemIndex] =
+          existingItem.copyWith(quantity: existingItem.quantity + 1);
     } else {
       _cart.add(CartItem(
         menu: menu,
@@ -90,7 +106,8 @@ class Restaurant extends ChangeNotifier {
     final index = _cart.indexOf(item);
     if (index != -1) {
       if (_cart[index].quantity > 1) {
-        _cart[index].quantity--;
+        _cart[index] =
+            _cart[index].copyWith(quantity: _cart[index].quantity - 1);
       } else {
         _cart.removeAt(index);
       }
@@ -102,7 +119,8 @@ class Restaurant extends ChangeNotifier {
     if (_cart.isNotEmpty) {
       final lastItem = _cart.last;
       if (lastItem.quantity > 1) {
-        lastItem.quantity--;
+        _cart[_cart.length - 1] =
+            lastItem.copyWith(quantity: lastItem.quantity - 1);
       } else {
         _cart.removeLast();
       }
@@ -187,7 +205,7 @@ class Restaurant extends ChangeNotifier {
   void increaseQuantity(CartItem item) {
     final index = cart.indexOf(item);
     if (index != -1) {
-      cart[index].quantity++;
+      cart[index] = cart[index].copyWith(quantity: cart[index].quantity + 1);
       notifyListeners();
     }
   }
@@ -197,7 +215,7 @@ class Restaurant extends ChangeNotifier {
     final index = cart.indexOf(item);
     if (index != -1) {
       if (cart[index].quantity > 1) {
-        cart[index].quantity--;
+        cart[index] = cart[index].copyWith(quantity: cart[index].quantity - 1);
       } else {
         cart.removeAt(index);
       }

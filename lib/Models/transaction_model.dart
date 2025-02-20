@@ -1,100 +1,68 @@
+import 'package:kantin/Models/orderItem.dart';
 import 'package:kantin/models/enums/transaction_enums.dart';
 import 'package:kantin/Models/menus.dart';
 
 class Transaction {
   final int id;
   final int studentId;
+  final String? studentName; // Added field
   final int stallId;
+  final double totalAmount;
+  final OrderType orderType;
+  final String? deliveryAddress;
+  final String? notes;
   final TransactionStatus status;
   final PaymentStatus paymentStatus;
-  final PaymentMethod? paymentMethod;
-  final double totalAmount;
   final DateTime createdAt;
-  final DateTime updatedAt;
-  final String? notes;
-  final String? deliveryAddress;
-  final DateTime? estimatedDeliveryTime;
-  final String? cancellationReason;
-  final DateTime? cancelledAt;
-  final OrderType orderType;
-  final List<TransactionDetail> details;
+  final List<TransactionDetail> details; // Changed from List<OrderItem>
+  final PaymentMethod paymentMethod;
 
   Transaction({
     required this.id,
     required this.studentId,
+    this.studentName,
     required this.stallId,
+    required this.totalAmount,
+    required this.orderType,
+    this.deliveryAddress,
+    this.notes,
     required this.status,
     required this.paymentStatus,
-    this.paymentMethod,
-    required this.totalAmount,
     required this.createdAt,
-    required this.updatedAt,
-    this.notes,
-    this.deliveryAddress,
-    this.estimatedDeliveryTime,
-    this.cancellationReason,
-    this.cancelledAt,
-    required this.orderType,
     required this.details,
+    required this.paymentMethod,
   });
 
   factory Transaction.fromJson(Map<String, dynamic> json) {
     return Transaction(
       id: json['id'],
-      stallId: json['stall_id'],
       studentId: json['student_id'],
-      status: _parseTransactionStatus(json['status']),
-      paymentStatus: _parsePaymentStatus(json['payment_status']),
-      paymentMethod: _parsePaymentMethod(json['payment_method']),
+      studentName: json['student']?['name'] ?? json['student_name'],
+      stallId: json['stall_id'],
       totalAmount: (json['total_amount'] as num).toDouble(),
-      createdAt: DateTime.parse(json['created_at']),
-      updatedAt: DateTime.parse(json['updated_at']),
-      notes: json['notes'],
+      orderType: OrderType.values.firstWhere(
+        (e) => e.name == json['order_type'],
+        orElse: () => OrderType.pickup,
+      ),
       deliveryAddress: json['delivery_address'],
-      estimatedDeliveryTime: json['estimated_delivery_time'] != null 
-        ? DateTime.parse(json['estimated_delivery_time']) 
-        : null,
-      cancellationReason: json['cancellation_reason'],
-      cancelledAt: json['cancelled_at'] != null 
-        ? DateTime.parse(json['cancelled_at']) 
-        : null,
-      orderType: _parseOrderType(json['order_type']),
+      notes: json['notes'],
+      status: TransactionStatus.values.firstWhere(
+        (e) => e.name == json['status'],
+        orElse: () => TransactionStatus.pending,
+      ),
+      paymentStatus: PaymentStatus.values.firstWhere(
+        (e) => e.name == json['payment_status'],
+        orElse: () => PaymentStatus.unpaid,
+      ),
+      createdAt: DateTime.parse(json['created_at']),
       details: (json['details'] as List<dynamic>?)
-          ?.map((detail) => TransactionDetail.fromJson(detail))
-          .toList() ?? [],
-    );
-  }
-
-  static TransactionStatus _parseTransactionStatus(String? status) {
-    if (status == null) return TransactionStatus.pending;
-    return TransactionStatus.values.firstWhere(
-      (e) => e.toString().split('.').last == status,
-      orElse: () => TransactionStatus.pending,
-    );
-  }
-  
-
-  static PaymentStatus _parsePaymentStatus(String? status) {
-    if (status == null) return PaymentStatus.unpaid;
-    return PaymentStatus.values.firstWhere(
-      (e) => e.toString().split('.').last == status,
-      orElse: () => PaymentStatus.unpaid,
-    );
-  }
-
-  static PaymentMethod _parsePaymentMethod(String? method) {
-    if (method == null) return PaymentMethod.cash;
-    return PaymentMethod.values.firstWhere(
-      (e) => e.toString().split('.').last == method,
-      orElse: () => PaymentMethod.cash,
-    );
-  }
-
-  static OrderType _parseOrderType(String? type) {
-    if (type == null) return OrderType.delivery;
-    return OrderType.values.firstWhere(
-      (e) => e.toString().split('.').last == type,
-      orElse: () => OrderType.delivery,
+              ?.map((detail) => TransactionDetail.fromJson(detail))
+              .toList() ??
+          [],
+      paymentMethod: PaymentMethod.values.firstWhere(
+        (e) => e.name == (json['payment_method'] ?? 'cash'),
+        orElse: () => PaymentMethod.cash,
+      ),
     );
   }
 }
@@ -102,38 +70,37 @@ class Transaction {
 class TransactionDetail {
   final int id;
   final int menuId;
-  final Menu? menu;
   final int quantity;
   final double unitPrice;
   final double subtotal;
   final String? notes;
-  final List<TransactionAddon>? addons;
+  final Menu? menu;
+  final List<OrderAddonDetail> addons;
 
   TransactionDetail({
     required this.id,
     required this.menuId,
-    this.menu,
     required this.quantity,
     required this.unitPrice,
     required this.subtotal,
     this.notes,
-    this.addons,
+    this.menu,
+    this.addons = const [],
   });
 
   factory TransactionDetail.fromJson(Map<String, dynamic> json) {
-    print('Processing transaction detail JSON: $json'); // Debug print
-    
     return TransactionDetail(
       id: json['id'],
       menuId: json['menu_id'],
-      menu: json['menu'] != null ? Menu.fromJson(json['menu']) : null,
       quantity: json['quantity'],
       unitPrice: (json['unit_price'] as num).toDouble(),
       subtotal: (json['subtotal'] as num).toDouble(),
       notes: json['notes'],
-      addons: (json['transaction_addon_details'] as List<dynamic>?)
-          ?.map((addon) => TransactionAddon.fromJson(addon))
-          .toList(),
+      menu: json['menu'] != null ? Menu.fromJson(json['menu']) : null,
+      addons: (json['addons'] as List<dynamic>?)
+              ?.map((addon) => OrderAddonDetail.fromJson(addon))
+              .toList() ??
+          [],
     );
   }
 }
@@ -142,7 +109,7 @@ class TransactionAddon {
   final int id;
   final int transactionDetailId;
   final int addonId;
-  final FoodAddon? addon;  // Add FoodAddon object
+  final FoodAddon? addon; // Add FoodAddon object
   final int quantity;
   final double unitPrice;
   final double subtotal;
@@ -168,22 +135,36 @@ class TransactionAddon {
       quantity: json['quantity'],
       unitPrice: (json['unit_price'] as num).toDouble(),
       subtotal: (json['subtotal'] as num).toDouble(),
-      createdAt: json['created_at'] != null 
-          ? DateTime.parse(json['created_at']) 
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'])
           : null,
     );
   }
 
+  factory TransactionAddon.fromMap(Map<String, dynamic> map) {
+    return TransactionAddon(
+      id: map['id'],
+      transactionDetailId: map['transaction_detail_id'],
+      addonId: map['addon_id'],
+      addon: map['addon'] != null ? FoodAddon.fromJson(map['addon']) : null,
+      quantity: map['quantity'],
+      unitPrice: (map['unit_price'] as num).toDouble(),
+      subtotal: (map['subtotal'] as num).toDouble(),
+      createdAt:
+          map['created_at'] != null ? DateTime.parse(map['created_at']) : null,
+    );
+  }
+
   Map<String, dynamic> toJson() => {
-    'id': id,
-    'transaction_detail_id': transactionDetailId,
-    'addon_id': addonId,
-    'addon': addon?.toJson(),
-    'quantity': quantity,
-    'unit_price': unitPrice,
-    'subtotal': subtotal,
-    'created_at': createdAt?.toIso8601String(),
-  };
+        'id': id,
+        'transaction_detail_id': transactionDetailId,
+        'addon_id': addonId,
+        'addon': addon?.toJson(),
+        'quantity': quantity,
+        'unit_price': unitPrice,
+        'subtotal': subtotal,
+        'created_at': createdAt?.toIso8601String(),
+      };
 }
 
 // Create FoodAddon model to match your database schema
@@ -222,13 +203,13 @@ class FoodAddon {
   }
 
   Map<String, dynamic> toJson() => {
-    'id': id,
-    'menu_id': menuId,
-    'addon_name': name,
-    'price': price,
-    'is_required': isRequired,
-    'stock_quantity': stockQuantity,
-    'is_available': isAvailable,
-    'Description': description, // Note: matches DB column case
-  };
+        'id': id,
+        'menu_id': menuId,
+        'addon_name': name,
+        'price': price,
+        'is_required': isRequired,
+        'stock_quantity': stockQuantity,
+        'is_available': isAvailable,
+        'Description': description, // Note: matches DB column case
+      };
 }

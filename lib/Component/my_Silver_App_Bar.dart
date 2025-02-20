@@ -5,11 +5,13 @@ class MySilverAppBar extends StatelessWidget {
   final Widget title;
   final Widget child;
   final List<Widget>? actions;
+  final int studentId; // Add this line
 
   const MySilverAppBar({
     super.key,
     required this.title,
     required this.child,
+    required this.studentId, // Add this line
     this.actions,
   });
 
@@ -28,7 +30,8 @@ class MySilverAppBar extends StatelessWidget {
                   Navigator.push(
                       context,
                       MaterialPageRoute(
-                          builder: (context) => const FoodCartPage()));
+                          builder: (context) =>
+                              FoodCartPage(StudentId: studentId)));
                 },
                 icon: Icon(Icons.shopping_cart))
           ],

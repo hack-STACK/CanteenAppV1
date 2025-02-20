@@ -7,12 +7,12 @@ class RatingIndicator extends StatelessWidget {
   final bool showCount;
 
   const RatingIndicator({
-    Key? key,
+    super.key,
     required this.rating,
     required this.ratingCount,
     this.size = 16,
     this.showCount = true,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

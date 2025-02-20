@@ -57,6 +57,10 @@ class UserModel {
     );
   }
 
+  // Add fromJson factory constructor as alias to fromMap
+  factory UserModel.fromJson(Map<String, dynamic> json) =>
+      UserModel.fromMap(json);
+
   // Hash the password using SHA-256
   static String hashPassword(String password) {
     final bytes = utf8.encode(password); // Convert password to bytes
@@ -83,4 +87,7 @@ class UserModel {
       createdAt: createdAt,
     );
   }
+
+  // You can also add a toJson method as alias to toMap
+  Map<String, dynamic> toJson() => toMap();
 }

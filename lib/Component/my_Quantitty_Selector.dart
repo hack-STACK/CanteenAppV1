@@ -8,12 +8,12 @@ class MyQuantittySelector extends StatelessWidget {
   final VoidCallback onAdd;
 
   const MyQuantittySelector({
-    Key? key,
+    super.key,
     required this.quantity,
     required this.menu,
     required this.onRemove,
     required this.onAdd,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

@@ -75,10 +75,10 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
         print('DEBUG: Processing detail: $detail');
 
         // Extract addon information
-        final addonsList = detail.addons?.map((addon) {
+        final addonsList = detail.addons.map((addon) {
               print('DEBUG: Processing addon: $addon');
               return OrderAddonDetail(
-                id: addon.id?.toString() ?? '',
+                id: addon.id.toString() ?? '',
                 addonId: (addon.addonId as num?)?.toInt() ?? 0,
                 addonName: addon.addonName ?? 'Unknown Addon',
                 price: addon.price ?? 0,
@@ -92,7 +92,7 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
         print('DEBUG: Processed ${addonsList.length} addons');
 
         return OrderItem(
-          id: detail.id?.toString() ?? '',
+          id: detail.id.toString() ?? '',
           orderId: widget.order.id,
           menuId: detail.menuId,
           quantity: detail.quantity ?? 0,
@@ -886,8 +886,7 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  widget.order.paymentMethod
-                      .name, // Using enum's default name property
+                  widget.order.paymentMethod.label, // Add required text content
                   style: TextStyle(
                     color: _getPaymentMethodColor(widget.order.paymentMethod),
                     fontWeight: FontWeight.w500,

@@ -81,19 +81,17 @@ class _OrderCardState extends State<OrderCard> {
         };
 
         // Process addons
-        if (detail.addons != null) {
-          print(
-              '[OrderCard] Processing ${detail.addons!.length} addons for item ${detail.menuId}');
+        print(
+            '[OrderCard] Processing ${detail.addons!.length} addons for item ${detail.menuId}');
 
-          for (var addon in detail.addons!) {
-            final addonItem = await _orderService.getAddonById(addon.addonId);
-            if (addonItem != null) {
-              itemMap['addons'].add({
-                'name': addonItem.name,
-                'price': addon.subtotal,
-                'quantity': addon.quantity,
-              });
-            }
+        for (var addon in detail.addons!) {
+          final addonItem = await _orderService.getAddonById(addon.addonId);
+          if (addonItem != null) {
+            itemMap['addons'].add({
+              'name': addonItem.name,
+              'price': addon.subtotal,
+              'quantity': addon.quantity,
+            });
           }
         }
 

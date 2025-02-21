@@ -1,14 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kReleaseMode; // Add this import
 import 'package:flutter_credit_card/flutter_credit_card.dart';
+import 'package:kantin/Models/payment_errors.dart' as payment_errors;
 import 'package:kantin/pages/StudentState/StudentPage.dart';
+import 'package:kantin/utils/api_exception.dart'
+    hide PaymentError, TransactionError; // Hide ambiguous classes
 import 'package:kantin/utils/logger.dart';
 import 'package:provider/provider.dart';
 import 'package:kantin/Models/Restaurant.dart';
 import 'package:kantin/Services/Database/transaction_service.dart';
 import 'package:kantin/models/enums/transaction_enums.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'dart:async'; // Add this import for TimeoutException
-import 'package:kantin/utils/error_handler.dart';
+import 'dart:async';
+import 'package:kantin/utils/error_handler.dart' hide TransactionError;
 import 'package:kantin/widgets/loading_overlay.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
@@ -82,6 +86,9 @@ class _PaymentPageState extends State<PaymentPage>
   // Add transaction logging
   String? _transactionLog;
 
+  // Add controller at class level
+  late TextEditingController _addressController;
+
   @override
   void initState() {
     super.initState();
@@ -99,15 +106,24 @@ class _PaymentPageState extends State<PaymentPage>
 
     _pageController = PageController(initialPage: 0);
 
+    _addressController = TextEditingController();
+
     // Load initial data
     _loadStudentData();
   }
 
   @override
   void dispose() {
-    noteController.dispose(); // Add this
+    // Cancel any ongoing operations
+    _isSubmitting = false;
+    _isPaymentProcessing = false;
+
+    // Dispose controllers
+    noteController.dispose();
     _controller.dispose();
     _pageController.dispose();
+    _addressController.dispose();
+
     super.dispose();
   }
 
@@ -125,16 +141,43 @@ class _PaymentPageState extends State<PaymentPage>
     }
   }
 
-  // Add method to get stall ID from cart
-  int? _getStallId(Restaurant restaurant) {
+  // Update the _getStallId method
+  int _getStallId(Restaurant restaurant) {
+    _logger.debug('Getting stall ID from cart items');
+
     if (restaurant.cart.isEmpty) {
-      print('Debug: Cart is empty');
-      return null;
+      _logger.error('Cannot get stall ID: Cart is empty');
+      throw Exception('Your cart is empty');
     }
 
+    // Get and validate the first item's stall ID
     final firstItem = restaurant.cart.first;
+    if (firstItem.menu == null) {
+      _logger.error('Menu is null in cart item');
+      throw Exception('Invalid menu item');
+    }
 
-    return firstItem.menu.stallId;
+    final stallId = firstItem.menu.stallId;
+    _logger.debug('First item stall ID: $stallId');
+
+    // Validate stall ID
+    if (stallId <= 0) {
+      _logger.error('Invalid stall ID: $stallId');
+      throw Exception('Invalid stall configuration. Please contact support.');
+    }
+
+    // Verify all items are from the same stall
+    for (var item in restaurant.cart) {
+      if (item.menu == null || item.menu.stallId != stallId) {
+        _logger.error(
+            'Cart contains items from different stalls or invalid items');
+        throw Exception('All items must be from the same stall');
+      }
+      _logger.debug('Checking item stall ID: ${item.menu.stallId}');
+    }
+
+    _logger.info('Successfully validated stall ID: $stallId');
+    return stallId;
   }
 
   // Add navigation methods
@@ -179,6 +222,10 @@ class _PaymentPageState extends State<PaymentPage>
 
   // Simplified processing payment without auth checks
   Future<void> _processPayment() async {
+    if (!mounted) return;
+
+    final navigationContext = context; // Capture context early
+
     try {
       setState(() {
         _isSubmitting = true;
@@ -193,8 +240,9 @@ class _PaymentPageState extends State<PaymentPage>
       final shouldProceed = await _showPaymentConfirmationDialog(restaurant);
       if (!shouldProceed || !mounted) return;
 
-      // Show loading overlay
-      _showProcessingOverlay();
+      // Show loading overlay using captured context
+      if (!mounted) return;
+      _showProcessingOverlay(navigationContext);
 
       // Process with timeout
       bool isSuccess = false;
@@ -205,39 +253,49 @@ class _PaymentPageState extends State<PaymentPage>
               .then((_) => throw TimeoutException('Payment process timed out')),
         ]);
       } on TimeoutException {
+        if (mounted) {
+          Navigator.of(navigationContext).pop(); // Remove overlay
+        }
         throw Exception('Payment process timed out. Please try again.');
       }
 
+      // Always check mounted state before UI updates
       if (!mounted) return;
+
+      // Close loading overlay
+      Navigator.of(navigationContext).pop();
 
       if (isSuccess) {
         restaurant.clearCart();
-        await _showPaymentSuccessDialog();
 
-        if (mounted) {
-          // Navigate with fade transition
-          await Navigator.pushReplacement(
-            context,
-            PageRouteBuilder(
-              pageBuilder: (context, animation, secondaryAnimation) =>
-                  const StudentPage(),
-              transitionsBuilder:
-                  (context, animation, secondaryAnimation, child) {
-                return FadeTransition(opacity: animation, child: child);
-              },
-            ),
-          );
-        }
+        if (!mounted) return;
+        await _showPaymentSuccessDialog(navigationContext);
+
+        if (!mounted) return;
+        // Use captured context for final navigation
+        await Navigator.pushReplacement(
+          navigationContext,
+          PageRouteBuilder(
+            pageBuilder: (context, animation, secondaryAnimation) =>
+                const StudentPage(),
+            transitionsBuilder:
+                (context, animation, secondaryAnimation, child) {
+              return FadeTransition(opacity: animation, child: child);
+            },
+          ),
+        );
       }
     } catch (e) {
-      _handleError(e);
+      if (mounted) {
+        Navigator.of(navigationContext).pop(); // Remove overlay
+        _handleError(e);
+      }
     } finally {
       if (mounted) {
         setState(() {
           _isSubmitting = false;
           _isPaymentProcessing = false;
         });
-        Navigator.of(context).pop(); // Remove loading overlay
       }
     }
   }
@@ -257,11 +315,12 @@ class _PaymentPageState extends State<PaymentPage>
     return true;
   }
 
-  void _showProcessingOverlay() {
+  // Update overlay show method to accept context
+  void _showProcessingOverlay(BuildContext context) {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => WillPopScope(
+      builder: (dialogContext) => WillPopScope(
         onWillPop: () async => false,
         child: LoadingOverlay(
           isLoading: true,
@@ -301,12 +360,190 @@ class _PaymentPageState extends State<PaymentPage>
     await _processPayment();
   }
 
+  Future<bool> _submitTransaction(Restaurant restaurant) async {
+    try {
+      _logger.info('Starting transaction submission');
+      setState(() => _transactionLog = 'Initializing transaction...');
+
+      final stallId = _getStallIdSafely(restaurant);
+      if (stallId == null) {
+        throw payment_errors.StallValidationError(
+          message: 'Could not determine stall ID. Please try again.',
+        );
+      }
+
+      _validateTransactionData(restaurant);
+
+      _logger.debug(
+        'Processing transaction for student: ${widget.StudentId}, stall: $stallId',
+      );
+
+      final transactionId = await _createTransactionWithRetry(
+        restaurant,
+        stallId,
+      );
+
+      await _updatePaymentStatus(transactionId);
+
+      _logger.info('Transaction completed successfully: $transactionId');
+      _transactionId = transactionId.toString();
+
+      return true;
+    } on payment_errors.PaymentError catch (e) {
+      _logger.error('Payment error occurred', e);
+      _handlePaymentError(e);
+      return false;
+    } catch (e, stackTrace) {
+      _logger.error('Unexpected error in transaction', e, stackTrace);
+      throw payment_errors.TransactionError(
+        message: 'An unexpected error occurred. Please try again.',
+        originalError: e,
+      );
+    }
+  }
+
+  // Add new helper methods for better error handling
+  int? _getStallIdSafely(Restaurant restaurant) {
+    try {
+      return _getStallId(restaurant);
+    } catch (e) {
+      _logger.error('Error getting stall ID', e);
+      return null;
+    }
+  }
+
+  void _validateTransactionData(Restaurant restaurant) {
+    if (restaurant.cart.isEmpty) {
+      throw payment_errors.PaymentValidationError(message: 'Cart is empty');
+    }
+
+    if (_selectedOrderType == OrderType.delivery &&
+        restaurant.deliveryAddress.trim().isEmpty) {
+      throw payment_errors.PaymentValidationError(
+        message: 'Delivery address is required for delivery orders',
+      );
+    }
+
+    double totalAmount = restaurant.calculateSubtotal();
+    if (totalAmount <= 0) {
+      throw payment_errors.PaymentValidationError(
+          message: 'Invalid order amount');
+    }
+
+    // Validate each item
+    for (var item in restaurant.cart) {
+      if (item.quantity <= 0) {
+        throw payment_errors.PaymentValidationError(
+          message: 'Invalid quantity for ${item.menu.foodName}',
+        );
+      }
+      if (item.menu.price <= 0) {
+        throw payment_errors.PaymentValidationError(
+          message: 'Invalid price for ${item.menu.foodName}',
+        );
+      }
+    }
+  }
+
+  Future<int> _createTransactionWithRetry(
+    Restaurant restaurant,
+    int stallId,
+  ) async {
+    int attempts = 0;
+    late int transactionId;
+
+    while (attempts < maxRetryAttempts) {
+      try {
+        setState(() => _transactionLog =
+            'Creating transaction (Attempt ${attempts + 1})...');
+
+        transactionId = await _transactionService.createTransaction(
+          studentId: widget.StudentId,
+          stallId: stallId,
+          totalAmount: restaurant.calculateSubtotal(),
+          orderType: _selectedOrderType,
+          deliveryAddress: _selectedOrderType == OrderType.delivery
+              ? restaurant.deliveryAddress
+              : null,
+          notes: noteController.text,
+          items: _mapCartItems(restaurant.cart),
+        );
+
+        _logger.info('Transaction created successfully: $transactionId');
+        return transactionId;
+      } catch (e) {
+        attempts++;
+        _logger.warn('Transaction attempt $attempts failed: $e');
+
+        if (attempts >= maxRetryAttempts) {
+          throw payment_errors.TransactionError(
+            message:
+                'Failed to create transaction after $maxRetryAttempts attempts',
+            originalError: e,
+          );
+        }
+
+        await Future.delayed(Duration(seconds: attempts));
+      }
+    }
+
+    throw payment_errors.TransactionError(
+        message: 'Transaction creation failed');
+  }
+
+  Future<void> _updatePaymentStatus(int transactionId) async {
+    try {
+      setState(() => _transactionLog = 'Processing payment...');
+      await _transactionService.updateTransactionPayment(
+        transactionId,
+        paymentStatus: PaymentStatus.paid,
+        paymentMethod: _selectedPaymentMethod,
+      );
+    } catch (e) {
+      throw payment_errors.TransactionError(
+        message: 'Failed to update payment status',
+        originalError: e,
+      );
+    }
+  }
+
+  void _handlePaymentError(payment_errors.PaymentError error) {
+    String userMessage;
+    bool canRetry = true;
+
+    switch (error.code) {
+      case 'VALIDATION_ERROR':
+        userMessage = error.message;
+        canRetry = false;
+        break;
+      case 'STALL_ERROR':
+        userMessage = 'There was a problem with the stall configuration. '
+            'Please try again or contact support.';
+        break;
+      case 'TRANSACTION_ERROR':
+        userMessage = 'Failed to process transaction. Please try again.';
+        break;
+      default:
+        userMessage = 'An unexpected error occurred. Please try again.';
+    }
+
+    _showErrorDialog(
+      title: 'Payment Failed',
+      message: userMessage,
+      error: error,
+      retryAction: canRetry ? _retryPayment : null,
+    );
+  }
+
+  // Remove duplicate _showErrorDialog and keep only one version
   void _showErrorDialog({
     required String title,
     required String message,
     dynamic error,
     VoidCallback? retryAction,
   }) {
+    if (!mounted) return;
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -320,12 +557,16 @@ class _PaymentPageState extends State<PaymentPage>
                 .shake(),
             const SizedBox(height: 16),
             Text(message),
-            if (error != null) ...[
-              const SizedBox(height: 8),
+            if (error != null && !kReleaseMode) ...[
+              const SizedBox(height: 16),
+              const Text(
+                'Technical Details:',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
               Text(
-                'Error details: ${error.toString()}',
-                style: TextStyle(
-                  color: Colors.grey[600],
+                error.toString(),
+                style: const TextStyle(
+                  fontFamily: 'monospace',
                   fontSize: 12,
                 ),
               ),
@@ -333,6 +574,15 @@ class _PaymentPageState extends State<PaymentPage>
           ],
         ),
         actions: [
+          if (error is payment_errors.PaymentError &&
+              error.code == 'STALL_ERROR')
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                // Add method to contact support
+              },
+              child: const Text('Contact Support'),
+            ),
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Close'),
@@ -348,114 +598,6 @@ class _PaymentPageState extends State<PaymentPage>
         ],
       ),
     );
-  }
-
-  // Improved transaction submission
-  Future<bool> _submitTransaction(Restaurant restaurant) async {
-    try {
-      _logger.info('Starting transaction submission');
-      setState(() => _transactionLog = 'Initializing transaction...');
-
-      if (!_validateTransaction(restaurant)) {
-        throw Exception('Transaction validation failed');
-      }
-
-      final stallId = _getStallId(restaurant);
-      if (stallId == null) {
-        _logger.error('Invalid stall ID');
-        throw Exception('Invalid stall configuration');
-      }
-
-      _logger.debug(
-          'Processing transaction for student: ${widget.StudentId}, stall: $stallId');
-
-      // Create transaction with retry mechanism
-      int attempts = 0;
-      late int transactionId;
-
-      while (attempts < maxRetryAttempts) {
-        try {
-          setState(() => _transactionLog =
-              'Creating transaction (Attempt ${attempts + 1})...');
-
-          transactionId = await _transactionService.createTransaction(
-            studentId: widget.StudentId, // Use widget.StudentId directly
-            stallId: stallId,
-            totalAmount: restaurant.calculateSubtotal(),
-            orderType: _selectedOrderType,
-            deliveryAddress: _selectedOrderType == OrderType.delivery
-                ? restaurant.deliveryAddress
-                : null,
-            notes: noteController.text,
-            items: _mapCartItems(restaurant.cart),
-          );
-
-          _logger.info('Transaction created successfully: $transactionId');
-          break;
-        } catch (e) {
-          attempts++;
-          if (attempts >= maxRetryAttempts) rethrow;
-          _logger.warn('Retry attempt $attempts: ${e.toString()}');
-          await Future.delayed(Duration(seconds: attempts));
-        }
-      }
-
-      // Update payment status
-      setState(() => _transactionLog = 'Processing payment...');
-      await _transactionService.updateTransactionPayment(
-        transactionId,
-        paymentStatus: PaymentStatus.paid,
-        paymentMethod: _selectedPaymentMethod,
-      );
-
-      _logger.info('Payment processed successfully');
-      _transactionId = transactionId.toString();
-
-      return true;
-    } catch (e, stackTrace) {
-      _logger.error('Transaction failed', e, stackTrace);
-      throw _handleTransactionError(e);
-    }
-  }
-
-  Exception _handleTransactionError(dynamic error) {
-    if (error is PostgrestException) {
-      switch (error.code) {
-        case 'PGRST204':
-          return Exception('Database schema mismatch. Please contact support.');
-        case 'PGRST116':
-          return Exception('Invalid data format. Please check your input.');
-        default:
-          return Exception('Database error: ${error.message}');
-      }
-    }
-    if (error is TimeoutException) {
-      return Exception(
-          'Connection timed out. Please check your internet connection.');
-    }
-    return Exception('Payment processing failed: ${error.toString()}');
-  }
-
-  bool _validateTransaction(Restaurant restaurant) {
-    if (restaurant.cart.isEmpty) {
-      throw Exception('Cart is empty');
-    }
-
-    if (_selectedOrderType == OrderType.delivery &&
-        restaurant.deliveryAddress.trim().isEmpty) {
-      throw Exception('Delivery address is required');
-    }
-
-    for (var item in restaurant.cart) {
-      if (item.quantity <= 0) {
-        throw Exception('Invalid quantity for ${item.menu.foodName}');
-      }
-      if (item.menu.price <= 0) {
-        throw Exception('Invalid price for ${item.menu.foodName}');
-      }
-    }
-
-    return true;
   }
 
   List<CartItem> _mapCartItems(List<CartItem> cart) {
@@ -522,20 +664,18 @@ class _PaymentPageState extends State<PaymentPage>
   }
 
   // Add this method for showing success dialog
-  Future<void> _showPaymentSuccessDialog() async {
-    if (!mounted) return;
-
+  Future<void> _showPaymentSuccessDialog(BuildContext context) async {
     return showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (context) => WillPopScope(
+      builder: (dialogContext) => WillPopScope(
         onWillPop: () async => false,
         child: AlertDialog(
           title: const Text('Payment Successful'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
+              const Icon(
                 Icons.check_circle_outline,
                 color: Colors.green,
                 size: 64,
@@ -547,7 +687,7 @@ class _PaymentPageState extends State<PaymentPage>
           ),
           actions: [
             ElevatedButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () => Navigator.pop(dialogContext),
               child: const Text('OK'),
             ),
           ],
@@ -1063,20 +1203,77 @@ class _PaymentPageState extends State<PaymentPage>
                   ),
                 ),
                 TextButton(
-                  onPressed: () {
-                    // Show address picker modal
-                    Navigator.pop(context);
-                    showModalBottomSheet(
-                      context: context,
-                      builder: (context) =>
-                          _buildAddressPickerModal(restaurant),
-                    );
-                  },
+                  onPressed: () => _showAddressPickerModal(restaurant),
                   child: const Text('Change'),
                 ),
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showAddressPickerModal(Restaurant restaurant) async {
+    if (!mounted) return;
+
+    // Set initial value
+    _addressController.text = restaurant.deliveryAddress;
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (BuildContext modalContext) => SingleChildScrollView(
+        child: Container(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(modalContext).viewInsets.bottom + 16,
+            top: 16,
+            left: 16,
+            right: 16,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Delivery Address',
+                style: Theme.of(modalContext).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _addressController,
+                decoration: const InputDecoration(
+                  labelText: 'Enter delivery address',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 2,
+                autofocus: true,
+              ),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(modalContext),
+                    child: const Text('Cancel'),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: () {
+                      final newAddress = _addressController.text.trim();
+                      if (newAddress.isNotEmpty) {
+                        // Update the address in provider
+                        Provider.of<Restaurant>(context, listen: false)
+                            .updateDeliveryAddress(newAddress);
+                        Navigator.pop(modalContext);
+                      }
+                    },
+                    child: const Text('Save'),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:kantin/Models/Stan_model.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -60,24 +61,44 @@ class StanService {
 
   Future<List<Stan>> getAllStans() async {
     try {
-      final response =
-          await _client.from('stalls').select().order('id', ascending: true);
+      final response = await _client.from('stalls').select('''
+        *,
+        discounts!left(*)
+      ''').order('id', ascending: true);
 
-      return (response as List)
-          .map((stanMap) => Stan.fromMap(stanMap))
-          .toList();
+      return (response as List).map((stanMap) {
+        try {
+          // Handle rating conversion
+          if (stanMap['rating'] != null) {
+            stanMap['rating'] = stanMap['rating'] is int
+                ? (stanMap['rating'] as int).toDouble()
+                : (stanMap['rating'] as num).toDouble();
+          }
+
+          // Ensure discounts is a list
+          if (stanMap['discounts'] == null) {
+            stanMap['discounts'] = [];
+          }
+
+          return Stan.fromMap(stanMap);
+        } catch (e) {
+          print('Error parsing stall data: $e');
+          // Return a default Stan object or rethrow based on your needs
+          rethrow;
+        }
+      }).toList();
     } catch (e) {
       print('Error getting all Stans: $e');
       throw Exception('Failed to fetch stalls: $e');
     }
   }
 
-  Future<Stan?> getStanById(String id) async {
+  Future<Stan?> getStanById(int id) async {
     try {
       final response = await _client
           .from('stalls')
           .select()
-          .eq('firebase_uid', id) // Use a column that stores Firebase UIDs
+          .eq('id', id) // Changed from firebase_uid to id
           .single();
 
       return Stan.fromMap(response);
@@ -187,11 +208,45 @@ class StanService {
     try {
       await _client
           .from('stan')
-          .update({'Banner_img': bannerUrl})
-          .eq('id', stallId);
+          .update({'Banner_img': bannerUrl}).eq('id', stallId);
     } catch (e) {
       print('Error updating store banner: $e');
       throw 'Failed to update store banner';
+    }
+  }
+
+  Future<void> updateStallStatus(int stallId, bool isOpen) async {
+    await _client.from('stalls').update({
+      'is_open': isOpen,
+    }).eq('id', stallId);
+  }
+
+  Future<void> updateOperatingHours(
+      int stallId, TimeOfDay openTime, TimeOfDay closeTime) async {
+    String timeToString(TimeOfDay time) {
+      return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+    }
+
+    await _client.from('stalls').update({
+      'open_time': timeToString(openTime),
+      'close_time': timeToString(closeTime),
+    }).eq('id', stallId);
+  }
+
+  // Add method to auto-update stall status based on time
+  Future<void> updateStallStatusBasedOnTime(int stallId) async {
+    try {
+      final stall = await getStanById(stallId);
+      if (stall == null || stall.openTime == null || stall.closeTime == null)
+        return;
+
+      final isCurrentlyOpen = stall.isCurrentlyOpen();
+      if (isCurrentlyOpen != stall.isOpen) {
+        await updateStallStatus(stallId, isCurrentlyOpen);
+      }
+    } catch (e) {
+      print('Error updating stall status: $e');
+      // Handle or rethrow the error as needed
     }
   }
 }

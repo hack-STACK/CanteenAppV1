@@ -16,6 +16,16 @@ class RatingIndicator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (ratingCount == 0) {
+      return Text(
+        'No reviews yet',
+        style: TextStyle(
+          color: Colors.grey[600],
+          fontSize: size * 0.75,
+        ),
+      );
+    }
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [

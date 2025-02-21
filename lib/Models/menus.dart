@@ -5,32 +5,48 @@ class Menu {
   static const defaultRating = 0.0;
   static const defaultTotalRatings = 0;
 
-  final int? id;
+  final int id;
   final String foodName;
   final double price;
   final String type;
   final String? photo;
   final String? description;
-  final int stallId;
+  final int stallId; // Ensure this is non-nullable
   final bool isAvailable;
   final String? category;
   final double rating;
   final int totalRatings;
   final List<FoodAddon> addons; // Add this field
+  final bool isPopular;
+  final bool isRecommended;
+  final int reviewCount;
+  final bool isVegetarian;
+  final bool isSpicy;
+  final List<String> tags;
+  final int? preparationTime;
+  final double? originalPrice;
 
   Menu({
-    this.id,
+    required this.id,
     required this.foodName,
     required this.price,
     required String type,
     this.photo,
     this.description,
-    required this.stallId,
+    required this.stallId, // Make stallId required
     this.isAvailable = true,
     this.category,
     double? rating,
     int? totalRatings,
     List<FoodAddon>? addons, // Add to constructor
+    this.isPopular = false,
+    this.isRecommended = false,
+    this.reviewCount = 0,
+    this.isVegetarian = false,
+    this.isSpicy = false,
+    this.tags = const [],
+    this.preparationTime,
+    this.originalPrice,
   })  : type = type.toLowerCase(),
         rating = rating ?? defaultRating,
         totalRatings = totalRatings ?? defaultTotalRatings,
@@ -38,7 +54,7 @@ class Menu {
 
   factory Menu.fromMap(Map<String, dynamic> map) {
     return Menu(
-      id: map['id'] as int?,
+      id: map['id'] as int,
       foodName: map['food_name'] as String,
       price: (map['price'] as num).toDouble(),
       type: map['type'] as String,
@@ -50,12 +66,18 @@ class Menu {
       rating: (map['rating'] as num?)?.toDouble() ?? defaultRating,
       totalRatings: map['total_ratings'] as int? ?? defaultTotalRatings,
       addons: [], // Initialize empty addons list
+      isPopular: map['is_popular'] ?? false,
+      isRecommended: map['is_recommended'] ?? false,
+      reviewCount: map['review_count'] ?? 0,
+      isVegetarian: map['is_vegetarian'] ?? false,
+      isSpicy: map['is_spicy'] ?? false,
+      tags: List<String>.from(map['tags'] ?? []),
     );
   }
 
   Map<String, dynamic> toMap() {
     return {
-      if (id != null) 'id': id,
+      'id': id,
       'food_name': foodName,
       'price': price,
       'type': type,
@@ -66,6 +88,14 @@ class Menu {
       'category': category,
       'rating': rating,
       'total_ratings': totalRatings,
+      'is_popular': isPopular,
+      'is_recommended': isRecommended,
+      'review_count': reviewCount,
+      'is_vegetarian': isVegetarian,
+      'is_spicy': isSpicy,
+      'tags': tags,
+      'preparation_time': preparationTime,
+      'original_price': originalPrice,
     };
   }
 
@@ -82,9 +112,17 @@ class Menu {
       'category': category,
       'rating': rating,
       'total_ratings': totalRatings,
+      'is_popular': isPopular,
+      'is_recommended': isRecommended,
+      'review_count': reviewCount,
+      'is_vegetarian': isVegetarian,
+      'is_spicy': isSpicy,
+      'tags': tags,
+      'preparation_time': preparationTime,
+      'original_price': originalPrice,
     };
 
-    if (!excludeId && id != null) {
+    if (!excludeId) {
       map['id'] = id;
     }
 
@@ -93,21 +131,38 @@ class Menu {
 
   // Update fromJson factory constructor with better null handling
   factory Menu.fromJson(Map<String, dynamic> json) {
+    // Ensure stallId is properly extracted and validated
+    final stallId = json['stall_id'] ?? json['stallId'];
+    if (stallId == null || stallId == 0) {
+      throw Exception('Invalid or missing stall ID in menu data');
+    }
+
     try {
       final stallData = json['stall'] as Map<String, dynamic>?;
       return Menu(
-        id: json['id'] as int?,
+        id: json['id'] as int,
         foodName: json['food_name'] as String? ?? 'Unknown Item',
         price: (json['price'] as num?)?.toDouble() ?? 0.0,
         type: (json['type'] as String?) ?? 'food',
         photo: json['photo'] as String?,
         description: json['description'] as String?,
-        stallId: stallData?['id'] as int? ?? 0,
+        stallId: stallId,
         isAvailable: json['is_available'] as bool? ?? true,
         category: json['category'] as String?,
         rating: (json['rating'] as num?)?.toDouble() ?? defaultRating,
         totalRatings: json['total_ratings'] as int? ?? defaultTotalRatings,
-        addons: [], // Initialize empty addons list
+        addons: (json['addons'] as List<dynamic>?)
+                ?.map((addon) => FoodAddon.fromJson(addon))
+                .toList() ??
+            [], // Initialize empty addons list
+        isPopular: json['is_popular'] ?? false,
+        isRecommended: json['is_recommended'] ?? false,
+        reviewCount: json['review_count'] ?? 0,
+        isVegetarian: json['is_vegetarian'] ?? false,
+        isSpicy: json['is_spicy'] ?? false,
+        tags: List<String>.from(json['tags'] ?? []),
+        preparationTime: json['preparation_time'] as int?,
+        originalPrice: (json['original_price'] as num?)?.toDouble(),
       );
     } catch (e) {
       print('Error creating Menu from JSON: $e');
@@ -137,6 +192,14 @@ class Menu {
     double? rating,
     int? totalRatings,
     List<FoodAddon>? addons,
+    bool? isPopular,
+    bool? isRecommended,
+    int? reviewCount,
+    bool? isVegetarian,
+    bool? isSpicy,
+    List<String>? tags,
+    int? preparationTime,
+    double? originalPrice,
   }) {
     return Menu(
       id: id ?? this.id,
@@ -151,6 +214,14 @@ class Menu {
       rating: rating ?? this.rating,
       totalRatings: totalRatings ?? this.totalRatings,
       addons: addons ?? this.addons,
+      isPopular: isPopular ?? this.isPopular,
+      isRecommended: isRecommended ?? this.isRecommended,
+      reviewCount: reviewCount ?? this.reviewCount,
+      isVegetarian: isVegetarian ?? this.isVegetarian,
+      isSpicy: isSpicy ?? this.isSpicy,
+      tags: tags ?? this.tags,
+      preparationTime: preparationTime ?? this.preparationTime,
+      originalPrice: originalPrice ?? this.originalPrice,
     );
   }
 

@@ -185,7 +185,7 @@ class _ModernOrderCardState extends State<ModernOrderCard>
                               fit: BoxFit.cover,
                             )
                           : null,
-                      color: colorScheme.surfaceVariant,
+                      color: colorScheme.surfaceContainerHighest,
                     ),
                     child: item.menu?.photo == null
                         ? Icon(Icons.restaurant,

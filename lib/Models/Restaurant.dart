@@ -79,24 +79,42 @@ class Restaurant extends ChangeNotifier {
     }
   }
 
-  void addToCart(Menu menu, {List<FoodAddon> addons = const [], String? note}) {
+  void addToCart(
+    Menu menuItem, {
+    int quantity = 1,
+    List<FoodAddon> selectedAddons = const [],
+    String? note,
+    List<FoodAddon>? addons, // Make addons optional
+  }) {
+    // Validate stall ID
+    if (menuItem.stallId <= 0) {
+      throw Exception('Invalid stall ID for menu item: ${menuItem.foodName}');
+    }
+
+    // If cart is not empty, check if item is from same stall
+    if (cart.isNotEmpty && cart.first.menu.stallId != menuItem.stallId) {
+      throw Exception('Cannot add items from different stalls to cart');
+    }
+
     final existingItemIndex = _cart.indexWhere(
       (item) =>
-          item.menu.id == menu.id &&
-          item.selectedAddons.length == addons.length &&
-          item.selectedAddons.every((addon) => addons.contains(addon)),
+          item.menu.id == menuItem.id &&
+          item.selectedAddons.length == selectedAddons.length &&
+          item.selectedAddons
+              .every((addon) => selectedAddons.contains(addon)) &&
+          item.note == note,
     );
 
     if (existingItemIndex != -1) {
       final existingItem = _cart[existingItemIndex];
       _cart[existingItemIndex] =
-          existingItem.copyWith(quantity: existingItem.quantity + 1);
+          existingItem.copyWith(quantity: existingItem.quantity + quantity);
     } else {
       _cart.add(CartItem(
-        menu: menu,
-        selectedAddons: addons,
+        menu: menuItem,
+        selectedAddons: selectedAddons,
+        quantity: quantity,
         note: note,
-        quantity: 1,
       ));
     }
     notifyListeners();
@@ -221,5 +239,10 @@ class Restaurant extends ChangeNotifier {
       }
       notifyListeners();
     }
+  }
+
+  @override
+  String toString() {
+    return 'Restaurant(items: ${menu.length}, cart: ${cart.length}, total: ${_formatPrice(getTotalPrice())})';
   }
 }

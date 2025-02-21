@@ -1,18 +1,27 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:kantin/Component/my_drawer.dart';
 import 'package:kantin/Component/my_stall_tile.dart';
 import 'package:kantin/Models/Stan_model.dart';
 import 'package:kantin/Models/student_models.dart';
+import 'package:kantin/Services/Auth/auth_Service.dart';
 import 'package:kantin/Services/Database/Stan_service.dart';
+import 'package:kantin/Services/Database/UserService.dart';
 import 'package:kantin/pages/StudentState/Stalldetailpage.dart';
 import 'package:kantin/utils/avatar_generator.dart';
 import 'package:kantin/utils/banner_generator.dart';
 import 'package:kantin/Services/Database/studentService.dart';
+import 'package:kantin/widgets/home/featured_promos.dart';
+import 'package:kantin/widgets/home/food_category_bar.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 // Add this import
 import 'package:kantin/widgets/search_bar_delegate.dart';
 import 'package:kantin/widgets/student/student_profile_header.dart';
+import 'package:kantin/widgets/shimmer/shimmer_loading.dart'; // Add this import
+import 'package:flutter_animate/flutter_animate.dart';
+import 'package:kantin/widgets/stall/stall_status_badge.dart';
 
 class StudentPage extends StatefulWidget {
   const StudentPage({super.key});
@@ -21,8 +30,12 @@ class StudentPage extends StatefulWidget {
   _HomepageState createState() => _HomepageState();
 }
 
-class _HomepageState extends State<StudentPage> {
+class _HomepageState extends State<StudentPage>
+    with SingleTickerProviderStateMixin {
   final StanService _stanService = StanService();
+  final StudentService _studentService = StudentService();
+  final AuthService _authService = AuthService();
+  final UserService _userService = UserService(); // Add this line
   List<Stan> _stalls = [];
   List<Stan> _popularStalls = [];
   bool _isLoading = true;
@@ -33,36 +46,80 @@ class _HomepageState extends State<StudentPage> {
 
   final int _bannerCount = 3;
 
-  final List<Map<String, dynamic>> _categories = [
-    {'icon': Icons.fastfood, 'label': 'Food', 'color': Colors.orange},
-    {'icon': Icons.local_drink, 'label': 'Drinks', 'color': Colors.blue},
-    {'icon': Icons.icecream, 'label': 'Snacks', 'color': Colors.purple},
-    {'icon': Icons.food_bank, 'label': 'Rice', 'color': Colors.green},
-    {'icon': Icons.lunch_dining, 'label': 'Noodles', 'color': Colors.red},
-    {'icon': Icons.cake, 'label': 'Dessert', 'color': Colors.pink},
-  ];
-
-  final StudentService _studentService = StudentService();
-  StudentModel? _currentStudent;
-  final _supabase = Supabase.instance.client;
-
-  final ScrollController _scrollController = ScrollController();
-  bool _isScrolled = false;
-  final String _selectedCategory = 'All';
   final List<String> _recentSearches = [];
   final GlobalKey<ScaffoldMessengerState> _scaffoldMessengerKey =
       GlobalKey<ScaffoldMessengerState>();
   final GlobalKey<ScaffoldState> _scaffoldKey =
       GlobalKey<ScaffoldState>(); // Add this
 
+  // Add new controller for tab view
+  late TabController _tabController;
+
+  // Add new state variables
+  bool _isRefreshing = false;
+  List<Stan> _filteredStalls = [];
+
+  // Add missing state variables
+  final ScrollController _scrollController = ScrollController();
+  bool _isScrolled = false;
+  StudentModel? _currentStudent;
+  final _supabase = Supabase.instance.client;
+  String _sortBy = 'rating'; // New sorting state
+
+  // New filtering states
+  bool _isOpen = true;
+  double _minRating = 0.0;
+  bool _hasPromo = false;
+
+  // New UI states
+  bool _showScrollToTop = false;
+  int _selectedStallIndex = -1;
+
+  // Add these new state variables
+  final ValueNotifier<List<Stan>> _filteredStallsNotifier =
+      ValueNotifier<List<Stan>>([]);
+  Timer? _debounceTimer;
+
+  // Add these new state variables for filter dialog
+  late ValueNotifier<bool> _isOpenNotifier;
+  late ValueNotifier<bool> _hasPromoNotifier;
+  late ValueNotifier<double> _minRatingNotifier;
+
+  // Add new state variables
+  String _selectedCategory = 'All';
+
   @override
   void initState() {
     super.initState();
+    // Fix: Change length to 2 to match number of tabs
+    _tabController = TabController(length: 2, vsync: this);
     _scrollController.addListener(_onScroll);
+
+    // Initialize notifiers with default values
+    _isOpenNotifier = ValueNotifier(_isOpen);
+    _hasPromoNotifier = ValueNotifier(_hasPromo);
+    _minRatingNotifier = ValueNotifier(_minRating);
+
+    // Add listener for filtered stalls
+    _filteredStallsNotifier.addListener(() {
+      if (mounted) {
+        setState(() {
+          _filteredStalls = _filteredStallsNotifier.value;
+        });
+      }
+    });
+
     _loadStudentData();
     // Delay the data loading to ensure Scaffold is initialized
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadInitialData();
+    });
+
+    // Add scroll to top listener
+    _scrollController.addListener(() {
+      setState(() {
+        _showScrollToTop = _scrollController.offset > 300;
+      });
     });
   }
 
@@ -86,15 +143,22 @@ class _HomepageState extends State<StudentPage> {
 
       print('Debug: Starting to load student data');
 
-      // Get the user data directly from shared preferences or your auth state
-      final userId = 36; // This should come from your auth state management
-      print('Debug: Using user ID - $userId');
+      // Get the current user ID from AuthService
+      final userId = _authService.currentUserId;
+      if (userId == null) {
+        throw Exception('User not authenticated');
+      }
 
-      // Get student data using user_id directly;
+      // Get student data using the actual user ID from authentication
+      final userData = await _userService.getUserByFirebaseUid(userId);
+      if (userData == null) {
+        throw Exception('User data not found');
+      }
+
       final studentResponse = await _supabase
           .from('students')
           .select()
-          .eq('id_user', userId)
+          .eq('id_user', userData.id!)
           .single();
 
       print('Debug: Student response - $studentResponse');
@@ -107,7 +171,6 @@ class _HomepageState extends State<StudentPage> {
           _isLoadingProfile = false;
         });
 
-        // Show complete profile dialog only if in the right context
         if (_currentStudent == null && mounted) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             _showCompleteProfileDialog();
@@ -118,7 +181,6 @@ class _HomepageState extends State<StudentPage> {
       print('Debug: Error in _loadStudentData - $e');
       if (mounted) {
         setState(() => _isLoadingProfile = false);
-        // Delay showing SnackBar to ensure Scaffold is ready
         WidgetsBinding.instance.addPostFrameCallback((_) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -168,11 +230,26 @@ class _HomepageState extends State<StudentPage> {
         _popularStalls = popularStalls.take(5).toList();
         _isLoading = false;
       });
+
+      // Apply initial filters
+      _applyFilters();
     } catch (e) {
       setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error loading stalls: $e')),
       );
+    }
+  }
+
+  Future<void> _handleRefresh() async {
+    setState(() => _isRefreshing = true);
+    try {
+      await Future.wait([
+        _loadStudentData(),
+        _loadStalls(),
+      ]);
+    } finally {
+      if (mounted) setState(() => _isRefreshing = false);
     }
   }
 
@@ -253,47 +330,6 @@ class _HomepageState extends State<StudentPage> {
           }),
         ),
       ],
-    );
-  }
-
-  Widget _buildCategories() {
-    return Container(
-      height: 100,
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: _categories.length,
-        itemBuilder: (context, index) {
-          final category = _categories[index];
-          return Container(
-            width: 72,
-            margin: const EdgeInsets.only(right: 8),
-            child: Column(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: category['color'].withOpacity(0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    category['icon'],
-                    color: category['color'],
-                    size: 24,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  category['label'],
-                  style: const TextStyle(fontSize: 12),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-          );
-        },
-      ),
     );
   }
 
@@ -405,11 +441,13 @@ class _HomepageState extends State<StudentPage> {
   }
 
   Widget _buildProfileSection() {
-    return StudentProfileHeader(
-      student: _currentStudent,
-      isLoading: _isLoadingProfile,
-      onProfileComplete: _navigateToProfileSetup,
-      onRefresh: _loadStudentData,
+    return SliverToBoxAdapter(
+      child: StudentProfileHeader(
+        student: _currentStudent,
+        isLoading: _isLoadingProfile,
+        onProfileComplete: _navigateToProfileSetup,
+        onRefresh: _loadStudentData,
+      ),
     );
   }
 
@@ -501,6 +539,473 @@ class _HomepageState extends State<StudentPage> {
     );
   }
 
+  Widget _buildStallsList() {
+    if (_isLoading) {
+      return SliverList(
+        delegate: SliverChildBuilderDelegate(
+          (context, index) => Padding(
+            padding: const EdgeInsets.only(bottom: 8.0),
+            child: ShimmerLoading(
+              width: double.infinity,
+              height: 100,
+            ),
+          ),
+          childCount: 5,
+        ),
+      );
+    }
+
+    return SliverList(
+      delegate: SliverChildBuilderDelegate(
+        (context, index) {
+          final stall = _filteredStalls[index];
+          return Hero(
+            tag: 'stall-${stall.id}',
+            child: AnimatedStallTile(
+              stall: stall,
+              onTap: () => _navigateToStallDetail(stall),
+            ),
+          );
+        },
+        childCount: _filteredStalls.length,
+      ),
+    );
+  }
+
+  void _navigateToStallDetail(Stan stall) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => StallDetailPage(
+          stall: stall,
+          StudentId: _currentStudent?.id ?? 0,
+        ),
+      ),
+    ).then((_) => _loadStalls()); // Refresh after returning
+  }
+
+  Widget _buildTabView() {
+    return SliverToBoxAdapter(
+      child: Column(
+        children: [
+          Container(
+            color: Colors.white,
+            child: TabBar(
+              controller: _tabController,
+              tabs: const [
+                Tab(text: 'All Stalls'),
+                Tab(text: 'Featured'),
+              ],
+              labelColor: Theme.of(context).primaryColor,
+              unselectedLabelColor: Colors.grey,
+              indicatorColor: Theme.of(context).primaryColor,
+            ),
+          ),
+          Container(
+            height:
+                MediaQuery.of(context).size.height * 0.6, // Increased height
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _buildAllStallsGrid(),
+                _buildFeaturedStalls(),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAllStallsGrid() {
+    if (_isLoading) {
+      return Center(child: CircularProgressIndicator());
+    }
+
+    return ValueListenableBuilder<List<Stan>>(
+      valueListenable: _filteredStallsNotifier,
+      builder: (context, filteredStalls, child) {
+        if (filteredStalls.isEmpty) {
+          return const Center(child: Text('No stalls found'));
+        }
+
+        return GridView.builder(
+          padding: const EdgeInsets.all(8),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            childAspectRatio: 0.8,
+            crossAxisSpacing: 10,
+            mainAxisSpacing: 10,
+          ),
+          itemCount: filteredStalls.length,
+          itemBuilder: (context, index) =>
+              _buildStallCard(filteredStalls[index]),
+        );
+      },
+    );
+  }
+
+  Widget _buildStallCard(Stan stall) {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: InkWell(
+        onTap: () => _navigateToStallDetail(stall),
+        borderRadius: BorderRadius.circular(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Stack(
+              children: [
+                ClipRRect(
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(12)),
+                  child: AspectRatio(
+                    aspectRatio: 1.5,
+                    child: stall.imageUrl != null
+                        ? Image.network(
+                            stall.imageUrl!,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) =>
+                                AvatarGenerator.generateStallAvatar(
+                                    stall.stanName),
+                          )
+                        : AvatarGenerator.generateStallAvatar(stall.stanName),
+                  ),
+                ),
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: StallStatusBadge(stall: stall),
+                ),
+                if (stall.hasActivePromotions())
+                  Positioned(
+                    top: 8,
+                    left: 8,
+                    child: Container(
+                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        'PROMO',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    stall.stanName,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(Icons.star, size: 16, color: Colors.amber),
+                      Text(
+                        ' ${stall.rating?.toStringAsFixed(1) ?? "N/A"}',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFeaturedStalls() {
+    if (_isLoading) {
+      return Center(child: CircularProgressIndicator());
+    }
+
+    return _popularStalls.isEmpty
+        ? Center(child: Text('No featured stalls'))
+        : GridView.builder(
+            padding: const EdgeInsets.all(8),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              childAspectRatio: 0.8,
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 10,
+            ),
+            itemCount: _popularStalls.length,
+            itemBuilder: (context, index) {
+              final stall = _popularStalls[index];
+              return _buildStallCard(stall);
+            },
+          );
+  }
+
+  // Add new sorting method
+  void _sortStalls() {
+    _applyFilters(); // Re-apply filters with new sort
+  }
+
+  // Add sort and filter UI
+  Widget _buildSortAndFilter() {
+    return SliverToBoxAdapter(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          children: [
+            DropdownButton<String>(
+              value: _sortBy,
+              items: [
+                DropdownMenuItem(value: 'rating', child: Text('Rating')),
+                DropdownMenuItem(value: 'name', child: Text('Name')),
+                DropdownMenuItem(
+                    value: 'popularity', child: Text('Popularity')),
+              ],
+              onChanged: (value) {
+                setState(() {
+                  _sortBy = value!;
+                  _sortStalls();
+                });
+              },
+            ),
+            Spacer(),
+            IconButton(
+              icon: Icon(Icons.filter_list),
+              onPressed: _showFilterDialog,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Update filter dialog
+  void _showFilterDialog() {
+    // Create temporary notifiers for the dialog
+    final tempIsOpen = ValueNotifier(_isOpen);
+    final tempHasPromo = ValueNotifier(_hasPromo);
+    final tempMinRating = ValueNotifier(_minRating);
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Filter Stalls'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ValueListenableBuilder<bool>(
+                valueListenable: tempIsOpen,
+                builder: (context, isOpen, child) {
+                  return SwitchListTile(
+                    title: const Text('Open Now'),
+                    value: isOpen,
+                    onChanged: (value) {
+                      tempIsOpen.value = value;
+                      // Apply filter immediately
+                      _applyTemporaryFilters(
+                        isOpen: value,
+                        hasPromo: tempHasPromo.value,
+                        minRating: tempMinRating.value,
+                      );
+                    },
+                  );
+                },
+              ),
+              ValueListenableBuilder<bool>(
+                valueListenable: tempHasPromo,
+                builder: (context, hasPromo, child) {
+                  return SwitchListTile(
+                    title: const Text('Has Promotions'),
+                    value: hasPromo,
+                    onChanged: (value) {
+                      tempHasPromo.value = value;
+                      // Apply filter immediately
+                      _applyTemporaryFilters(
+                        isOpen: tempIsOpen.value,
+                        hasPromo: value,
+                        minRating: tempMinRating.value,
+                      );
+                    },
+                  );
+                },
+              ),
+              const Text('Minimum Rating'),
+              ValueListenableBuilder<double>(
+                valueListenable: tempMinRating,
+                builder: (context, minRating, child) {
+                  return Slider(
+                    value: minRating,
+                    min: 0,
+                    max: 5,
+                    divisions: 5,
+                    label: minRating.toString(),
+                    onChanged: (value) {
+                      tempMinRating.value = value;
+                      // Apply filter immediately
+                      _applyTemporaryFilters(
+                        isOpen: tempIsOpen.value,
+                        hasPromo: tempHasPromo.value,
+                        minRating: value,
+                      );
+                    },
+                  );
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                // Reset to original values
+                _applyTemporaryFilters(
+                  isOpen: _isOpen,
+                  hasPromo: _hasPromo,
+                  minRating: _minRating,
+                );
+                Navigator.pop(context);
+              },
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                // Save the new values
+                setState(() {
+                  _isOpen = tempIsOpen.value;
+                  _hasPromo = tempHasPromo.value;
+                  _minRating = tempMinRating.value;
+                });
+                Navigator.pop(context);
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Add new method for temporary filtering
+  void _applyTemporaryFilters({
+    required bool isOpen,
+    required bool hasPromo,
+    required double minRating,
+  }) {
+    final filteredList = _stalls.where((stall) {
+      if (minRating > 0 &&
+          (stall.rating == null || stall.rating! < minRating)) {
+        return false;
+      }
+
+      if (isOpen && !stall.isCurrentlyOpen()) {
+        return false;
+      }
+
+      if (hasPromo && !stall.hasActivePromotions()) {
+        return false;
+      }
+
+      return true;
+    }).toList();
+
+    // Sort the filtered list
+    switch (_sortBy) {
+      case 'rating':
+        filteredList.sort((a, b) => (b.rating ?? 0).compareTo(a.rating ?? 0));
+        break;
+      case 'name':
+        filteredList.sort((a, b) => a.stanName.compareTo(b.stanName));
+        break;
+      case 'popularity':
+        // Implement popularity logic here
+        break;
+    }
+
+    // Update the notifier immediately
+    _filteredStallsNotifier.value = filteredList;
+  }
+
+  // Add scroll to top button
+  Widget _buildScrollToTopButton() {
+    return AnimatedOpacity(
+      opacity: _showScrollToTop ? 1.0 : 0.0,
+      duration: Duration(milliseconds: 200),
+      child: FloatingActionButton(
+        mini: true,
+        child: Icon(Icons.arrow_upward),
+        onPressed: () {
+          _scrollController.animateTo(
+            0,
+            duration: Duration(milliseconds: 500),
+            curve: Curves.easeInOut,
+          );
+        },
+      ),
+    );
+  }
+
+  // Add this method after _loadStalls()
+  void _applyFilters() {
+    // Cancel any pending debounce timer
+    _debounceTimer?.cancel();
+
+    // Create a new debounce timer
+    _debounceTimer = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+
+      final filteredList = _stalls.where((stall) {
+        // Apply minimum rating filter
+        if (_minRating > 0 &&
+            (stall.rating == null || stall.rating! < _minRating)) {
+          return false;
+        }
+
+        // Only apply open/closed filter if the stall has this information
+        if (_isOpen && !stall.isCurrentlyOpen()) {
+          return false;
+        }
+
+        // Check for active promotions
+        if (_hasPromo && !stall.hasActivePromotions()) {
+          return false;
+        }
+
+        return true;
+      }).toList();
+
+      // Sort the filtered list
+      switch (_sortBy) {
+        case 'rating':
+          filteredList.sort((a, b) => (b.rating ?? 0).compareTo(a.rating ?? 0));
+          break;
+        case 'name':
+          filteredList.sort((a, b) => a.stanName.compareTo(b.stanName));
+          break;
+        case 'popularity':
+          // Implement your popularity logic here
+          break;
+      }
+
+      // Update the notifier
+      _filteredStallsNotifier.value = filteredList;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return ScaffoldMessenger(
@@ -509,42 +1014,39 @@ class _HomepageState extends State<StudentPage> {
         key: _scaffoldKey,
         backgroundColor: Colors.grey[50],
         drawer: MyDrawer(studentId: _currentStudent?.id ?? 0),
+        floatingActionButton: _buildScrollToTopButton(),
         body: RefreshIndicator(
-          onRefresh: () async {
-            await Future.wait([
-              _loadStudentData(),
-              _loadStalls(),
-            ]);
-          },
+          onRefresh: _handleRefresh,
           child: CustomScrollView(
             controller: _scrollController,
-            physics: const AlwaysScrollableScrollPhysics(),
+            physics: const BouncingScrollPhysics(),
             slivers: [
               _buildAppBar(),
-              SliverToBoxAdapter(
-                  child: _buildProfileSection()), // Add this line
               _buildSearchBar(),
-              SliverToBoxAdapter(child: _buildCategories()),
-              SliverToBoxAdapter(child: _buildBannerCarousel()),
-              SliverToBoxAdapter(child: _buildPopularStalls()),
               SliverToBoxAdapter(
                 child: Column(
                   children: [
-                    const Divider(height: 32),
+                    FoodCategoryBar(
+                      selectedCategory: _selectedCategory,
+                      onCategorySelected: (category) {
+                        setState(() {
+                          _selectedCategory = category;
+                          // Apply category filter
+                          _applyFilters();
+                        });
+                      },
+                    ),
+                    FeaturedPromos(stalls: _stalls),
+                    _buildPopularSection(),
                     const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 16),
-                      child: Text(
-                        'All Stalls',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
+                      padding: EdgeInsets.all(16),
+                      child: Divider(),
                     ),
                   ],
                 ),
               ),
-              _buildStallsList(),
+              _buildSortAndFilter(),
+              _buildStallsGrid(),
             ],
           ),
         ),
@@ -552,44 +1054,198 @@ class _HomepageState extends State<StudentPage> {
     );
   }
 
-  Widget _buildStallsList() {
+  Widget _buildPopularSection() {
+    if (_popularStalls.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Text(
+                'Popular Stalls ⭐',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+              const Spacer(),
+              TextButton(
+                onPressed: () {
+                  setState(() {
+                    _tabController.index = 1; // Switch to Featured tab
+                  });
+                },
+                child: const Text('See All'),
+              ),
+            ],
+          ),
+        ),
+        SizedBox(
+          height: 200,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: _popularStalls.length,
+            itemBuilder: (context, index) {
+              final stall = _popularStalls[index];
+              return _buildPopularStallCard(stall);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPopularStallCard(Stan stall) {
+    return Container(
+      width: 200,
+      margin: const EdgeInsets.only(right: 16),
+      child: Card(
+        elevation: 4,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: InkWell(
+          onTap: () => _navigateToStallDetail(stall),
+          borderRadius: BorderRadius.circular(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ClipRRect(
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(12)),
+                child: AspectRatio(
+                  aspectRatio: 16 / 9,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Image.network(
+                        stall.imageUrl ?? '',
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) =>
+                            AvatarGenerator.generateStallAvatar(stall.stanName),
+                      ),
+                      if (stall.hasActivePromotions())
+                        Positioned(
+                          top: 8,
+                          right: 8,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.red,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Text(
+                              'PROMO',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      stall.stanName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.star,
+                          size: 16,
+                          color: Colors.amber[700],
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          stall.rating?.toStringAsFixed(1) ?? 'N/A',
+                          style: TextStyle(
+                            color: Colors.grey[700],
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        if (stall.isCurrentlyOpen())
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.green[50],
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              'Open',
+                              style: TextStyle(
+                                color: Colors.green[700],
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Add this method after _loadStalls()
+  Widget _buildStallsGrid() {
     if (_isLoading) {
-      return const SliverFillRemaining(
+      return SliverFillRemaining(
         child: Center(child: CircularProgressIndicator()),
       );
     }
 
-    if (_stalls.isEmpty) {
-      return const SliverFillRemaining(
-        child: Center(child: Text('No stalls available')),
-      );
-    }
-
-    return SliverPadding(
-      padding: const EdgeInsets.all(16),
-      sliver: SliverList(
-        delegate: SliverChildBuilderDelegate(
-          (context, index) => AnimatedStallTile(
-            stall: _stalls[index],
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => StallDetailPage(
-                  stall: _stalls[index],
-                  StudentId:
-                      _currentStudent?.id ?? 0, // Add the StudentId parameter
-                ),
-              ),
-            ),
-          ),
-          childCount: _stalls.length,
-        ),
+    return SliverList(
+      delegate: SliverChildBuilderDelegate(
+        (context, index) {
+          final stall = _filteredStalls[index];
+          // Remove Hero wrapper since it's handled by AnimatedStallTile
+          return AnimatedStallTile(
+            stall: stall,
+            onTap: () => _navigateToStallDetail(stall),
+            useHero: true, // Enable Hero animation
+          );
+        },
+        childCount: _filteredStalls.length,
       ),
     );
   }
 
   @override
   void dispose() {
+    _isOpenNotifier.dispose();
+    _hasPromoNotifier.dispose();
+    _minRatingNotifier.dispose();
+    _debounceTimer?.cancel();
+    _filteredStallsNotifier.dispose();
+    _tabController.dispose();
     _scrollController.dispose();
     super.dispose();
   }

@@ -134,31 +134,46 @@ class RefundService {
 
   Future<void> checkAndProcessAutomaticRefunds() async {
     try {
-      final now = DateTime.now();
-
-      // Get eligible transactions
+      // First, get all cancelled orders that might need refunds
       final response = await _supabase
           .from('transactions')
           .select()
-          .eq('refund_eligible', true)
-          .not('status', 'in', ['completed', 'cancelled']);
+          .eq('status', 'cancelled')
+          .eq('payment_status', 'paid')
+          .not('refund_processed', 'neq',
+              null) // Fixed: use not + neq to check for NULL
+          .order('created_at');
 
-      final transactions = List<Map<String, dynamic>>.from(response);
+      if (response == null || (response as List).isEmpty) {
+        return; // No refunds to process
+      }
 
-      for (final transaction in transactions) {
-        final lastStatusChange =
-            DateTime.parse(transaction['last_status_change']);
-        final status = transaction['status'];
-
-        final timeout = _getTimeoutForStatus(status);
-        final timeElapsed = now.difference(lastStatusChange);
-
-        if (timeElapsed > timeout) {
-          await _processAutomaticRefund(transaction);
+      for (final order in response) {
+        try {
+          await _processAutomaticRefund(order['id']);
+        } catch (e) {
+          _logger.error('Failed to process automatic refund', e);
+          // Continue with next order even if one fails
+          continue;
         }
       }
-    } catch (e, stack) {
-      _logger.error('Error processing automatic refunds', e, stack);
+    } catch (e) {
+      _logger.error('Error processing automatic refunds', e);
+      throw Exception('Failed to process automatic refunds: $e');
+    }
+  }
+
+  Future<void> _processAutomaticRefund(int transactionId) async {
+    try {
+      // Start a transaction to ensure data consistency
+      await _supabase.rpc('process_refund', params: {
+        'transaction_id': transactionId,
+        'reason': 'Automatic refund for cancelled order',
+        'amount': null, // Will use full amount from transaction
+      });
+    } catch (e) {
+      _logger.error('Failed to process automatic refund', e);
+      throw Exception('Failed to process automatic refund: $e');
     }
   }
 
@@ -172,51 +187,6 @@ class RefundService {
         return cookingTimeout;
       default:
         return pendingTimeout;
-    }
-  }
-
-  Future<void> _processAutomaticRefund(Map<String, dynamic> transaction) async {
-    try {
-      await _supabase.rpc('begin_transaction');
-
-      // Create refund record
-      final refundResponse = await _supabase
-          .from('refunds')
-          .insert({
-            'transaction_id': transaction['id'],
-            'amount': transaction['total_amount'],
-            'reason': 'Automatic refund due to timeout',
-            'status': 'approved',
-            'notes':
-                'System generated refund after ${_getTimeoutForStatus(transaction['status']).inMinutes} minutes',
-          })
-          .select()
-          .single();
-
-      // Update transaction status
-      await _supabase.from('transactions').update({
-        'status': 'cancelled',
-        'refund_eligible': false,
-        'cancellation_reason': 'Automatic timeout cancellation',
-        'cancelled_at': DateTime.now().toIso8601String(),
-      }).eq('id', transaction['id']);
-
-      // Add to transaction progress
-      await _supabase.from('transaction_progress').insert({
-        'transaction_id': transaction['id'],
-        'status': 'cancelled',
-        'notes': 'Automatic cancellation due to timeout',
-        'timestamp': DateTime.now().toIso8601String(),
-      });
-
-      await _supabase.rpc('commit_transaction');
-
-      _logger.info(
-          'Automatic refund processed for transaction ${transaction['id']}');
-    } catch (e, stack) {
-      await _supabase.rpc('rollback_transaction');
-      _logger.error('Failed to process automatic refund', e, stack);
-      throw Exception('Failed to process automatic refund: $e');
     }
   }
 }

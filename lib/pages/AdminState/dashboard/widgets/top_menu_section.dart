@@ -439,7 +439,7 @@ class _MenuCard extends StatelessWidget {
           children: [
             _MenuImage(
               imageUrl: menu.photo!,
-              type: menu.type!,
+              type: menu.type,
             ),
             const SizedBox(width: 12),
             Expanded(

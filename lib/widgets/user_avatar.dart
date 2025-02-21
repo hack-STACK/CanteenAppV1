@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:kantin/Services/Database/studentService.dart';
-import 'package:kantin/Services/Database/student_service.dart';
 import 'package:kantin/Models/student_models.dart';
 
 class UserAvatar extends StatelessWidget {

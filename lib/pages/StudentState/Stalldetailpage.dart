@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:kantin/Models/Stan_model.dart';
 import 'package:kantin/Models/menus.dart';
 import 'package:kantin/Services/Database/foodService.dart';
@@ -7,30 +8,13 @@ import 'package:provider/provider.dart';
 import 'package:kantin/Models/Restaurant.dart';
 import 'package:kantin/pages/StudentState/food_cart.dart';
 import 'package:supabase_flutter/supabase_flutter.dart'; // Add this import
-
-// Add this class to manage cart items better
-class CartItem {
-  final Menu menu;
-  final List<FoodAddon> selectedAddons;
-  final String? note;
-  int quantity;
-
-  CartItem({
-    required this.menu,
-    this.selectedAddons = const [],
-    this.note,
-    this.quantity = 1,
-  });
-
-  double get totalPrice {
-    double addonPrice =
-        selectedAddons.fold(0, (sum, addon) => sum + addon.price);
-    return (menu.price + addonPrice) * quantity;
-  }
-}
-
-// Add LoadingState enum for better state management
-enum LoadingState { initial, loading, loaded, error }
+import 'package:flutter/cupertino.dart';
+import 'package:shimmer/shimmer.dart';
+import 'package:kantin/widgets/stall_detail/stall_banner_header.dart';
+import 'package:kantin/widgets/stall_detail/stall_info_section.dart';
+import 'package:kantin/widgets/stall_detail/menu_section.dart';
+import 'package:kantin/Models/stall_detail_models.dart'; // Add this import and remove local declarations
+import 'package:kantin/widgets/stall_detail/review_section.dart'; // Add this import
 
 class StallDetailPage extends StatefulWidget {
   final Stan stall;
@@ -43,7 +27,12 @@ class StallDetailPage extends StatefulWidget {
   State<StallDetailPage> createState() => _StallDetailPageState();
 }
 
-class _StallDetailPageState extends State<StallDetailPage> {
+class _StallDetailPageState extends State<StallDetailPage>
+    with SingleTickerProviderStateMixin {
+  // Replace individual keys with a ValueKey
+  final _scrollKey = const PageStorageKey<String>('stall_detail');
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
+
   final FoodService _foodService = FoodService();
   LoadingState _loadingState = LoadingState.initial;
   String? _errorMessage;
@@ -64,24 +53,52 @@ class _StallDetailPageState extends State<StallDetailPage> {
   String _sortBy = 'recommended'; // 'recommended', 'price_asc', 'price_desc'
   final Set<String> _favoriteMenus = {};
   final List<Menu> _recommendedMenus = [];
-  final GlobalKey<ScaffoldMessengerState> _scaffoldKey =
-      GlobalKey<ScaffoldMessengerState>();
   final _supabase = Supabase.instance.client;
   // Add this variable to store cart count
   late int _cartItemCount;
   // Add this property for scroll tracking
   final bool _isScrolled = false;
 
+  // Add new properties for stall details
+  final List<String> _paymentMethods = ['Cash', 'QRIS', 'E-Wallet'];
+  final Map<String, String> _scheduleByDay = {
+    'Monday': '08:00 - 17:00',
+    'Tuesday': '08:00 - 17:00',
+    'Wednesday': '08:00 - 17:00',
+    'Thursday': '08:00 - 17:00',
+    'Friday': '08:00 - 16:30',
+    'Saturday': '09:00 - 15:00',
+    'Sunday': 'Closed',
+  };
+  final List<String> _amenities = [
+    'Air Conditioning',
+    'Seating Available',
+    'Takeaway',
+    'Halal Certified',
+  ];
+
+  // Add cart animation controller
+  late AnimationController _cartAnimation;
+  List<CartItem> get _cart =>
+      Provider.of<Restaurant>(context, listen: false).cart;
+
   @override
   void initState() {
     super.initState();
+    _cartAnimation = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
     _scrollController.addListener(_onScroll);
-    _loadData();
     _searchController.addListener(_onSearchChanged);
     _scrollController.addListener(_onScroll);
     // Initialize cart count
     _cartItemCount =
         Provider.of<Restaurant>(context, listen: false).cart.length;
+    // Defer the loading to after the build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadData();
+    });
   }
 
   @override
@@ -93,6 +110,7 @@ class _StallDetailPageState extends State<StallDetailPage> {
 
   @override
   void dispose() {
+    _cartAnimation.dispose();
     _searchController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -237,8 +255,15 @@ class _StallDetailPageState extends State<StallDetailPage> {
     // Get the Restaurant provider
     final restaurant = Provider.of<Restaurant>(context, listen: false);
 
-    // Add item to cart using the provider
-    restaurant.addToCart(menu, addons: addons, note: note);
+    // Add item to cart using the provider with named parameters
+    restaurant.addToCart(
+      menu,
+      quantity: 1,
+      selectedAddons: addons,
+      note: note,
+      addons: _menuAddons[menu.id] ?? [], // Add the addons parameter
+    );
+
     // Show a custom snack bar with undo option
     _showCartSnackBar(menu, restaurant, addons);
   }
@@ -470,14 +495,7 @@ class _StallDetailPageState extends State<StallDetailPage> {
                       aspectRatio: 16 / 9,
                       child: Hero(
                         tag: 'menu_${menu.id}',
-                        child: menu.photo != null
-                            ? Image.network(
-                                menu.photo!,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) =>
-                                    _buildMenuImagePlaceholder(menu),
-                              )
-                            : _buildMenuImagePlaceholder(menu),
+                        child: _loadMenuImage(menu),
                       ),
                     ),
                   ),
@@ -689,8 +707,9 @@ class _StallDetailPageState extends State<StallDetailPage> {
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
-                        onPressed:
-                            menu.isAvailable ? () => _addToCart(menu) : null,
+                        onPressed: menu.isAvailable
+                            ? () => _addToCart(menu) // Updated call
+                            : null,
                         icon: const Icon(Icons.add_shopping_cart, size: 18),
                         label: const Text('Add to Cart'),
                         style: ElevatedButton.styleFrom(
@@ -722,6 +741,51 @@ class _StallDetailPageState extends State<StallDetailPage> {
         ),
       ),
     );
+  }
+
+  // Add better image URL validation
+  bool _isValidImageUrl(String? url) {
+    if (url == null || url.isEmpty) return false;
+    try {
+      final uri = Uri.parse(url);
+      return uri.hasScheme && (uri.scheme == 'http' || uri.scheme == 'https');
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // Update image loading method
+  Widget _loadMenuImage(Menu menu) {
+    if (menu.photo == null || menu.photo!.isEmpty) {
+      return _buildMenuImagePlaceholder(menu);
+    }
+
+    try {
+      final uri = Uri.parse(menu.photo!);
+      if (!uri.hasScheme ||
+          (!uri.scheme.startsWith('http') && !uri.scheme.startsWith('https'))) {
+        return _buildMenuImagePlaceholder(menu);
+      }
+
+      return Image.network(
+        menu.photo!,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _buildMenuImagePlaceholder(menu),
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) return child;
+          return Center(
+            child: CircularProgressIndicator(
+              value: loadingProgress.expectedTotalBytes != null
+                  ? loadingProgress.cumulativeBytesLoaded /
+                      loadingProgress.expectedTotalBytes!
+                  : null,
+            ),
+          );
+        },
+      );
+    } catch (e) {
+      return _buildMenuImagePlaceholder(menu);
+    }
   }
 
   void _showMenuDetail(Menu menu) {
@@ -763,10 +827,7 @@ class _StallDetailPageState extends State<StallDetailPage> {
                             tag: 'menu_${menu.id}',
                             child: AspectRatio(
                               aspectRatio: 16 / 9,
-                              child: menu.photo != null
-                                  ? Image.network(menu.photo!,
-                                      fit: BoxFit.cover)
-                                  : _buildMenuImagePlaceholder(menu),
+                              child: _loadMenuImage(menu),
                             ),
                           ),
                           // Close Button
@@ -1020,256 +1081,199 @@ class _StallDetailPageState extends State<StallDetailPage> {
 
   @override
   Widget build(BuildContext context) {
-    // Listen to cart changes using Consumer instead of watch
     return Scaffold(
-      body: _buildBody(),
-      bottomNavigationBar: _buildBottomBar(),
-    );
-  }
-
-  Widget _buildBody() {
-    switch (_loadingState) {
-      case LoadingState.initial:
-      case LoadingState.loading:
-        return _buildLoadingState();
-      case LoadingState.error:
-        return _buildErrorState();
-      case LoadingState.loaded:
-        return _buildLoadedState();
-    }
-  }
-
-  Widget _buildLoadingState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+      key: _scaffoldKey,
+      body: Stack(
         children: [
-          CircularProgressIndicator(),
-          SizedBox(height: 16),
-          Text('Loading menu items...'),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildErrorState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.error_outline, size: 48, color: Colors.red),
-          SizedBox(height: 16),
-          Text(_errorMessage ?? 'An error occurred'),
-          SizedBox(height: 16),
-          ElevatedButton.icon(
-            onPressed: _loadData,
-            icon: Icon(Icons.refresh),
-            label: Text('Retry'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLoadedState() {
-    return RefreshIndicator(
-      onRefresh: _loadData,
-      child: CustomScrollView(
-        controller: _scrollController,
-        slivers: [
-          _buildSliverAppBar(),
-          SliverToBoxAdapter(child: _buildStallInfo()),
-          SliverToBoxAdapter(child: _buildCategoryFilter()),
-          _buildMenuList(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSliverAppBar() {
-    return SliverAppBar(
-      expandedHeight: 200,
-      pinned: true,
-      elevation: _isScrolled ? 4 : 0,
-      flexibleSpace: FlexibleSpaceBar(
-        title: _isScrolled ? Text(widget.stall.stanName) : null,
-        background: _buildStallBanner(),
-      ),
-      leading: BackButton(color: _isScrolled ? null : Colors.white),
-      actions: [_buildCartButton()],
-    );
-  }
-
-  Widget _buildStallBanner() {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        widget.stall.Banner_img != null
-            ? Image.network(
-                widget.stall.Banner_img!,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => _buildBannerPlaceholder(),
-              )
-            : _buildBannerPlaceholder(),
-        Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [Colors.transparent, Colors.black54],
+          RefreshIndicator(
+            onRefresh: _loadData,
+            child: NestedScrollView(
+              controller: _scrollController,
+              physics: const ClampingScrollPhysics(),
+              headerSliverBuilder: (context, innerBoxIsScrolled) => [
+                StallBannerHeader(
+                  stall: widget.stall,
+                  isCollapsed: _isCollapsed,
+                  onCartTap: _showCart,
+                  cartItemCount: _cartItemCount,
+                ),
+                SliverToBoxAdapter(
+                  child: Column(
+                    children: [
+                      StallInfoSection(
+                        stall: widget.stall,
+                        metrics: _buildMetrics(),
+                        schedule: _scheduleByDay,
+                        amenities: _amenities,
+                        paymentMethods: _paymentMethods,
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: ReviewSection(
+                          stall: widget.stall,
+                          onSeeAllReviews: () {},
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              body: MenuSection(
+                selectedCategory: _selectedCategory,
+                categories: _buildCategories(),
+                menus: _menus,
+                onCategorySelected: _filterMenus,
+                onMenuTap: _showMenuDetail,
+                onAddToCart: _addToCart,
+                loadingState: _loadingState,
+                errorMessage: _errorMessage,
+                menuAddons: _menuAddons,
+                favoriteMenus: _favoriteMenus,
+                onToggleFavorite: _toggleFavorite,
+              ),
             ),
           ),
-        ),
-      ],
+          if (_loadingState == LoadingState.loading) _buildLoadingOverlay(),
+        ],
+      ),
+      bottomNavigationBar: _buildCartBar(),
     );
   }
 
-  Widget _buildBottomBar() {
-    return Consumer<Restaurant>(
-      builder: (context, restaurant, _) {
-        if (restaurant.cart.isEmpty) {
-          return const SizedBox.shrink();
-        }
-        return SafeArea(
-          child: Container(
+  List<MenuCategory> _buildCategories() {
+    return [
+      MenuCategory(
+        id: 'all',
+        name: 'All',
+        icon: Icons.restaurant_menu,
+      ),
+      MenuCategory(
+        id: 'food',
+        name: 'Foods',
+        icon: Icons.lunch_dining,
+      ),
+      MenuCategory(
+        id: 'drink',
+        name: 'Drinks',
+        icon: Icons.local_drink,
+      ),
+      if (_categorizedMenus['Bestsellers']?.isNotEmpty ?? false)
+        MenuCategory(
+          id: 'bestsellers',
+          name: 'Bestsellers',
+          icon: Icons.star,
+        ),
+    ];
+  }
+
+  List<StallMetric> _buildMetrics() {
+    return [
+      StallMetric(
+        icon: Icons.star,
+        value: widget.stall.rating?.toStringAsFixed(1) ?? 'N/A',
+        label: '${widget.stall.reviewCount} Reviews',
+        color: Colors.amber,
+      ),
+      StallMetric(
+        icon: Icons.access_time,
+        value: _formatTime(widget.stall.openTime),
+        label: 'Opens',
+        color: Colors.blue,
+      ),
+      StallMetric(
+        icon: Icons.location_on,
+        value: '${widget.stall.distance?.toStringAsFixed(0) ?? "?"} m',
+        label: 'Distance',
+        color: Colors.green,
+      ),
+      StallMetric(
+        icon: Icons.menu_book,
+        value: '${_menus.length}',
+        label: 'Items',
+        color: Colors.purple,
+      ),
+    ];
+  }
+
+  Widget _buildLoadingOverlay() {
+    return Container(
+      color: Colors.black26,
+      child: Center(
+        child: Card(
+          child: Padding(
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 10,
-                  offset: const Offset(0, -5),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(),
+                const SizedBox(height: 16),
+                Text(
+                  'Loading Menu...',
+                  style: Theme.of(context).textTheme.titleMedium,
                 ),
               ],
             ),
-            child: ElevatedButton(
-              onPressed: _showCart,
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-              ),
-              child: Text(
-                'View Cart (${restaurant.cart.length} items)',
-                style: const TextStyle(fontSize: 16),
-              ),
-            ),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 
-  Widget _buildStallInfo() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 30,
-                backgroundImage: widget.stall.imageUrl != null
-                    ? NetworkImage(widget.stall.imageUrl!)
-                    : null,
-                child: widget.stall.imageUrl == null
-                    ? Text(widget.stall.stanName[0])
-                    : null,
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      widget.stall.stanName,
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                    Text(widget.stall.description),
-                  ],
-                ),
+  Widget _buildCartBar() {
+    return AnimatedBuilder(
+      animation: _cartAnimation,
+      builder: (context, child) => AnimatedSlide(
+        duration: const Duration(milliseconds: 200),
+        offset: Offset(0, _cart.isEmpty ? 1 : 0),
+        child: Container(
+          padding: const EdgeInsets.all(16).copyWith(
+            bottom: 16 + MediaQuery.of(context).padding.bottom,
+          ),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 10,
+                offset: const Offset(0, -5),
               ),
             ],
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMenuList() {
-    if (_menus.isEmpty) {
-      return const SliverToBoxAdapter(
-        child: Center(
-          child: Padding(
-            padding: EdgeInsets.all(32),
-            child: Text('No menu items available'),
-          ),
-        ),
-      );
-    }
-
-    return SliverPadding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      sliver: SliverList(
-        delegate: SliverChildBuilderDelegate(
-          (context, index) => Padding(
-            padding: const EdgeInsets.only(bottom: 16),
-            child: _buildMenuCard(_menus[index]),
-          ),
-          childCount: _menus.length,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCartButton() {
-    return Consumer<Restaurant>(
-      builder: (context, restaurant, _) => Stack(
-        children: [
-          IconButton(
-            icon: const Icon(Icons.shopping_cart),
-            onPressed: restaurant.cart.isNotEmpty ? _showCart : null,
-          ),
-          if (restaurant.cart.isNotEmpty)
-            Positioned(
-              right: 8,
-              top: 8,
-              child: Container(
-                padding: const EdgeInsets.all(2),
-                decoration: BoxDecoration(
-                  color: Colors.red,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                constraints: const BoxConstraints(
-                  minWidth: 16,
-                  minHeight: 16,
-                ),
-                child: Text(
-                  '${restaurant.cart.length}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 10,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
+          child: ElevatedButton.icon(
+            onPressed: _showCart,
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
               ),
             ),
-        ],
+            icon: const Icon(Icons.shopping_cart),
+            label: Text(
+              'View Cart (${_cart.length} items) · ${_formatPrice(_calculateTotal())}',
+              style: const TextStyle(fontSize: 16),
+            ),
+          ),
+        ),
       ),
     );
   }
 
-  Widget _buildBannerPlaceholder() {
-    return Container(
-      color: Colors.grey[200],
-      child: const Center(
-        child: Icon(
-          Icons.store,
-          size: 64,
-          color: Colors.grey,
-        ),
-      ),
-    );
+  String _formatTime(TimeOfDay? time) {
+    if (time == null) return 'N/A';
+    final hour = time.hour.toString().padLeft(2, '0');
+    final minute = time.minute.toString().padLeft(2, '0');
+    final period = time.hour >= 12 ? 'PM' : 'AM';
+    final adjustedHour = time.hour > 12 ? time.hour - 12 : time.hour;
+    return '$adjustedHour:$minute $period';
+  }
+
+  String _formatPrice(double price) {
+    final formatter = NumberFormat('#,##0', 'id_ID');
+    return 'Rp ${formatter.format(price)}';
+  }
+
+  double _calculateTotal() {
+    return _cart.fold(0.0, (sum, item) => sum + item.totalPrice);
   }
 }
 

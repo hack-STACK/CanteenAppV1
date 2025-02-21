@@ -1,16 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:kantin/Services/rating_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class RateMenuDialog extends StatefulWidget {
-  final String menuName;
-  final int menuId;
-
   const RateMenuDialog({
     super.key,
-    required this.menuName,
     required this.menuId,
+    required this.stallId,
+    required this.transactionId,
+    required this.menuName,
+    required this.onRatingSubmitted,
   });
+
+  final int menuId;
+  final int stallId;
+  final int transactionId;
+  final String menuName;
+  final Function() onRatingSubmitted;
 
   @override
   State<RateMenuDialog> createState() => _RateMenuDialogState();
@@ -19,6 +26,7 @@ class RateMenuDialog extends StatefulWidget {
 class _RateMenuDialogState extends State<RateMenuDialog> {
   final _ratingService = RatingService();
   final _commentController = TextEditingController();
+  final _supabase = Supabase.instance.client; // Add this line
   double _rating = 0;
   bool _isSubmitting = false;
   String _selectedQuickReview = '';
@@ -246,7 +254,7 @@ class _RateMenuDialogState extends State<RateMenuDialog> {
                 child: ElevatedButton(
                   onPressed: _rating == 0 || _isSubmitting
                       ? null
-                      : () => _submitRating(context),
+                      : () => _submitRating(),
                   style: ElevatedButton.styleFrom(
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -268,51 +276,36 @@ class _RateMenuDialogState extends State<RateMenuDialog> {
     );
   }
 
-  Future<void> _submitRating(BuildContext context) async {
-    if (_rating == 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please select a rating'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
+  Future<void> _submitRating() async {
+    if (!mounted) return;
 
+    setState(() => _isSubmitting = true);
     try {
-      setState(() => _isSubmitting = true);
-
-      await _ratingService.rateMenuItem(
-        widget.menuId,
-        _rating,
-        _commentController.text.trim(),
+      await _ratingService.submitReview(
+        transactionId: widget.transactionId,
+        stallId: widget.stallId,
+        type: ReviewType.menu,
+        rating: _rating,
+        menuId: widget.menuId,
+        comment: _commentController.text.trim(),
       );
 
-      if (mounted) {
-        Navigator.pop(context, true);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                Icon(Icons.check_circle, color: Colors.green.shade100),
-                const SizedBox(width: 8),
-                const Text('Thank you for your review!'),
-              ],
-            ),
-            backgroundColor: Colors.green,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
+      if (!mounted) return;
+
+      widget.onRatingSubmitted();
+      Navigator.of(context).pop();
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Thank you for your review!')),
+      );
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to submit rating: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      print('Error submitting rating: $e'); // Debug log
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
+      );
     } finally {
       if (mounted) {
         setState(() => _isSubmitting = false);

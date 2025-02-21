@@ -387,7 +387,7 @@ class _AddMenuScreenState extends State<AddMenuScreen> {
 
       // Create a Menu object
       final menu = Menu(
-        id: null,
+        id: 0,
         foodName: _nameController.text.trim(),
         price: double.tryParse(_priceController.text.trim()) ?? 0.0,
         type: _categoryController.text.trim(),

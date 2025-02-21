@@ -1,43 +1,38 @@
+import 'package:flutter/foundation.dart';
+
 class Logger {
-  static final Logger _instance = Logger._internal();
+  final String tag;
+  final bool showDebug;
 
-  factory Logger() {
-    return _instance;
-  }
+  Logger([this.tag = '', this.showDebug = !kReleaseMode]);
 
-  Logger._internal();
-
-  // Log levels
-  static const int ERROR = 0;
-  static const int WARN = 1;
-  static const int INFO = 2;
-  static const int DEBUG = 3;
-
-  void error(String message, [dynamic error, StackTrace? stackTrace]) {
-    _log('ERROR', message, error, stackTrace);
-  }
-
-  void warn(String message, [dynamic error]) {
-    _log('WARN', message, error);
+  void debug(String message) {
+    if (showDebug) {
+      _log('DEBUG', message);
+    }
   }
 
   void info(String message) {
     _log('INFO', message);
   }
 
-  void debug(String message) {
-    _log('DEBUG', message);
+  void warn(String message) {
+    _log('WARN', message);
   }
 
-  void _log(String level, String message,
-      [dynamic error, StackTrace? stackTrace]) {
-    final timestamp = DateTime.now().toIso8601String();
-    print('[$timestamp] $level: $message');
+  void error(String message, [dynamic error, StackTrace? stackTrace]) {
+    _log('ERROR', message);
     if (error != null) {
-      print('Error details: $error');
+      _log('ERROR', 'Error details: $error');
     }
     if (stackTrace != null) {
-      print('Stack trace:\n$stackTrace');
+      _log('ERROR', 'Stack trace:\n$stackTrace');
     }
+  }
+
+  void _log(String level, String message) {
+    final timestamp = DateTime.now().toIso8601String();
+    final prefix = tag.isNotEmpty ? '[$tag]' : '';
+    print('$timestamp $level$prefix: $message');
   }
 }

@@ -17,12 +17,12 @@ class StudentModel {
 
   factory StudentModel.fromMap(Map<String, dynamic> map) {
     return StudentModel(
-      id: map['id'],
-      studentName: map['nama_siswa'],
-      studentAddress: map['alamat'],
-      studentPhoneNumber: map['telp'],
-      userId: map['id_user'],
-      studentImage: map['foto'],
+      id: map['id'] as int,
+      studentName: map['nama_siswa'] as String? ?? '',
+      studentAddress: map['alamat'] as String? ?? '',
+      studentPhoneNumber: map['telp'] as String? ?? '',
+      userId: map['id_user'] as int,
+      studentImage: map['foto'] as String?,
     );
   }
 
@@ -58,7 +58,6 @@ class StudentModel {
       'foto': studentImage,
     };
   }
-  
 
   StudentModel copyWith({
     int? id,

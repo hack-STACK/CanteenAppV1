@@ -1,16 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:kantin/Models/Stan_model.dart';
+import 'package:kantin/Services/rating_service.dart';
+import 'package:kantin/services/review_service.dart';
 import 'package:kantin/utils/avatar_generator.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AnimatedStallTile extends StatefulWidget {
-  final void Function()? onTap;
   final Stan stall;
+  final VoidCallback onTap;
+  final bool useHero;
 
   const AnimatedStallTile({
-    super.key,
-    required this.onTap,
+    Key? key,
     required this.stall,
-  });
+    required this.onTap,
+    this.useHero = false, // Make Hero optional
+  }) : super(key: key);
 
   @override
   State<AnimatedStallTile> createState() => _AnimatedStallTileState();
@@ -18,44 +23,21 @@ class AnimatedStallTile extends StatefulWidget {
 
 class _AnimatedStallTileState extends State<AnimatedStallTile>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final Animation<double> _scaleAnimation;
-  late final Animation<double> _fadeAnimation;
-  late final Animation<Offset> _slideAnimation;
+  final _ratingService = RatingService();
+  late AnimationController _controller;
+  late Animation<double> _scaleAnimation;
+  bool _isPressed = false;
 
   @override
   void initState() {
     super.initState();
     _controller = AnimationController(
-      duration: const Duration(milliseconds: 300),
+      duration: const Duration(milliseconds: 150),
       vsync: this,
     );
-
-    _scaleAnimation = Tween<double>(
-      begin: 0.95,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeOutCubic,
-    ));
-
-    _fadeAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeOutCubic,
-    ));
-
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0.0, 0.1),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeOutCubic,
-    ));
-
-    _controller.forward();
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.98).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
   }
 
   @override
@@ -66,93 +48,425 @@ class _AnimatedStallTileState extends State<AnimatedStallTile>
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+    return AnimatedBuilder(
+      animation: _scaleAnimation,
+      builder: (context, child) => Transform.scale(
+        scale: _scaleAnimation.value,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final maxWidth = constraints.maxWidth;
+            final imageWidth = maxWidth * 0.28;
 
-    return SlideTransition(
-      position: _slideAnimation,
-      child: FadeTransition(
-        opacity: _fadeAnimation,
-        child: ScaleTransition(
-          scale: _scaleAnimation,
-          child: TweenAnimationBuilder<double>(
-            tween: Tween<double>(begin: 1.0, end: 1.0),
-            duration: const Duration(milliseconds: 200),
-            builder: (context, scale, child) {
-              return Transform.scale(
-                scale: scale,
-                child: child,
-              );
-            },
-            child: Card(
-              elevation: 2,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: InkWell(
-                onTap: () {
-                  // Add tap animation
-                  TweenAnimationBuilder<double>(
-                    tween: Tween<double>(begin: 0.95, end: 1.0),
-                    duration: const Duration(milliseconds: 100),
-                    builder: (context, value, child) {
-                      return Transform.scale(
-                        scale: value,
-                        child: child,
-                      );
-                    },
-                    child: Container(),
-                  );
-                  widget.onTap?.call();
-                },
-                borderRadius: BorderRadius.circular(16),
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+            return GestureDetector(
+              onTapDown: (_) {
+                setState(() => _isPressed = true);
+                _controller.forward();
+              },
+              onTapUp: (_) {
+                setState(() => _isPressed = false);
+                _controller.reverse();
+                widget.onTap();
+              },
+              onTapCancel: () {
+                setState(() => _isPressed = false);
+                _controller.reverse();
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(_isPressed ? 0.1 : 0.05),
+                      blurRadius: _isPressed ? 8 : 12,
+                      offset: Offset(0, _isPressed ? 2 : 4),
+                    ),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: Stack(
                     children: [
-                      _buildStallImage(context),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
+                      Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    widget.stall.stanName,
-                                    style:
-                                        theme.textTheme.titleMedium?.copyWith(
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                _buildSlotBadge(context),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              widget.stall.description,
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: colorScheme.onSurfaceVariant,
+                            _buildImageSection(imageWidth),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _buildHeaderSection(),
+                                  const SizedBox(height: 6),
+                                  _buildRatingSection(),
+                                  const SizedBox(height: 8),
+                                  _buildInfoSection(),
+                                ],
                               ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
                             ),
-                            const SizedBox(height: 8),
-                            _buildOwnerInfo(context),
                           ],
                         ),
                       ),
+                      if (!widget.stall.isCurrentlyOpen())
+                        _buildClosedOverlay(),
                     ],
                   ),
                 ),
               ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildImageSection(double width) {
+    return SizedBox(
+      width: width,
+      child: AspectRatio(
+        aspectRatio: 1,
+        child: Stack(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: widget.useHero
+                  ? Hero(tag: 'stall_${widget.stall.id}', child: _buildImage())
+                  : _buildImage(),
+            ),
+            if (widget.stall.isBusy)
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.8),
+                    borderRadius: const BorderRadius.vertical(
+                      bottom: Radius.circular(12),
+                    ),
+                  ),
+                  child: const Text(
+                    'BUSY',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeaderSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                widget.stall.stanName,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                  letterSpacing: -0.5,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                _getCuisineTypeDisplay(widget.stall.cuisineType),
+                style: TextStyle(
+                  color: Colors.grey[600],
+                  fontSize: 12,
+                  letterSpacing: -0.3,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            _buildStatusBadges(),
+          ],
+        ),
+      ],
+    );
+  }
+
+  String _getCuisineTypeDisplay(String? cuisineType) {
+    if (cuisineType == null || cuisineType.isEmpty) {
+      return 'Mixed Dishes • Local Food';
+    }
+
+    // Convert first letter of each word to uppercase
+    return cuisineType.split(' ').map((word) {
+      if (word.isNotEmpty) {
+        return '${word[0].toUpperCase()}${word.substring(1).toLowerCase()}';
+      }
+      return word;
+    }).join(' ');
+  }
+
+  Widget _buildStatusBadges() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (widget.stall.isCurrentlyOpen())
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 6,
+              vertical: 2,
+            ),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Colors.green[400]!, Colors.green[300]!],
+              ),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.circle,
+                  size: 6,
+                  color: Colors.green[50],
+                ),
+                const SizedBox(width: 4),
+                const Text(
+                  'OPEN',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 10,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        if (widget.stall.hasActivePromotions()) ...[
+          const SizedBox(width: 4),
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 6,
+              vertical: 2,
+            ),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Colors.red[400]!, Colors.red[300]!],
+              ),
+              borderRadius: BorderRadius.circular(4),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.red[300]!.withOpacity(0.2),
+                  blurRadius: 4,
+                  offset: const Offset(0, 1),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.local_offer,
+                  size: 8,
+                  color: Colors.red[50],
+                ),
+                const SizedBox(width: 4),
+                const Text(
+                  'PROMO',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 10,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildRatingSection() {
+    return FutureBuilder<Map<String, dynamic>>(
+      future: _ratingService.getStallRatings(widget.stall.id),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return _buildRatingShimmer();
+        }
+
+        if (snapshot.hasError) {
+          print('Rating error for stall ${widget.stall.id}: ${snapshot.error}');
+          return _buildRatingDisplay(0.0, 0);
+        }
+
+        final rating = snapshot.data?['average'] ?? 0.0;
+        final reviewCount = snapshot.data?['count'] ?? 0;
+
+        print(
+            'Debug: Stall ${widget.stall.id} rating data: $rating, count: $reviewCount');
+
+        return _buildRatingDisplay(rating, reviewCount);
+      },
+    );
+  }
+
+  Widget _buildRatingDisplay(double rating, int reviewCount) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: Colors.amber[50],
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.star, size: 12, color: Colors.amber[700]),
+              const SizedBox(width: 4),
+              Text(
+                reviewCount > 0 ? rating.toStringAsFixed(1) : 'New',
+                style: TextStyle(
+                  color: Colors.amber[900],
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          '$reviewCount ${reviewCount == 1 ? 'review' : 'reviews'}',
+          style: TextStyle(
+            color: Colors.grey[600],
+            fontSize: 12,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRatingShimmer() {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: Colors.grey[100],
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.star, size: 12, color: Colors.grey[300]),
+              const SizedBox(width: 4),
+              Container(
+                width: 24,
+                height: 12,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        Container(
+          width: 60,
+          height: 12,
+          decoration: BoxDecoration(
+            color: Colors.grey[200],
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildInfoSection() {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        _buildInfoChip(
+          icon: Icons.access_time,
+          text: _formatTimeOfDay(widget.stall.openTime),
+          gradient: LinearGradient(
+            colors: [Colors.blue[100]!, Colors.blue[50]!],
+          ),
+        ),
+        _buildInfoChip(
+          icon: Icons.location_on,
+          text: '${widget.stall.distance?.toStringAsFixed(0) ?? "?"} m',
+          gradient: LinearGradient(
+            colors: [Colors.green[100]!, Colors.green[50]!],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildClosedOverlay() {
+    return Positioned.fill(
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.7),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.2),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.access_time,
+                  size: 16,
+                  color: Colors.grey[800],
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'CLOSED',
+                  style: TextStyle(
+                    color: Colors.grey[800],
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -160,122 +474,76 @@ class _AnimatedStallTileState extends State<AnimatedStallTile>
     );
   }
 
-  Widget _buildStallImage(BuildContext context) {
-    return Hero(
-      tag: 'stall_${widget.stall.id}',
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        width: 80,
-        height: 80,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.1),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: widget.stall.imageUrl != null
-              ? Image.network(
-                  widget.stall.imageUrl!,
-                  width: 80,
-                  height: 80,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) {
-                    return AvatarGenerator.generateStallAvatar(
-                      widget.stall.stanName,
-                      size: 80,
-                    );
-                  },
-                )
-              : AvatarGenerator.generateStallAvatar(
-                  widget.stall.stanName,
-                  size: 80,
-                ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildOwnerInfo(BuildContext context) {
-    return Row(
-      children: [
-        Icon(
-          Icons.person_outline,
-          size: 16,
-          color: Theme.of(context).colorScheme.primary,
-        ),
-        const SizedBox(width: 4),
-        Text(
-          widget.stall.ownerName,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.primary,
-                fontWeight: FontWeight.w500,
-              ),
-        ),
-        const Spacer(),
-        AnimatedBuilder(
-          animation: _controller,
-          builder: (context, child) {
-            return Transform.translate(
-              offset: Offset(4.0 * (1 - _fadeAnimation.value), 0),
-              child: Icon(
-                Icons.arrow_forward_ios,
-                size: 16,
-                color: Theme.of(context)
-                    .colorScheme
-                    .onSurfaceVariant
-                    .withOpacity(_fadeAnimation.value),
-              ),
-            );
-          },
-        ),
-      ],
-    );
-  }
-
-  Widget _buildPlaceholder(BuildContext context) {
+  Widget _buildInfoChip({
+    required IconData icon,
+    required String text,
+    required LinearGradient gradient,
+  }) {
     return Container(
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: Center(
-        child: Icon(
-          Icons.image_outlined,
-          size: 32,
-          color: Theme.of(context).colorScheme.primary.withOpacity(0.5),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDefaultImage(BuildContext context) {
-    return Container(
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: Icon(
-        Icons.store_rounded,
-        size: 32,
-        color: Theme.of(context).colorScheme.primary,
-      ),
-    );
-  }
-
-  Widget _buildSlotBadge(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.primaryContainer,
-        borderRadius: BorderRadius.circular(20),
+        gradient: gradient,
+        borderRadius: BorderRadius.circular(8),
       ),
-      child: Text(
-        widget.stall.slot,
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.onPrimaryContainer,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: Colors.grey[800]),
+          const SizedBox(width: 4),
+          Text(
+            text,
+            style: TextStyle(
+              color: Colors.grey[800],
+              fontSize: 11,
               fontWeight: FontWeight.w500,
             ),
+          ),
+        ],
       ),
     );
+  }
+
+  Widget _buildImage() {
+    if (widget.stall.imageUrl == null || widget.stall.imageUrl!.isEmpty) {
+      return AvatarGenerator.generateStallAvatar(widget.stall.stanName);
+    }
+
+    // Check if the URL is valid and has a proper scheme
+    Uri? uri;
+    try {
+      uri = Uri.parse(widget.stall.imageUrl!);
+      if (!uri.hasScheme) {
+        return AvatarGenerator.generateStallAvatar(widget.stall.stanName);
+      }
+    } catch (e) {
+      return AvatarGenerator.generateStallAvatar(widget.stall.stanName);
+    }
+
+    return Image.network(
+      widget.stall.imageUrl!,
+      fit: BoxFit.cover,
+      errorBuilder: (context, error, stackTrace) {
+        print('Error loading image: $error');
+        return AvatarGenerator.generateStallAvatar(widget.stall.stanName);
+      },
+      loadingBuilder: (context, child, loadingProgress) {
+        if (loadingProgress == null) return child;
+        return Center(
+          child: CircularProgressIndicator(
+            value: loadingProgress.expectedTotalBytes != null
+                ? loadingProgress.cumulativeBytesLoaded /
+                    loadingProgress.expectedTotalBytes!
+                : null,
+          ),
+        );
+      },
+    );
+  }
+
+  String _formatTimeOfDay(TimeOfDay? time) {
+    if (time == null) return 'N/A';
+    final hour = time.hour.toString().padLeft(2, '0');
+    final minute = time.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
   }
 }

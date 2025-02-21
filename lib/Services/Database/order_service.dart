@@ -83,7 +83,7 @@ class OrderService {
         final detailId = detailResponse['id'] as int;
 
         // Insert addons if any
-        for (var addon in detail.addons!) {
+        for (var addon in detail.addons) {
           await _client.from('transaction_addon_details').insert({
             'transaction_detail_id': detailId,
             'addon_id': addon.addonId,

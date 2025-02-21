@@ -998,47 +998,137 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
     final List<dynamic> items = order['items'] ?? [];
     final orderType = _getOrderType(order['order_type'] as String?);
 
-    // Remove SlideTransition and use a simpler animation
-    return AnimatedOpacity(
-      duration: const Duration(milliseconds: 300),
-      opacity: 1.0,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.grey.withOpacity(0.1),
-              spreadRadius: 1,
-              blurRadius: 10,
-              offset: const Offset(0, 2),
+    return Hero(
+      tag: 'order_${order['id']}',
+      child: Material(
+        color: Colors.transparent,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          margin: const EdgeInsets.only(bottom: 16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.grey.withOpacity(0.08),
+                spreadRadius: 1,
+                blurRadius: 10,
+                offset: const Offset(0, 2),
+              ),
+            ],
+            border: Border.all(
+              color: _getStatusColor(status).withOpacity(0.1),
+              width: 1,
             ),
-          ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: Column(
+              children: [
+                _buildOrderHeader(order, status),
+                const Divider(height: 1),
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildOrderInfo(orderDate, orderType, order),
+                      const SizedBox(height: 16),
+                      _buildOrderTimeline(status),
+                      const SizedBox(height: 16),
+                      _buildItemsList(items, order),
+                      if (items.isNotEmpty) const Divider(height: 24),
+                      _buildOrderSummary(order),
+                      if (isActive) _buildActionButtons(order),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
+      ),
+    );
+  }
+
+  Color _getStatusColor(String status) {
+    return switch (status.toLowerCase()) {
+      'pending' => Colors.orange,
+      'confirmed' => Colors.blue,
+      'cooking' => Colors.amber,
+      'ready' => Colors.green,
+      'delivering' => Colors.green,
+      'completed' => Colors.teal,
+      'cancelled' => Colors.red,
+      _ => Colors.grey,
+    };
+  }
+
+  Widget _buildOrderSummary(Map<String, dynamic> order) {
+    final subtotal = order['total_amount'] as num;
+    final deliveryFee = order['delivery_fee'] as num? ?? 0;
+    final discount = order['discount_amount'] as num? ?? 0;
+    final total = subtotal + deliveryFee - discount;
+
+    return Card(
+      elevation: 0,
+      color: Colors.grey.shade50,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
         child: Column(
           children: [
-            _buildOrderHeader(order, status),
-            const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildOrderInfo(orderDate, orderType, order),
-                  const SizedBox(height: 16),
-                  _buildOrderTimeline(status),
-                  const SizedBox(height: 16),
-                  _buildItemsList(items, order),
-                  const Divider(height: 24),
-                  _buildOrderTotal(order),
-                  if (isActive) _buildActionButtons(order),
-                ],
+            _buildSummaryRow('Subtotal', subtotal),
+            if (deliveryFee > 0) ...[
+              const SizedBox(height: 4),
+              _buildSummaryRow('Delivery Fee', deliveryFee),
+            ],
+            if (discount > 0) ...[
+              const SizedBox(height: 4),
+              _buildSummaryRow(
+                'Discount',
+                -discount,
+                valueColor: Colors.green,
+              ),
+            ],
+            const Divider(height: 16),
+            _buildSummaryRow(
+              'Total',
+              total,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
               ),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildSummaryRow(
+    String label,
+    num amount, {
+    TextStyle? style,
+    Color? valueColor,
+  }) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: style),
+        Text(
+          NumberFormat.currency(
+            locale: 'id',
+            symbol: 'Rp ',
+            decimalDigits: 0,
+          ).format(amount),
+          style: style?.copyWith(color: valueColor) ??
+              TextStyle(color: valueColor),
+        ),
+      ],
     );
   }
 

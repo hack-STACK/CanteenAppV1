@@ -25,6 +25,7 @@ class Menu {
   final List<String> tags;
   final int? preparationTime;
   final double? originalPrice;
+  final double? discountedPrice; // Add this property
 
   Menu({
     required this.id,
@@ -47,6 +48,7 @@ class Menu {
     this.tags = const [],
     this.preparationTime,
     this.originalPrice,
+    this.discountedPrice,
   })  : type = type.toLowerCase(),
         assert(type.toLowerCase() == 'food' || type.toLowerCase() == 'drink'),
         rating = rating ?? defaultRating,
@@ -78,6 +80,7 @@ class Menu {
       isVegetarian: map['is_vegetarian'] ?? false,
       isSpicy: map['is_spicy'] ?? false,
       tags: List<String>.from(map['tags'] ?? []),
+      discountedPrice: map['discounted_price']?.toDouble(), // Add this line
     );
   }
 
@@ -102,6 +105,7 @@ class Menu {
       'tags': tags,
       'preparation_time': preparationTime,
       'original_price': originalPrice,
+      'discounted_price': discountedPrice, // Add this line
     };
   }
 
@@ -174,6 +178,7 @@ class Menu {
         tags: List<String>.from(json['tags'] ?? []),
         preparationTime: json['preparation_time'] as int?,
         originalPrice: (json['original_price'] as num?)?.toDouble(),
+        discountedPrice: json['discounted_price']?.toDouble(), // Add this line
       );
     } catch (e) {
       print('Error creating Menu from JSON: $e');
@@ -211,6 +216,7 @@ class Menu {
     List<String>? tags,
     int? preparationTime,
     double? originalPrice,
+    double? discountedPrice, // Add this parameter
   }) {
     return Menu(
       id: id ?? this.id,
@@ -233,6 +239,7 @@ class Menu {
       tags: tags ?? this.tags,
       preparationTime: preparationTime ?? this.preparationTime,
       originalPrice: originalPrice ?? this.originalPrice,
+      discountedPrice: discountedPrice ?? this.discountedPrice, // Add this line
     );
   }
 
@@ -252,6 +259,6 @@ class Menu {
 
   @override
   String toString() {
-    return 'Menu{id: $id, foodName: $foodName, price: $price, type: $type, category: $category, rating: $rating}';
+    return 'Menu{id: $id, name: $foodName, price: $price, type: $type, isAvailable: $isAvailable}';
   }
-}
+} // Add closing brace for the class

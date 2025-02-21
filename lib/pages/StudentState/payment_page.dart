@@ -3,8 +3,7 @@ import 'package:flutter/foundation.dart' show kReleaseMode; // Add this import
 import 'package:flutter_credit_card/flutter_credit_card.dart';
 import 'package:kantin/Models/payment_errors.dart' as payment_errors;
 import 'package:kantin/pages/StudentState/StudentPage.dart';
-import 'package:kantin/utils/api_exception.dart'
-    hide PaymentError, TransactionError; // Hide ambiguous classes
+// Hide ambiguous classes
 import 'package:kantin/utils/logger.dart';
 import 'package:provider/provider.dart';
 import 'package:kantin/Models/Restaurant.dart';
@@ -152,10 +151,6 @@ class _PaymentPageState extends State<PaymentPage>
 
     // Get and validate the first item's stall ID
     final firstItem = restaurant.cart.first;
-    if (firstItem.menu == null) {
-      _logger.error('Menu is null in cart item');
-      throw Exception('Invalid menu item');
-    }
 
     final stallId = firstItem.menu.stallId;
     _logger.debug('First item stall ID: $stallId');
@@ -168,7 +163,7 @@ class _PaymentPageState extends State<PaymentPage>
 
     // Verify all items are from the same stall
     for (var item in restaurant.cart) {
-      if (item.menu == null || item.menu.stallId != stallId) {
+      if (item.menu.stallId != stallId) {
         _logger.error(
             'Cart contains items from different stalls or invalid items');
         throw Exception('All items must be from the same stall');
@@ -225,6 +220,11 @@ class _PaymentPageState extends State<PaymentPage>
     if (!mounted) return;
 
     final navigationContext = context; // Capture context early
+    final restaurant = Provider.of<Restaurant>(context, listen: false);
+
+    // Show confirmation dialog first
+    final shouldProceed = await _showPaymentConfirmationDialog(restaurant);
+    if (!shouldProceed || !mounted) return;
 
     try {
       setState(() {
@@ -232,14 +232,7 @@ class _PaymentPageState extends State<PaymentPage>
         _errorMessage = null;
       });
 
-      final restaurant = Provider.of<Restaurant>(context, listen: false);
-
-      // Validate order first
-      if (!_validateOrder(restaurant)) return;
-
-      final shouldProceed = await _showPaymentConfirmationDialog(restaurant);
-      if (!shouldProceed || !mounted) return;
-
+      // Rest of the payment processing code...
       // Show loading overlay using captured context
       if (!mounted) return;
       _showProcessingOverlay(navigationContext);
@@ -607,6 +600,8 @@ class _PaymentPageState extends State<PaymentPage>
               quantity: item.quantity,
               selectedAddons: item.selectedAddons,
               note: item.note,
+              originalPrice: item.originalPrice,
+              discountedPrice: item.discountedPrice,
             ))
         .toList();
   }
@@ -698,45 +693,45 @@ class _PaymentPageState extends State<PaymentPage>
 
   // Add this method for payment confirmation
   Future<bool> _showPaymentConfirmationDialog(Restaurant restaurant) async {
-    final result = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: const Text('Confirm Payment'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Are you sure you want to proceed with payment?'),
-            const SizedBox(height: 16),
-            Text(
-              'Total: Rp ${restaurant.calculateSubtotal().toStringAsFixed(0)}',
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
+    return await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (BuildContext context) => AlertDialog(
+            title: const Text('Confirm Payment'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Are you sure you want to proceed with payment?'),
+                const SizedBox(height: 16),
+                Text(
+                  'Total: Rp ${restaurant.calculateSubtotal().toStringAsFixed(0)}',
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                    'Payment Method: ${_getPaymentTitle(_selectedPaymentMethod)}'),
+                if (_selectedOrderType == OrderType.delivery) ...[
+                  const SizedBox(height: 8),
+                  Text('Delivery to: ${restaurant.deliveryAddress}'),
+                ],
+              ],
             ),
-            const SizedBox(height: 8),
-            Text('Payment Method: ${_getPaymentTitle(_selectedPaymentMethod)}'),
-            if (_selectedOrderType == OrderType.delivery) ...[
-              const SizedBox(height: 8),
-              Text('Delivery to: ${restaurant.deliveryAddress}'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Confirm'),
+              ),
             ],
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Confirm'),
-          ),
-        ],
-      ),
-    );
-
-    return result ?? false;
+        ) ??
+        false;
   }
 
   // Ensure proper null checks in build method

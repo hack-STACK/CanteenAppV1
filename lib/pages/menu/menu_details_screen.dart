@@ -311,10 +311,6 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
     try {
       setState(() => _isSaving = true);
 
-      if (_currentMenu.id == null) {
-        throw Exception('Menu ID is required');
-      }
-
       _formKey.currentState!.save();
 
       // Update streams with latest data
@@ -379,10 +375,8 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
   // Update loadMenuDiscounts with better error handling
   Future<void> _loadMenuDiscounts() async {
     try {
-      if (_currentMenu.id == null) throw Exception('Menu ID is required');
-
       final menuDiscounts =
-          await _discountService.getMenuDiscountsByMenuId(_currentMenu.id!);
+          await _discountService.getMenuDiscountsByMenuId(_currentMenu.id);
 
       // Set stallId from menu instead of menuDiscounts
       _stallId =
@@ -426,7 +420,7 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
       // First validate if discount can be applied
       if (_stallId != null) {
         final isValid = await _discountService.validateDiscountFromMenu(
-            discount.id, _currentMenu.id!, _stallId!);
+            discount.id, _currentMenu.id, _stallId!);
 
         if (!isValid) {
           throw Exception('This discount cannot be applied to this menu');
@@ -438,7 +432,7 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
         (md) => md.discountId == discount.id,
         orElse: () => MenuDiscount(
           id: 0,
-          menuId: _currentMenu.id!,
+          menuId: _currentMenu.id,
           discountId: discount.id,
           isActive: false,
           discount: discount,
@@ -456,7 +450,7 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
       }
 
       await _discountService.updateMenuDiscount(
-        _currentMenu.id!,
+        _currentMenu.id,
         discount.id,
         newStatus,
       );
@@ -525,7 +519,7 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
 
       setState(() => _discountLoadingStates[discount.id] = true);
 
-      await _discountService.detachMenuDiscount(_currentMenu.id!, discount.id);
+      await _discountService.detachMenuDiscount(_currentMenu.id, discount.id);
 
       if (!mounted) return;
 
@@ -668,7 +662,7 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
               child: AddonDialog(
                 key: ValueKey(addon?.id ?? 'new'),
                 addon: addon,
-                menuId: _currentMenu.id!,
+                menuId: _currentMenu.id,
               ),
             ),
           ),
@@ -689,7 +683,7 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
 
           // Refresh the addons list
           final updatedAddons =
-              await _foodService.getAddonsForMenu(_currentMenu.id!);
+              await _foodService.getAddonsForMenu(_currentMenu.id);
           setState(() {
             _addons = updatedAddons;
             _calculatePrices(); // Recalculate prices after addon changes
@@ -1493,7 +1487,7 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
 
         // Refresh the addons list
         final updatedAddons =
-            await _foodService.getAddonsForMenu(_currentMenu.id!);
+            await _foodService.getAddonsForMenu(_currentMenu.id);
         setState(() {
           _addons = updatedAddons;
           _calculatePrices(); // Recalculate prices after deletion
@@ -1753,7 +1747,7 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
       await _discountService.addMenuDiscount(
         MenuDiscount(
           id: 0,
-          menuId: _currentMenu.id!,
+          menuId: _currentMenu.id,
           discountId: discount.id,
           isActive: true,
           discount: discount,

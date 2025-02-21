@@ -6,10 +6,10 @@ class ReviewSection extends StatelessWidget {
   final VoidCallback onSeeAllReviews;
 
   const ReviewSection({
-    Key? key,
+    super.key,
     required this.stall,
     required this.onSeeAllReviews,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

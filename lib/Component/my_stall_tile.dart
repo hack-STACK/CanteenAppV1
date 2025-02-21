@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:kantin/Models/Stan_model.dart';
 import 'package:kantin/Services/rating_service.dart';
-import 'package:kantin/services/review_service.dart';
 import 'package:kantin/utils/avatar_generator.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AnimatedStallTile extends StatefulWidget {
   final Stan stall;
@@ -11,11 +9,11 @@ class AnimatedStallTile extends StatefulWidget {
   final bool useHero;
 
   const AnimatedStallTile({
-    Key? key,
+    super.key,
     required this.stall,
     required this.onTap,
     this.useHero = false, // Make Hero optional
-  }) : super(key: key);
+  });
 
   @override
   State<AnimatedStallTile> createState() => _AnimatedStallTileState();

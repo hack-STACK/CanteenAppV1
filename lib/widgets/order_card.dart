@@ -82,9 +82,9 @@ class _OrderCardState extends State<OrderCard> {
 
         // Process addons
         print(
-            '[OrderCard] Processing ${detail.addons!.length} addons for item ${detail.menuId}');
+            '[OrderCard] Processing ${detail.addons.length} addons for item ${detail.menuId}');
 
-        for (var addon in detail.addons!) {
+        for (var addon in detail.addons) {
           final addonItem = await _orderService.getAddonById(addon.addonId);
           if (addonItem != null) {
             itemMap['addons'].add({

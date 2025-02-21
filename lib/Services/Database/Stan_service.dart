@@ -237,8 +237,9 @@ class StanService {
   Future<void> updateStallStatusBasedOnTime(int stallId) async {
     try {
       final stall = await getStanById(stallId);
-      if (stall == null || stall.openTime == null || stall.closeTime == null)
+      if (stall == null || stall.openTime == null || stall.closeTime == null) {
         return;
+      }
 
       final isCurrentlyOpen = stall.isCurrentlyOpen();
       if (isCurrentlyOpen != stall.isOpen) {

@@ -74,9 +74,8 @@ class _MenuSelectionDialogState extends State<MenuSelectionDialog> {
                               widget.availableMenus.length) {
                             _selectedMenuIds.clear();
                           } else {
-                            _selectedMenuIds = widget.availableMenus
-                                .map((m) => m.id!)
-                                .toList();
+                            _selectedMenuIds =
+                                widget.availableMenus.map((m) => m.id).toList();
                           }
                         }),
                         child: Text(
@@ -100,9 +99,9 @@ class _MenuSelectionDialogState extends State<MenuSelectionDialog> {
                           onChanged: (bool? value) {
                             setState(() {
                               if (value == true) {
-                                _selectedMenuIds.add(menu.id!);
+                                _selectedMenuIds.add(menu.id);
                               } else {
-                                _selectedMenuIds.remove(menu.id!);
+                                _selectedMenuIds.remove(menu.id);
                               }
                             });
                           },

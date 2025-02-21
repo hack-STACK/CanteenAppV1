@@ -407,7 +407,7 @@ class _AddMenuScreenState extends State<AddMenuScreen> {
       // Save all temporary add-ons with the new menu ID
       for (var addon in _tempAddons) {
         final newAddon = FoodAddon(
-          menuId: createdMenu.id!,
+          menuId: createdMenu.id,
           addonName: addon.addonName,
           price: addon.price,
           isRequired: addon.isRequired,

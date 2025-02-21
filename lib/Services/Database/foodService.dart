@@ -22,21 +22,22 @@ class FoodService {
         // Update existing menu
         final response = await _client
             .from('menu')
-            .update(menu.toMap())  // Change toJson to toMap
+            .update(menu.toMap()) // Change toJson to toMap
             .eq('food_name', menu.foodName)
             .select()
             .maybeSingle();
 
-        return Menu.fromMap(response ?? existingMenu);  // Change fromJson to fromMap
+        return Menu.fromMap(
+            response ?? existingMenu); // Change fromJson to fromMap
       } else {
         // Insert new menu
         final response = await _client
             .from('menu')
-            .insert(menu.toMap())  // Change toJson to toMap
+            .insert(menu.toMap()) // Change toJson to toMap
             .select()
             .single();
 
-        return Menu.fromMap(response);  // Change fromJson to fromMap
+        return Menu.fromMap(response); // Change fromJson to fromMap
       }
     } catch (e) {
       throw Exception('Failed to insert/update menu: $e');
@@ -46,7 +47,9 @@ class FoodService {
   /// **🟢 Read: Get all menu items**
   Future<List<Menu>> getAllMenuItems() async {
     final response = await _client.from('menu').select();
-    return response.map<Menu>((json) => Menu.fromMap(json)).toList();  // Change fromJson to fromMap
+    return response
+        .map<Menu>((json) => Menu.fromMap(json))
+        .toList(); // Change fromJson to fromMap
   }
 
   /// **🟢 Read: Get menu item by ID**
@@ -86,7 +89,7 @@ class FoodService {
           .eq('stall_id', stanId)
           .eq('type', type)
           .order('food_name');
-      
+
       return (response as List).map((map) => Menu.fromMap(map)).toList();
     } catch (e) {
       throw Exception('Failed to load $type items: $e');
@@ -97,7 +100,7 @@ class FoodService {
   Future<Map<String, List<Menu>>> getCategorizedMenus(int stanId) async {
     try {
       final allMenus = await getMenuByStanId(stanId);
-      
+
       return {
         'food': allMenus.where((menu) => menu.type == 'food').toList(),
         'drink': allMenus.where((menu) => menu.type == 'drink').toList(),
@@ -113,7 +116,7 @@ class FoodService {
       await _client
           .from('menu')
           .update(menu.toJson(excludeId: true))
-          .eq('id', menu.id!)
+          .eq('id', menu.id)
           .select()
           .maybeSingle(); // Mengembalikan data yang diperbarui
     } catch (e) {
@@ -432,17 +435,19 @@ class FoodService {
       await updateMenu(menu);
 
       // Delete existing addons for this menu
-      await _client.from('food_addons').delete().eq('menu_id', menu.id!);
+      await _client.from('food_addons').delete().eq('menu_id', menu.id);
 
       // Insert new addons
       if (addons.isNotEmpty) {
-        final addonsData = addons.map((addon) => {
-              'menu_id': menu.id,
-              'addon_name': addon.addonName,
-              'price': addon.price,
-              'is_required': addon.isRequired,
-              'Description': addon.description,
-            }).toList();
+        final addonsData = addons
+            .map((addon) => {
+                  'menu_id': menu.id,
+                  'addon_name': addon.addonName,
+                  'price': addon.price,
+                  'is_required': addon.isRequired,
+                  'Description': addon.description,
+                })
+            .toList();
 
         await _client.from('food_addons').insert(addonsData);
       }

@@ -20,7 +20,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:kantin/widgets/search_bar_delegate.dart';
 import 'package:kantin/widgets/student/student_profile_header.dart';
 import 'package:kantin/widgets/shimmer/shimmer_loading.dart'; // Add this import
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:kantin/widgets/stall/stall_status_badge.dart';
 
 class StudentPage extends StatefulWidget {
@@ -73,7 +72,7 @@ class _HomepageState extends State<StudentPage>
 
   // New UI states
   bool _showScrollToTop = false;
-  int _selectedStallIndex = -1;
+  final int _selectedStallIndex = -1;
 
   // Add these new state variables
   final ValueNotifier<List<Stan>> _filteredStallsNotifier =
@@ -609,7 +608,7 @@ class _HomepageState extends State<StudentPage>
               indicatorColor: Theme.of(context).primaryColor,
             ),
           ),
-          Container(
+          SizedBox(
             height:
                 MediaQuery.of(context).size.height * 0.6, // Increased height
             child: TabBarView(

@@ -51,6 +51,7 @@ dependencies:
   audioplayers: ^5.2.1
   animated_text_kit: ^4.2.2
   flutter_staggered_animations: ^1.1.0
+  colorful_safe_area: ^1.0.0
 
 dev_dependencies:
   flutter_test:

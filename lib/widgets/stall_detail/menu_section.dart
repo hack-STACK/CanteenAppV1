@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:kantin/Models/menus.dart';
 import 'package:kantin/Models/menus_addon.dart';
 import 'package:kantin/Models/stall_detail_models.dart';
+import 'package:kantin/services/menu_service.dart';
+import 'package:kantin/widgets/stall_detail/menu_detail_sheet.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
@@ -24,7 +26,9 @@ class MenuSection extends StatefulWidget {
   final List<Menu> menus;
   final Function(String) onCategorySelected;
   final Function(Menu) onMenuTap;
-  final Function(Menu, {List<FoodAddon> addons, String? note}) onAddToCart;
+  // Update the callback definition to include price parameter
+  final Function(Menu, {List<FoodAddon> addons, String? note, double? price})
+      onAddToCart;
   final LoadingState loadingState;
   final String? errorMessage;
   final Map<int, List<FoodAddon>> menuAddons;
@@ -32,7 +36,7 @@ class MenuSection extends StatefulWidget {
   final Function(Menu) onToggleFavorite;
 
   const MenuSection({
-    Key? key,
+    super.key,
     required this.selectedCategory,
     required this.categories,
     required this.menus,
@@ -44,7 +48,7 @@ class MenuSection extends StatefulWidget {
     required this.menuAddons,
     required this.favoriteMenus,
     required this.onToggleFavorite,
-  }) : super(key: key);
+  });
 
   @override
   State<MenuSection> createState() => _MenuSectionState();
@@ -60,8 +64,8 @@ class _MenuSectionState extends State<MenuSection>
   String? _selectedSortOption;
 
   // Add new properties for filtering and sorting
-  Set<String> _activeFilters = <String>{}; // Fixed initialization
-  String _searchQuery = ''; // Fixed initialization
+  final Set<String> _activeFilters = <String>{}; // Fixed initialization
+  final String _searchQuery = ''; // Fixed initialization
 
   // Use the top-level enum
   SortOption _currentSort = SortOption.recommended;
@@ -90,9 +94,9 @@ class _MenuSectionState extends State<MenuSection>
 
     // Debug filtered results
     print('Filtered menus count: ${filtered.length}');
-    filtered.forEach((menu) {
+    for (var menu in filtered) {
       print('Filtered menu: ${menu.foodName} (${menu.type})');
-    });
+    }
 
     return filtered;
   }
@@ -293,6 +297,24 @@ class _MenuSectionState extends State<MenuSection>
     _searchController.dispose();
     _searchFocusNode.dispose();
     super.dispose();
+  }
+
+  void _addToCart(Menu menu) async {
+    // Get discounted price if available
+    final MenuService menuService = MenuService();
+    final double discountedPrice = await menuService.getDiscountedPrice(
+      menu.id,
+      menu.price,
+    );
+
+    // Call onAddToCart with the appropriate price
+    widget.onAddToCart(
+      menu,
+      addons: [], // Pass empty addons list by default
+      note: '', // Pass empty note by default
+      // Use discounted price if it's different from original price
+      price: discountedPrice < menu.price ? discountedPrice : menu.price,
+    );
   }
 
   @override
@@ -644,19 +666,22 @@ class _MenuSectionState extends State<MenuSection>
       padding: EdgeInsets.all(spacing),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: crossAxisCount,
-        childAspectRatio: 0.7, // Adjusted for more vertical space
+        childAspectRatio: 0.68, // More vertical space
         crossAxisSpacing: spacing,
         mainAxisSpacing: spacing,
       ),
       itemCount: items.length,
       itemBuilder: (context, index) => AnimationConfiguration.staggeredGrid(
         position: index,
-        duration: const Duration(milliseconds: 300),
+        duration: const Duration(milliseconds: 375),
         columnCount: crossAxisCount,
-        child: SlideAnimation(
-          verticalOffset: 50.0,
+        child: ScaleAnimation(
+          scale: 0.9,
           child: FadeInAnimation(
-            child: _buildGridMenuItem(context, items[index]),
+            child: SlideAnimation(
+              verticalOffset: 50.0,
+              child: _buildGridMenuItem(context, items[index]),
+            ),
           ),
         ),
       ),
@@ -666,12 +691,13 @@ class _MenuSectionState extends State<MenuSection>
   Widget _buildGridMenuItem(BuildContext context, Menu menu) {
     final hasAddons = widget.menuAddons[menu.id]?.isNotEmpty ?? false;
     final heroTag = 'menu-${menu.id}';
+    final theme = Theme.of(context);
 
     return Hero(
       tag: heroTag,
       child: Material(
         borderRadius: BorderRadius.circular(16),
-        elevation: 4,
+        elevation: 3,
         shadowColor: Colors.black26,
         child: InkWell(
           onTap: () => widget.onMenuTap(menu),
@@ -679,74 +705,88 @@ class _MenuSectionState extends State<MenuSection>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Image section with fixed aspect ratio
-              AspectRatio(
-                aspectRatio: 4 / 3,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      _buildCachedImage(menu),
-                      // Gradient overlay
-                      Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Colors.transparent,
-                              Colors.black.withOpacity(0.3),
-                            ],
+              // Image section with constrained height
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: 140,
+                  maxHeight: 160,
+                ),
+                child: Stack(
+                  children: [
+                    // Image with gradient overlay
+                    ClipRRect(
+                      borderRadius:
+                          BorderRadius.vertical(top: Radius.circular(16)),
+                      child: Stack(
+                        children: [
+                          SizedBox(
+                            width: double.infinity,
+                            height: double.infinity,
+                            child: _buildCachedImage(menu),
                           ),
-                        ),
-                      ),
-                      // Badges and favorite button
-                      Positioned(
-                        top: 8,
-                        left: 8,
-                        right: 8,
-                        child: Row(
-                          children: [
-                            if (menu.isPopular || menu.isRecommended)
-                              Expanded(
-                                child: SingleChildScrollView(
-                                  scrollDirection: Axis.horizontal,
-                                  child: Row(
-                                    children: [
-                                      if (menu.isPopular)
-                                        _buildAnimatedBadge(
-                                          'Popular',
-                                          Colors.orange.shade600,
-                                          Icons.trending_up_rounded,
-                                        ),
-                                      if (menu.isPopular && menu.isRecommended)
-                                        SizedBox(width: 4),
-                                      if (menu.isRecommended)
-                                        _buildAnimatedBadge(
-                                          'Chef\'s Choice',
-                                          Colors.green.shade600,
-                                          Icons.restaurant_rounded,
-                                        ),
-                                    ],
-                                  ),
+                          Positioned.fill(
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Colors.transparent,
+                                    Colors.black.withOpacity(0.4),
+                                  ],
                                 ),
                               ),
-                            _buildQuickActionButton(menu),
-                          ],
-                        ),
+                            ),
+                          ),
+                        ],
                       ),
-                      if (!menu.isAvailable) _buildEnhancedOutOfStockOverlay(),
-                    ],
-                  ),
+                    ),
+                    // Badges and favorite button
+                    Positioned(
+                      top: 8,
+                      left: 8,
+                      right: 8,
+                      child: Row(
+                        children: [
+                          if (menu.isPopular || menu.isRecommended)
+                            Expanded(
+                              child: SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: Row(
+                                  children: [
+                                    if (menu.isPopular)
+                                      _buildAnimatedBadge(
+                                        'Popular',
+                                        Colors.orange.shade600,
+                                        Icons.trending_up_rounded,
+                                      ),
+                                    if (menu.isPopular && menu.isRecommended)
+                                      SizedBox(width: 4),
+                                    if (menu.isRecommended)
+                                      _buildAnimatedBadge(
+                                        'Chef\'s Choice',
+                                        Colors.green.shade600,
+                                        Icons.restaurant_rounded,
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          SizedBox(width: 8),
+                          _buildQuickActionButton(menu),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              // Content section
+              // Content section with fixed padding
               Expanded(
                 child: Padding(
                   padding: EdgeInsets.all(12),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       // Title and indicators
                       Row(
@@ -765,94 +805,64 @@ class _MenuSectionState extends State<MenuSection>
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                          _buildMenuIndicators(menu),
+                          if (menu.isVegetarian || menu.isSpicy)
+                            _buildMenuIndicators(menu),
                         ],
                       ),
                       SizedBox(height: 4),
-                      // Info row (rating & time)
-                      DefaultTextStyle(
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey[600],
-                          height: 1.2,
-                        ),
-                        child: Row(
-                          children: [
-                            if (menu.hasRating) _buildEnhancedRatingBadge(menu),
-                            if (menu.hasRating && menu.preparationTime != null)
-                              SizedBox(width: 8),
-                            if (menu.preparationTime != null)
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.schedule_outlined,
-                                    size: 12,
-                                    color: Colors.grey[600],
-                                  ),
-                                  SizedBox(width: 4),
-                                  Text('${menu.preparationTime} min'),
-                                ],
-                              ),
-                          ],
-                        ),
-                      ),
-                      if (hasAddons) ...[
-                        SizedBox(height: 4),
-                        _buildCustomizableTag(),
-                      ],
-                      Spacer(),
-                      // Price and add button
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        crossAxisAlignment: CrossAxisAlignment.end,
+                      // Info badges row
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
                         children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  _formatPrice(menu.price),
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w700,
-                                    color: Theme.of(context).primaryColor,
-                                    height: 1.2,
-                                  ),
-                                ),
-                                if (menu.originalPrice != null &&
-                                    menu.originalPrice! > menu.price)
-                                  Text(
-                                    _formatPrice(menu.originalPrice!),
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      decoration: TextDecoration.lineThrough,
-                                      color: Colors.grey[400],
-                                      height: 1.2,
+                          if (menu.hasRating) _buildEnhancedRatingBadge(menu),
+                          if (menu.preparationTime != null)
+                            _buildTimeBadge(menu.preparationTime!),
+                          if (hasAddons) _buildCustomizableTag(),
+                        ],
+                      ),
+                      Spacer(),
+                      // Bottom section
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Price section
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      _formatPrice(menu.price),
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w700,
+                                        color: theme.primaryColor,
+                                        height: 1.2,
+                                      ),
                                     ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                          if (menu.isAvailable)
-                            Material(
-                              color: Theme.of(context).primaryColor,
-                              borderRadius: BorderRadius.circular(8),
-                              elevation: 0,
-                              child: InkWell(
-                                onTap: () => widget.onAddToCart(menu),
-                                borderRadius: BorderRadius.circular(8),
-                                child: Container(
-                                  padding: EdgeInsets.all(8),
-                                  child: Icon(
-                                    Icons.add,
-                                    color: Colors.white,
-                                    size: 18,
-                                  ),
+                                    if (menu.originalPrice != null &&
+                                        menu.originalPrice! > menu.price)
+                                      Text(
+                                        _formatPrice(menu.originalPrice!),
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          decoration:
+                                              TextDecoration.lineThrough,
+                                          color: Colors.grey[400],
+                                          height: 1.2,
+                                        ),
+                                      ),
+                                  ],
                                 ),
                               ),
-                            ),
+                              if (menu.isAvailable) _buildAddToCartButton(menu),
+                            ],
+                          ),
                         ],
                       ),
                     ],
@@ -866,27 +876,28 @@ class _MenuSectionState extends State<MenuSection>
     );
   }
 
-  Widget _buildCustomizableTag() {
+  Widget _buildTimeBadge(int minutes) {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: Theme.of(context).primaryColor.withOpacity(0.1),
+        color: Colors.grey[100],
         borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: Colors.grey[300]!, width: 0.5),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
-            Icons.tune,
+            Icons.schedule_outlined,
             size: 12,
-            color: Theme.of(context).primaryColor,
+            color: Colors.grey[600],
           ),
           SizedBox(width: 4),
           Text(
-            'Customizable',
+            '$minutes min',
             style: TextStyle(
-              fontSize: 10,
-              color: Theme.of(context).primaryColor,
+              fontSize: 11,
+              color: Colors.grey[600],
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -895,146 +906,269 @@ class _MenuSectionState extends State<MenuSection>
     );
   }
 
+  Widget _buildAddToCartButton(Menu menu) {
+    return FutureBuilder<double>(
+      future: MenuService().getDiscountedPrice(menu.id, menu.price),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return SizedBox(
+            width: 32,
+            height: 32,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              valueColor: AlwaysStoppedAnimation<Color>(
+                Theme.of(context).primaryColor,
+              ),
+            ),
+          );
+        }
+
+        return Material(
+          color: Theme.of(context).primaryColor,
+          borderRadius: BorderRadius.circular(8),
+          child: InkWell(
+            onTap: () => _addToCart(menu),
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              padding: EdgeInsets.all(8),
+              child: Icon(
+                Icons.add_shopping_cart_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildListMenuItem(BuildContext context, Menu menu) {
     final hasAddons = widget.menuAddons[menu.id]?.isNotEmpty ?? false;
     final heroTag = 'menu-${menu.id}';
 
-    return Hero(
-      tag: heroTag,
-      child: Card(
-        elevation: 3,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: () => widget.onMenuTap(menu),
-          child: SizedBox(
-            height: 130,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Image section with aspect ratio
-                AspectRatio(
-                  aspectRatio: 1,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      _buildCachedImage(menu),
-                      _buildOverlayGradient(),
-                      if (!menu.isAvailable) _buildEnhancedOutOfStockOverlay(),
-                    ],
-                  ),
-                ),
-                // Content section
-                Expanded(
-                  child: Padding(
-                    padding: EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Title row with favorite button
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    menu.foodName,
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w600,
-                                      height: 1.2,
-                                    ),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  if (menu.description?.isNotEmpty == true) ...[
-                                    SizedBox(height: 4),
-                                    Text(
-                                      menu.description!,
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.grey[600],
-                                        height: 1.2,
-                                      ),
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                            SizedBox(width: 8),
-                            _buildQuickActionButton(menu),
-                          ],
-                        ),
-                        Spacer(),
-                        // Bottom section with price and button
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            // Left side - price and badges
-                            Expanded(
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    _formatPrice(menu.price),
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w700,
-                                      color: Theme.of(context).primaryColor,
-                                    ),
-                                  ),
-                                  if (menu.originalPrice != null &&
-                                      menu.originalPrice! > menu.price)
-                                    Text(
-                                      _formatPrice(menu.originalPrice!),
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        decoration: TextDecoration.lineThrough,
-                                        color: Colors.grey[500],
-                                      ),
-                                    ),
-                                  if (hasAddons) ...[
-                                    SizedBox(height: 4),
-                                    _buildCustomizableTag(),
-                                  ],
-                                ],
-                              ),
-                            ),
-                            // Right side - add button
-                            if (menu.isAvailable)
-                              Material(
-                                color: Theme.of(context).primaryColor,
-                                borderRadius: BorderRadius.circular(8),
-                                child: InkWell(
-                                  onTap: () => widget.onAddToCart(menu),
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Container(
-                                    padding: EdgeInsets.all(8),
-                                    child: Icon(
-                                      Icons.add,
-                                      color: Colors.white,
-                                      size: 18,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
+    return FutureBuilder<double>(
+      future: MenuService().getDiscountedPrice(menu.id, menu.price),
+      builder: (context, snapshot) {
+        final discountedPrice = snapshot.data ?? menu.price;
+        final discountPercentage = menu.price > 0
+            ? ((menu.price - discountedPrice) / menu.price * 100).round()
+            : 0;
+
+        return Hero(
+          tag: heroTag,
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 10,
+                  offset: Offset(0, 2),
                 ),
               ],
             ),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () => widget.onMenuTap(menu),
+                borderRadius: BorderRadius.circular(16),
+                child: SizedBox(
+                  height: 140,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Image section with aspect ratio and badges
+                      Stack(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.horizontal(
+                                left: Radius.circular(16)),
+                            child: SizedBox(
+                              width: 140,
+                              height: 140,
+                              child: _buildCachedImage(menu),
+                            ),
+                          ),
+                          // Gradient overlay
+                          Positioned.fill(
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Colors.black.withOpacity(0.1),
+                                    Colors.black.withOpacity(0.3),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          // Discount badge
+                          if (discountPercentage > 0)
+                            Positioned(
+                              top: 8,
+                              left: 8,
+                              child: Container(
+                                padding: EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context).colorScheme.error,
+                                  borderRadius: BorderRadius.circular(8),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black12,
+                                      blurRadius: 4,
+                                      offset: Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: Text(
+                                  '-$discountPercentage%',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          // Out of stock overlay
+                          if (!menu.isAvailable)
+                            _buildEnhancedOutOfStockOverlay(),
+                        ],
+                      ),
+                      // Content section
+                      Expanded(
+                        child: Padding(
+                          padding: EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Top row with name and favorite
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          menu.foodName,
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w600,
+                                            height: 1.2,
+                                            color: Colors.grey[800],
+                                          ),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        SizedBox(height: 4),
+                                        // Badges row
+                                        Wrap(
+                                          spacing: 4,
+                                          runSpacing: 4,
+                                          children: [
+                                            if (menu.hasRating)
+                                              _buildEnhancedRatingBadge(menu),
+                                            if (menu.preparationTime != null)
+                                              _buildTimeBadge(
+                                                  menu.preparationTime!),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  SizedBox(width: 8),
+                                  _buildQuickActionButton(menu),
+                                ],
+                              ),
+                              // Description
+                              if (menu.description?.isNotEmpty == true) ...[
+                                SizedBox(height: 4),
+                                Text(
+                                  menu.description!,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[600],
+                                    height: 1.3,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                              Spacer(),
+                              // Bottom row with price and action
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  // Price and customizable tag
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (hasAddons) _buildCustomizableTag(),
+                                        SizedBox(height: 4),
+                                        Row(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.baseline,
+                                          textBaseline: TextBaseline.alphabetic,
+                                          children: [
+                                            Text(
+                                              _formatPrice(discountedPrice),
+                                              style: TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.w700,
+                                                color: discountPercentage > 0
+                                                    ? Theme.of(context)
+                                                        .colorScheme
+                                                        .error
+                                                    : Theme.of(context)
+                                                        .primaryColor,
+                                              ),
+                                            ),
+                                            if (discountPercentage > 0) ...[
+                                              SizedBox(width: 4),
+                                              Text(
+                                                _formatPrice(menu.price),
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  decoration: TextDecoration
+                                                      .lineThrough,
+                                                  color: Colors.grey[500],
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  // Add to cart button
+                                  if (menu.isAvailable)
+                                    _buildAddToCartButton(menu),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -2457,6 +2591,70 @@ class _MenuSectionState extends State<MenuSection>
       ),
     );
   }
+
+  Widget _buildCustomizableTag() {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: Theme.of(context).primaryColor.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(
+          color: Theme.of(context).primaryColor.withOpacity(0.2),
+          width: 0.5,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.tune_rounded,
+            size: 12,
+            color: Theme.of(context).primaryColor,
+          ),
+          SizedBox(width: 4),
+          Text(
+            'Customizable',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w500,
+              color: Theme.of(context).primaryColor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showMenuDetail(Menu menu) {
+    final addons = widget.menuAddons[menu.id] ?? [];
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => FutureBuilder<double>(
+        future: MenuService().getDiscountedPrice(menu.id, menu.price),
+        builder: (context, snapshot) {
+          final discountedPrice = snapshot.data ?? menu.price;
+          final discountPercentage = menu.price > 0
+              ? ((menu.price - discountedPrice) / menu.price * 100).round()
+              : 0;
+          final hasSavings = discountedPrice < menu.price;
+          final savingsAmount = menu.price - discountedPrice;
+
+          return MenuDetailSheet(
+            menu: menu,
+            addons: addons,
+            onAddToCart: widget.onAddToCart,
+            discountedPrice: discountedPrice,
+            discountPercentage: discountPercentage,
+            hasSavings: hasSavings,
+            savingsAmount: savingsAmount,
+          );
+        },
+      ),
+    );
+  }
 }
 
 // Add this class at the top of the file
@@ -2474,10 +2672,10 @@ class AnimatedSizeAndFade extends StatelessWidget {
   final Duration duration;
 
   const AnimatedSizeAndFade({
-    Key? key,
+    super.key,
     required this.child,
     this.duration = const Duration(milliseconds: 200),
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

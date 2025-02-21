@@ -9,12 +9,16 @@ class CartItem {
   final List<FoodAddon> selectedAddons;
   final String? note;
   final int quantity;
+  final double originalPrice;
+  final double discountedPrice;
 
   const CartItem({
     required this.menu,
     this.selectedAddons = const [],
     this.note,
     this.quantity = 1,
+    required this.originalPrice,
+    required this.discountedPrice,
   });
 
   CartItem copyWith({
@@ -22,29 +26,46 @@ class CartItem {
     List<FoodAddon>? selectedAddons,
     String? note,
     int? quantity,
+    double? originalPrice,
+    double? discountedPrice,
   }) {
     return CartItem(
       menu: menu ?? this.menu,
       selectedAddons: selectedAddons ?? this.selectedAddons,
       note: note ?? this.note,
       quantity: quantity ?? this.quantity,
+      originalPrice: originalPrice ?? this.originalPrice,
+      discountedPrice: discountedPrice ?? this.discountedPrice,
     );
   }
 
   double get totalPrice {
     double addonPrice =
         selectedAddons.fold(0, (sum, addon) => sum + (addon.price * quantity));
-    return (menu.price * quantity) + addonPrice;
+    return (discountedPrice * quantity) + addonPrice;
+  }
+
+  double get savings {
+    return (originalPrice - discountedPrice) * quantity;
+  }
+
+  bool get hasDiscount {
+    return discountedPrice < originalPrice;
+  }
+
+  int get discountPercentage {
+    if (!hasDiscount) return 0;
+    return ((originalPrice - discountedPrice) / originalPrice * 100).round();
   }
 }
 
 class Restaurant extends ChangeNotifier {
   final RestaurantService _service = RestaurantService();
   final List<CartItem> _cart = [];
-  List<Menu> _menu = [];
-  bool _isLoading = false;
-  String _error = '';
-  String _deliveryAddress = "Ruang 32";
+  List<Menu> _menu = []; // Add this
+  bool _isLoading = false; // Add this
+  String _error = ''; // Add this
+  String _deliveryAddress = ''; // Add this
   bool _isValidAddress = true;
 
   List<CartItem> get cart => _cart;
@@ -80,43 +101,23 @@ class Restaurant extends ChangeNotifier {
   }
 
   void addToCart(
-    Menu menuItem, {
+    Menu menu, {
     int quantity = 1,
     List<FoodAddon> selectedAddons = const [],
     String? note,
-    List<FoodAddon>? addons, // Make addons optional
+    List<FoodAddon> addons = const [],
+    double? price,
   }) {
-    // Validate stall ID
-    if (menuItem.stallId <= 0) {
-      throw Exception('Invalid stall ID for menu item: ${menuItem.foodName}');
-    }
-
-    // If cart is not empty, check if item is from same stall
-    if (cart.isNotEmpty && cart.first.menu.stallId != menuItem.stallId) {
-      throw Exception('Cannot add items from different stalls to cart');
-    }
-
-    final existingItemIndex = _cart.indexWhere(
-      (item) =>
-          item.menu.id == menuItem.id &&
-          item.selectedAddons.length == selectedAddons.length &&
-          item.selectedAddons
-              .every((addon) => selectedAddons.contains(addon)) &&
-          item.note == note,
+    CartItem newItem = CartItem(
+      menu: menu,
+      quantity: quantity,
+      selectedAddons: selectedAddons,
+      note: note,
+      originalPrice: menu.price,
+      discountedPrice: price ?? menu.price,
     );
 
-    if (existingItemIndex != -1) {
-      final existingItem = _cart[existingItemIndex];
-      _cart[existingItemIndex] =
-          existingItem.copyWith(quantity: existingItem.quantity + quantity);
-    } else {
-      _cart.add(CartItem(
-        menu: menuItem,
-        selectedAddons: selectedAddons,
-        quantity: quantity,
-        note: note,
-      ));
-    }
+    _cart.add(newItem);
     notifyListeners();
   }
 

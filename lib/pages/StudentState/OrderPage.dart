@@ -2,27 +2,31 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:kantin/Models/Restaurant.dart';
 import 'package:kantin/Services/Auth/auth_Service.dart';
 import 'package:kantin/Services/Database/transaction_service.dart';
+import 'package:kantin/Services/menu_service.dart';
 import 'package:kantin/models/enums/transaction_enums.dart';
-import 'package:kantin/pages/StudentState/Stalldetailpage.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:kantin/widgets/order_details_sheet.dart';
 import 'package:timeline_tile/timeline_tile.dart';
 import 'package:kantin/utils/logger.dart';
 import 'package:kantin/widgets/cancel_order_dialog.dart';
 import 'package:kantin/widgets/loading_overlay.dart';
-import 'package:kantin/utils/error_handler.dart';
 import 'package:kantin/widgets/rate_menu_dialog.dart';
 import 'package:kantin/Services/Database/refund_service.dart';
 import 'package:kantin/Services/Database/UserService.dart';
 import 'package:kantin/Services/rating_service.dart';
 import 'package:kantin/widgets/rating_indicator.dart';
 import 'package:kantin/widgets/review_history_tab.dart';
-import 'package:shimmer/shimmer.dart' as shimmer;
 import 'package:lottie/lottie.dart';
 import 'package:animated_text_kit/animated_text_kit.dart';
+
+// Add this extension outside the class at the top of the file
+extension StringExtension on String {
+  String capitalize() {
+    return "${this[0].toUpperCase()}${substring(1).toLowerCase()}";
+  }
+}
 
 class OrderPage extends StatefulWidget {
   final int studentId;
@@ -1317,133 +1321,273 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
         ),
         const SizedBox(height: 8),
         ...items.map((item) {
-          _logger.debug('Processing item: $item');
-
+          final menuData = item['menu'];
+          final menuId = menuData?['id'] ?? item['menu_id'];
           final quantity = item['quantity'] ?? 1;
-          final menuName = item['menu']?['food_name'] ?? 'Unknown Item';
-
-          double itemPrice = 0.0;
-          if (item['menu']?['price'] != null) {
-            itemPrice = (item['menu']['price'] as num).toDouble() * quantity;
-          }
-
-          final menuId = item['menu']?['id'] ?? item['menu_id'];
+          final menuName = menuData?['food_name'] ?? 'Unknown Item';
 
           if (menuId == null) {
-            print(
-                "[OrderPage] Warning: Missing menu ID for item in order ${order['id']}");
+            _logger.error("Missing menu ID for item in order ${order['id']}");
             return const SizedBox.shrink();
           }
 
           return FutureBuilder<Map<String, dynamic>>(
-            future: RatingService().getMenuRatingSummary(menuId),
-            builder: (context, ratingSnapshot) {
-              if (ratingSnapshot.hasError) {
-                print("[OrderPage] Rating error: ${ratingSnapshot.error}");
-                return const SizedBox.shrink();
+            future: _getItemDetails(menuId, menuData, quantity),
+            builder: (context, AsyncSnapshot<Map<String, dynamic>> snapshot) {
+              if (snapshot.hasError) {
+                _logger.error("Error loading item details: ${snapshot.error}");
+                return _buildErrorItem(menuName, quantity);
               }
 
-              final rating = ratingSnapshot.data?['average'] ?? 0.0;
-              final ratingCount = ratingSnapshot.data?['count'] ?? 0;
+              if (!snapshot.hasData) {
+                return _buildLoadingItem(menuName, quantity);
+              }
 
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '${quantity}x $menuName',
-                            style: const TextStyle(fontSize: 14),
-                          ),
-                          if (ratingCount > 0)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 4),
-                              child: RatingIndicator(
-                                rating: rating,
-                                ratingCount: ratingCount,
-                                size: 14,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                    Row(
-                      children: [
-                        Text(
-                          'Rp ${itemPrice.toStringAsFixed(0)}',
-                          style: const TextStyle(fontSize: 14),
-                        ),
-                        if (_isOrderCompleted(order)) ...[
-                          const SizedBox(width: 8),
-                          _buildRatingButton(
-                            menuId: menuId,
-                            menuName: menuName,
-                            menuItem: item,
-                            order: order,
-                          ),
-                        ],
-                      ],
-                    ),
-                  ],
-                ),
+              final data = snapshot.data!;
+              return _buildItemCard(
+                menuName: menuName,
+                quantity: quantity,
+                ratingData: data['rating'] as Map<String, dynamic>,
+                priceData: data['price'] as Map<String, dynamic>,
+                order: order,
+                item: item,
               );
             },
           );
-        }),
+        }).toList(),
       ],
     );
   }
 
-  Widget _buildRatingButton({
-    required int menuId,
-    required String menuName,
-    required Map<String, dynamic> menuItem,
-    required Map<String, dynamic> order,
-  }) {
-    return FutureBuilder<bool>(
-      future: RatingService().hasUserRatedMenu(
+// Combine rating and price calculations into one Future
+  Future<Map<String, dynamic>> _getItemDetails(
+    dynamic menuId,
+    Map<String, dynamic>? menuData,
+    int quantity,
+  ) async {
+    final ratingFuture = RatingService().getMenuRatingSummary(menuId);
+    final priceFuture = _calculatePriceDetails(menuId, menuData, quantity);
+
+    final results = await Future.wait([ratingFuture, priceFuture]);
+
+    return {
+      'rating': results[0],
+      'price': results[1],
+    };
+  }
+
+  Future<Map<String, dynamic>> _calculatePriceDetails(
+    dynamic menuId,
+    Map<String, dynamic>? menuData,
+    int quantity,
+  ) async {
+    try {
+      if (menuData == null) {
+        return {
+          'originalPrice': 0.0,
+          'discountedPrice': 0.0,
+          'savings': 0.0,
+          'hasDiscount': false,
+        };
+      }
+
+      final originalPrice = (menuData['price'] as num).toDouble();
+      final discountedPrice = await MenuService().getDiscountedPrice(
         menuId,
-        order['id'], // Use transaction_id from order
-      ),
-      builder: (context, hasRatedSnapshot) {
-        if (hasRatedSnapshot.hasError) {
-          _logger.error('Rating check error:', hasRatedSnapshot.error);
-          return const SizedBox.shrink();
-        }
+        originalPrice,
+      );
 
-        final hasRated = hasRatedSnapshot.data ?? false;
+      final totalOriginalPrice = originalPrice * quantity;
+      final totalDiscountedPrice = discountedPrice * quantity;
+      final savings = totalOriginalPrice - totalDiscountedPrice;
 
-        return IconButton(
-          icon: Icon(
-            hasRated ? Icons.star : Icons.star_border,
-            color: hasRated ? Colors.amber : null,
+      return {
+        'originalPrice': totalOriginalPrice,
+        'discountedPrice': totalDiscountedPrice,
+        'savings': savings,
+        'hasDiscount': savings > 0,
+      };
+    } catch (e) {
+      _logger.error('Error calculating price details: $e');
+      return {
+        'originalPrice': 0.0,
+        'discountedPrice': 0.0,
+        'savings': 0.0,
+        'hasDiscount': false,
+      };
+    }
+  }
+
+// Widget for loading state
+  Widget _buildLoadingItem(String menuName, int quantity) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              '${quantity}x $menuName',
+              style: const TextStyle(fontSize: 14),
+            ),
           ),
-          onPressed: hasRated
-              ? () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('You have already rated this item'),
-                      backgroundColor: Colors.orange,
+          const SizedBox(
+            width: 80,
+            child: Center(
+              child: SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+// Widget for error state
+  Widget _buildErrorItem(String menuName, int quantity) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              '${quantity}x $menuName',
+              style: const TextStyle(fontSize: 14),
+            ),
+          ),
+          Icon(Icons.error_outline, color: Colors.red[700], size: 16),
+        ],
+      ),
+    );
+  }
+
+// Main item card widget
+  Widget _buildItemCard({
+    required String menuName,
+    required int quantity,
+    required Map<String, dynamic> ratingData,
+    required Map<String, dynamic> priceData,
+    required Map<String, dynamic> order,
+    required Map<String, dynamic> item,
+  }) {
+    final rating = ratingData['average'] ?? 0.0;
+    final ratingCount = ratingData['count'] ?? 0;
+    final hasDiscount = priceData['hasDiscount'] as bool;
+    final savings = priceData['savings'] as double;
+
+    return Card(
+      elevation: 1,
+      margin: const EdgeInsets.only(bottom: 8),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${quantity}x $menuName',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
                     ),
-                  );
-                }
-              : () {
-                  final menuData = {
-                    'id': menuId,
-                    'menu_name': menuName,
-                    'stall': menuItem['menu']?['stall'],
-                    'transaction_id': order['id'],
-                  };
-                  _showRatingDialog(menuData);
-                },
-          tooltip: hasRated ? 'Already rated' : 'Rate this item',
-          iconSize: 20,
-        );
-      },
+                  ),
+                  if (ratingCount > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Row(
+                        children: [
+                          RatingIndicator(
+                            rating: rating,
+                            ratingCount: ratingCount,
+                            size: 14,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '($ratingCount)',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (hasDiscount)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.local_offer,
+                            size: 14,
+                            color: Colors.green[700],
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Save: ${NumberFormat.currency(
+                              locale: 'id',
+                              symbol: 'Rp ',
+                              decimalDigits: 0,
+                            ).format(savings)}',
+                            style: TextStyle(
+                              color: Colors.green[700],
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (hasDiscount)
+                  Text(
+                    NumberFormat.currency(
+                      locale: 'id',
+                      symbol: 'Rp ',
+                      decimalDigits: 0,
+                    ).format(priceData['originalPrice']),
+                    style: TextStyle(
+                      decoration: TextDecoration.lineThrough,
+                      color: Colors.grey[600],
+                      fontSize: 12,
+                    ),
+                  ),
+                Text(
+                  NumberFormat.currency(
+                    locale: 'id',
+                    symbol: 'Rp ',
+                    decimalDigits: 0,
+                  ).format(priceData['discountedPrice']),
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: hasDiscount ? Colors.red[700] : null,
+                  ),
+                ),
+                if (_isOrderCompleted(order))
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: _buildRatingButton(item, order),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1451,9 +1595,7 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
+      backgroundColor: Colors.transparent,
       builder: (context) => DraggableScrollableSheet(
         initialChildSize: 0.9,
         maxChildSize: 0.9,
@@ -1484,11 +1626,7 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
           .from('students')
           .select() // Remove 'students.id' and use simple select()
           .eq('id_user', userData.id!)
-          .single(); // Changed from maybeSingle() to single()
-
-      if (studentData == null) {
-        throw Exception('Student profile not found');
-      }
+          .single();
 
       _logger.debug('Found student data: $studentData');
       return studentData['id'] as int;
@@ -1752,34 +1890,66 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
   }
 
   String _getOrderTypeLabel(OrderType type) {
-    switch (type) {
-      case OrderType.delivery:
-        return 'Delivery';
-      case OrderType.pickup:
-        return 'Pickup';
-      case OrderType.dine_in:
-        return 'Dine In';
-    }
+    return switch (type) {
+      OrderType.delivery => 'Delivery',
+      OrderType.pickup => 'Pickup',
+      OrderType.dine_in => 'Dine In',
+    };
   }
 
   IconData _getOrderTypeIcon(OrderType type) {
-    switch (type) {
-      case OrderType.delivery:
-        return Icons.delivery_dining;
-      case OrderType.pickup:
-        return Icons.store_mall_directory;
-      case OrderType.dine_in:
-        return Icons.restaurant;
-    }
+    return switch (type) {
+      OrderType.delivery => Icons.delivery_dining,
+      OrderType.pickup => Icons.store_mall_directory,
+      OrderType.dine_in => Icons.restaurant,
+    };
   }
 
   bool _isOrderCompleted(Map<String, dynamic> order) {
     return order['status']?.toLowerCase() == 'completed';
   }
-}
 
-extension StringExtension on String {
-  String capitalize() {
-    return "${this[0].toUpperCase()}${substring(1).toLowerCase()}";
+  Widget _buildRatingButton(
+      Map<String, dynamic> item, Map<String, dynamic> order) {
+    final int menuId = item['menu']?['id'] ?? -1;
+    if (menuId == -1) return const SizedBox.shrink();
+
+    return FutureBuilder<bool>(
+      future: RatingService().hasUserRatedMenu(menuId, order['id']),
+      builder: (context, hasRatedSnapshot) {
+        if (hasRatedSnapshot.hasError) {
+          _logger.error('Rating check error:', hasRatedSnapshot.error);
+          return const SizedBox.shrink();
+        }
+
+        final hasRated = hasRatedSnapshot.data ?? false;
+        return IconButton(
+          icon: Icon(
+            hasRated ? Icons.star : Icons.star_border,
+            color: hasRated ? Colors.amber : null,
+          ),
+          onPressed: hasRated
+              ? () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('You have already rated this item'),
+                      backgroundColor: Colors.orange,
+                    ),
+                  );
+                }
+              : () {
+                  final menuData = {
+                    'id': menuId,
+                    'menu_name': item['menu']?['food_name'] ?? 'Unknown Item',
+                    'stall': item['menu']?['stall'],
+                    'transaction_id': order['id'],
+                  };
+                  _showRatingDialog(menuData);
+                },
+          tooltip: hasRated ? 'Already rated' : 'Rate this item',
+          iconSize: 20,
+        );
+      },
+    );
   }
 }

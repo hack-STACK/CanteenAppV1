@@ -5,10 +5,10 @@ class FoodCategoryBar extends StatelessWidget {
   final String selectedCategory;
 
   const FoodCategoryBar({
-    Key? key,
+    super.key,
     required this.onCategorySelected,
     required this.selectedCategory,
-  }) : super(key: key);
+  });
 
   final categories = const [
     {'icon': Icons.restaurant, 'label': 'All'},

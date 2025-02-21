@@ -8,11 +8,11 @@ class StallHeader extends StatelessWidget {
   final bool isCollapsed;
 
   const StallHeader({
-    Key? key,
+    super.key,
     required this.stall,
     required this.scrollController,
     required this.isCollapsed,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

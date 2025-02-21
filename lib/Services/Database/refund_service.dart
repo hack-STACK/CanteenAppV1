@@ -144,7 +144,7 @@ class RefundService {
               null) // Fixed: use not + neq to check for NULL
           .order('created_at');
 
-      if (response == null || (response as List).isEmpty) {
+      if ((response as List).isEmpty) {
         return; // No refunds to process
       }
 

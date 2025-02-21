@@ -49,14 +49,12 @@ class StoreService {
       final Map<int, List<FoodAddon>> addonMap = {};
 
       for (final menu in menus) {
-        if (menu.id != null) {
-          addonFutures.add(
-            _foodService.getAddonsForMenu(menu.id!).then((addons) {
-              addonMap[menu.id!] = addons;
-              _addonCache[menu.id!] = addons;
-            }),
-          );
-        }
+        addonFutures.add(
+          _foodService.getAddonsForMenu(menu.id).then((addons) {
+            addonMap[menu.id] = addons;
+            _addonCache[menu.id] = addons;
+          }),
+        );
       }
 
       await Future.wait(addonFutures);

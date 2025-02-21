@@ -8,12 +8,12 @@ class StudentProfileHeader extends StatelessWidget {
   final Future<void> Function() onRefresh;
 
   const StudentProfileHeader({
-    Key? key,
+    super.key,
     required this.student,
     required this.isLoading,
     required this.onProfileComplete,
     required this.onRefresh,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -43,8 +43,7 @@ class StudentProfileHeader extends StatelessWidget {
               child: student?.studentImage == null ||
                       student!.studentImage!.isEmpty
                   ? Text(
-                      student?.studentName?.substring(0, 1).toUpperCase() ??
-                          '?',
+                      student?.studentName.substring(0, 1).toUpperCase() ?? '?',
                       style: TextStyle(
                         fontSize: 24,
                         color: Theme.of(context).primaryColor,

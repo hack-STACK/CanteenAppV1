@@ -4,18 +4,20 @@ import 'package:kantin/Models/Stan_model.dart';
 import 'package:kantin/Models/menus.dart';
 import 'package:kantin/Services/Database/foodService.dart';
 import 'package:kantin/Models/menus_addon.dart'; // Add this import
+import 'package:kantin/pages/StudentState/OrderPage.dart';
 import 'package:provider/provider.dart';
 import 'package:kantin/Models/Restaurant.dart';
 import 'package:kantin/pages/StudentState/food_cart.dart';
 import 'package:supabase_flutter/supabase_flutter.dart'; // Add this import
-import 'package:flutter/cupertino.dart';
-import 'package:shimmer/shimmer.dart';
 import 'package:kantin/widgets/stall_detail/stall_banner_header.dart';
 import 'package:kantin/widgets/stall_detail/stall_info_section.dart';
 import 'package:kantin/widgets/stall_detail/menu_section.dart';
 import 'package:kantin/Models/stall_detail_models.dart'; // Add this import and remove local declarations
 import 'package:kantin/widgets/stall_detail/review_section.dart'; // Add this import
 import 'package:kantin/models/menu_filter_state.dart';
+import 'package:kantin/services/menu_service.dart';
+import 'package:kantin/models/menu_discount.dart';
+import 'package:kantin/models/discount.dart';
 
 class StallDetailPage extends StatefulWidget {
   final Stan stall;
@@ -104,6 +106,9 @@ class _StallDetailPageState extends State<StallDetailPage>
   // Add this with other state variables
   late MenuFilterState _filterState;
 
+  // Add MenuService instance
+  final MenuService _menuService = MenuService();
+
   @override
   void initState() {
     super.initState();
@@ -149,9 +154,9 @@ class _StallDetailPageState extends State<StallDetailPage>
 
           // Debug print loaded menus
           print('Loaded ${_menus.length} menus');
-          _menus.forEach((menu) {
+          for (var menu in _menus) {
             print('Menu: ${menu.foodName}, Type: ${menu.type}');
-          });
+          }
         });
       }
     } catch (e) {
@@ -198,12 +203,10 @@ class _StallDetailPageState extends State<StallDetailPage>
       // Load addons for each menu
       for (var menu in restaurant.menu) {
         try {
-          if (menu.id == null) continue;
-
           final addonsResponse = await _supabase
               .from('food_addons')
               .select()
-              .eq('menu_id', menu.id!);
+              .eq('menu_id', menu.id);
 
           List<FoodAddon> addons = [];
 
@@ -226,7 +229,7 @@ class _StallDetailPageState extends State<StallDetailPage>
           }
 
           if (addons.isNotEmpty) {
-            _menuAddons[menu.id!] = addons;
+            _menuAddons[menu.id] = addons;
           }
         } catch (e, stackTrace) {
           print('Error loading addons for menu ${menu.id}: $e');
@@ -315,7 +318,7 @@ class _StallDetailPageState extends State<StallDetailPage>
 
   // Update the add to cart method to use Provider
   void _addToCart(Menu menu,
-      {List<FoodAddon> addons = const [], String? note}) {
+      {List<FoodAddon> addons = const [], String? note, double? price}) {
     // Get the Restaurant provider
     final restaurant = Provider.of<Restaurant>(context, listen: false);
 
@@ -326,6 +329,7 @@ class _StallDetailPageState extends State<StallDetailPage>
       selectedAddons: addons,
       note: note,
       addons: _menuAddons[menu.id] ?? [], // Add the addons parameter
+      price: price, // Use price parameter instead of appliedPrice
     );
 
     // Show a custom snack bar with undo option
@@ -868,10 +872,34 @@ class _StallDetailPageState extends State<StallDetailPage>
     }
   }
 
-  void _showMenuDetail(Menu menu) {
+  void _showMenuDetail(Menu menu) async {
     final addons = _menuAddons[menu.id] ?? [];
     final TextEditingController noteController = TextEditingController();
     List<FoodAddon> selectedAddons = [];
+
+    // Ensure menu.price is not null, default to 0.0 if it is
+    final double originalPrice = menu.price ?? 0.0;
+
+    // Get active discounts for this menu
+    final List<Discount> activeDiscounts =
+        await _menuService.getActiveMenuDiscounts(menu.id);
+
+    // Calculate the discounted price
+    final double discountedPrice =
+        await _menuService.getDiscountedPrice(menu.id, originalPrice);
+
+    // Calculate discount details with null safety
+    final hasDiscount = discountedPrice < originalPrice;
+    final discountPercentage = hasDiscount
+        ? ((originalPrice - discountedPrice) / originalPrice * 100).round()
+        : 0;
+    final savingsAmount = hasDiscount ? originalPrice - discountedPrice : 0.0;
+
+    // Calculate total price including addons
+    double calculateTotalPrice(List<FoodAddon> selectedAddons) {
+      return discountedPrice + // Use discountedPrice instead of original price
+          selectedAddons.fold(0.0, (sum, addon) => sum + (addon.price ?? 0.0));
+    }
 
     showModalBottomSheet(
       context: context,
@@ -886,162 +914,302 @@ class _StallDetailPageState extends State<StallDetailPage>
           ),
           child: Column(
             children: [
-              // Drag Handle
-              Container(
-                width: 40,
-                height: 4,
-                margin: const EdgeInsets.only(top: 12),
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              Expanded(
-                child: CustomScrollView(
-                  slivers: [
-                    // Image Section
-                    SliverToBoxAdapter(
-                      child: Stack(
-                        children: [
-                          Hero(
-                            tag: 'menu_${menu.id}',
-                            child: AspectRatio(
-                              aspectRatio: 16 / 9,
-                              child: _loadMenuImage(menu),
+              // Image Section with Hero animation
+              Stack(
+                children: [
+                  AspectRatio(
+                    aspectRatio: 16 / 9,
+                    child: Hero(
+                      tag: 'menu_${menu.id}',
+                      child: _loadMenuImage(menu),
+                    ),
+                  ),
+                  // Close button
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      onPressed: () => Navigator.pop(context),
+                      style: IconButton.styleFrom(
+                        backgroundColor: Colors.black38,
+                        padding: const EdgeInsets.all(8),
+                      ),
+                    ),
+                  ),
+                  // Enhanced Discount badge if applicable
+                  if (hasDiscount)
+                    Positioned(
+                      top: 16,
+                      left: 16,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade600,
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Colors.black26,
+                              blurRadius: 4,
+                              offset: Offset(0, 2),
                             ),
-                          ),
-                          // Close Button
-                          Positioned(
-                            top: 16,
-                            right: 16,
-                            child: Material(
-                              color: Colors.white.withOpacity(0.9),
-                              borderRadius: BorderRadius.circular(20),
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(20),
-                                onTap: () => Navigator.pop(context),
-                                child: const Padding(
-                                  padding: EdgeInsets.all(8),
-                                  child: Icon(Icons.close),
-                                ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.local_offer,
+                                color: Colors.white, size: 16),
+                            const SizedBox(width: 4),
+                            Text(
+                              'SAVE $discountPercentage%',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
                               ),
                             ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              // Content Section
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    // Title Section
+                    Text(
+                      menu.foodName ?? 'Unnamed Item',
+                      style: const TextStyle(
+                          fontSize: 24, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    if (menu.description?.isNotEmpty ?? false)
+                      Text(
+                        menu.description!,
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                          fontSize: 16,
+                          height: 1.5,
+                        ),
+                      ),
+                    const SizedBox(height: 16),
+
+                    // Enhanced Price Display Section
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color:
+                            hasDiscount ? Colors.red.shade50 : Colors.grey[50],
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: hasDiscount
+                              ? Colors.red.shade200
+                              : Colors.grey[300]!,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Original Price (if discounted)
+                          if (hasDiscount) ...[
+                            Row(
+                              children: [
+                                Text(
+                                  'Original Price:',
+                                  style: TextStyle(
+                                    color: Colors.grey[600],
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  NumberFormat.currency(
+                                    locale: 'id',
+                                    symbol: 'Rp ',
+                                    decimalDigits: 0,
+                                  ).format(originalPrice),
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    decoration: TextDecoration.lineThrough,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                          ],
+                          // Current Price
+                          Row(
+                            children: [
+                              Text(
+                                hasDiscount ? 'Discounted Price:' : 'Price:',
+                                style: TextStyle(
+                                  color: hasDiscount
+                                      ? Colors.red.shade700
+                                      : Colors.grey[600],
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                NumberFormat.currency(
+                                  locale: 'id',
+                                  symbol: 'Rp ',
+                                  decimalDigits: 0,
+                                ).format(discountedPrice),
+                                style: TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                  color: hasDiscount
+                                      ? Colors.red.shade700
+                                      : Theme.of(context).primaryColor,
+                                ),
+                              ),
+                            ],
                           ),
+                          if (hasDiscount) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              'You save: ${NumberFormat.currency(
+                                locale: 'id',
+                                symbol: 'Rp ',
+                                decimalDigits: 0,
+                              ).format(savingsAmount)}',
+                              style: TextStyle(
+                                color: Colors.green.shade700,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
 
-                    // Content
-                    SliverPadding(
-                      padding: const EdgeInsets.all(16),
-                      sliver: SliverList(
-                        delegate: SliverChildListDelegate([
-                          // Title and Price Section
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      menu.foodName,
-                                      style: const TextStyle(
-                                        fontSize: 24,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      'Rp ${menu.price.toStringAsFixed(0)}',
-                                      style: TextStyle(
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.bold,
-                                        color: Theme.of(context).primaryColor,
-                                      ),
-                                    ),
-                                  ],
+                    // Active Discounts Section
+                    if (activeDiscounts.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.blue.shade200),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(Icons.info_outline,
+                                    color: Colors.blue.shade700, size: 20),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Active Promotions',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.blue.shade700,
+                                  ),
                                 ),
-                              ),
-                              // Favorite Button
-                              IconButton(
-                                icon: Icon(
-                                  _favoriteMenus.contains(menu.foodName)
-                                      ? Icons.favorite
-                                      : Icons.favorite_border,
-                                  color: Colors.red,
-                                ),
-                                onPressed: () => _toggleFavorite(menu),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-
-                          // Description
-                          Text(
-                            menu.description!,
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: Colors.grey[700],
-                              height: 1.5,
+                              ],
                             ),
-                          ),
-                          const SizedBox(height: 24),
-
-                          // Add-ons Section
-                          if (addons.isNotEmpty) ...[
-                            const Text(
-                              'Customize Your Order',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            ...addons.map((addon) => _buildAddonTile(
-                                  addon,
-                                  selectedAddons.contains(addon),
-                                  (checked) {
-                                    setModalState(() {
-                                      if (checked ?? false) {
-                                        selectedAddons.add(addon);
-                                      } else {
-                                        selectedAddons.remove(addon);
-                                      }
-                                    });
-                                  },
+                            const SizedBox(height: 8),
+                            ...activeDiscounts.map((discount) => Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.check_circle_outline,
+                                          size: 16, color: Colors.green),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          '${discount.discountName} (${discount.discountPercentage}% off)',
+                                          style: const TextStyle(
+                                            fontSize: 14,
+                                            color: Colors.black87,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 )),
-                            const SizedBox(height: 24),
                           ],
+                        ),
+                      ),
+                    ],
 
-                          // Special Instructions
-                          const Text(
-                            'Special Instructions',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          TextField(
-                            controller: noteController,
-                            decoration: InputDecoration(
-                              hintText: 'E.g., No onions, extra spicy...',
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              fillColor: Colors.grey[50],
-                              filled: true,
-                            ),
-                            maxLines: 3,
-                          ),
-                        ]),
+                    // Add-ons Section
+                    if (addons.isNotEmpty) ...[
+                      const SizedBox(height: 24),
+                      const Text(
+                        'Add-ons',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      ...addons.map((addon) => _buildAddonTile(
+                            addon,
+                            selectedAddons.contains(addon),
+                            (selected) => setModalState(() {
+                              if (selected ?? false) {
+                                selectedAddons.add(addon);
+                              } else {
+                                selectedAddons.remove(addon);
+                              }
+                            }),
+                          )),
+                    ],
+
+                    // Special Instructions
+                    const SizedBox(height: 24),
+                    const Text(
+                      'Special Instructions',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: noteController,
+                      maxLines: 3,
+                      decoration: InputDecoration(
+                        hintText: 'Add notes for your order (optional)',
+                        hintStyle: TextStyle(
+                          color: Colors.grey[400],
+                          fontSize: 14,
+                        ),
+                        filled: true,
+                        fillColor: Colors.grey[50],
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.grey[300]!),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.grey[300]!),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide:
+                              BorderSide(color: Theme.of(context).primaryColor),
+                        ),
+                        contentPadding: const EdgeInsets.all(16),
                       ),
                     ),
                   ],
                 ),
               ),
-              // Bottom Bar
+              // Bottom Bar with Total Price
               SafeArea(
                 child: Container(
                   padding: const EdgeInsets.all(16),
@@ -1064,16 +1232,21 @@ class _StallDetailPageState extends State<StallDetailPage>
                           children: [
                             const Text(
                               'Total Price',
-                              style: TextStyle(
-                                color: Colors.grey,
-                                fontSize: 14,
-                              ),
+                              style:
+                                  TextStyle(color: Colors.grey, fontSize: 14),
                             ),
                             Text(
-                              'Rp ${(menu.price + selectedAddons.fold(0.0, (sum, addon) => sum + addon.price)).toStringAsFixed(0)}',
-                              style: const TextStyle(
+                              NumberFormat.currency(
+                                locale: 'id',
+                                symbol: 'Rp ',
+                                decimalDigits: 0,
+                              ).format(calculateTotalPrice(selectedAddons)),
+                              style: TextStyle(
                                 fontSize: 20,
                                 fontWeight: FontWeight.bold,
+                                color: hasDiscount
+                                    ? Colors.red.shade600
+                                    : Theme.of(context).primaryColor,
                               ),
                             ),
                           ],
@@ -1082,23 +1255,28 @@ class _StallDetailPageState extends State<StallDetailPage>
                       const SizedBox(width: 16),
                       Expanded(
                         child: ElevatedButton(
-                          onPressed: () {
-                            _addToCart(
-                              menu,
-                              addons: selectedAddons,
-                              note: noteController.text.trim(),
-                            );
-                            Navigator.pop(context);
-                          },
+                          onPressed: (menu.isAvailable ?? false)
+                              ? () {
+                                  _addToCart(
+                                    menu,
+                                    addons: selectedAddons,
+                                    note: noteController.text.trim(),
+                                    price:
+                                        discountedPrice, // Pass the discounted price
+                                  );
+                                  Navigator.pop(context);
+                                }
+                              : null,
                           style: ElevatedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
+                            backgroundColor:
+                                hasDiscount ? Colors.red.shade600 : null,
                           ),
-                          child: const Text(
-                            'Add to Cart',
-                            style: TextStyle(fontSize: 16),
+                          child: Text(
+                            (menu.isAvailable ?? false)
+                                ? 'Add to Cart'
+                                : 'Out of Stock',
+                            style: const TextStyle(fontSize: 16),
                           ),
                         ),
                       ),
@@ -1209,7 +1387,8 @@ class _StallDetailPageState extends State<StallDetailPage>
                 onCategorySelected: (category) {
                   setState(() => _selectedCategory = category);
                 },
-                onMenuTap: _showMenuDetail,
+                onMenuTap: (menu) =>
+                    _showMenuDetail(menu), // Fixed function call
                 onAddToCart: _addToCart,
                 loadingState: _loadingState,
                 errorMessage: _errorMessage,
@@ -1306,41 +1485,128 @@ class _StallDetailPageState extends State<StallDetailPage>
   }
 
   Widget _buildCartBar() {
-    return AnimatedBuilder(
-      animation: _cartAnimation,
-      builder: (context, child) => AnimatedSlide(
-        duration: const Duration(milliseconds: 200),
-        offset: Offset(0, _cart.isEmpty ? 1 : 0),
-        child: Container(
-          padding: const EdgeInsets.all(16).copyWith(
-            bottom: 16 + MediaQuery.of(context).padding.bottom,
-          ),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 10,
-                offset: const Offset(0, -5),
-              ),
-            ],
-          ),
-          child: ElevatedButton.icon(
-            onPressed: _showCart,
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+    return Consumer<Restaurant>(
+      builder: (context, restaurant, _) {
+        final cartItems = restaurant.cart;
+
+        if (cartItems.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        final cartTotal = restaurant.calculateSubtotal();
+        final totalItems =
+            cartItems.fold(0, (sum, item) => sum + item.quantity);
+
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            child: Material(
+              color: Theme.of(context).primaryColor,
+              borderRadius: BorderRadius.circular(16),
+              elevation: 8,
+              child: InkWell(
+                onTap: _showCart,
+                borderRadius: BorderRadius.circular(16),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  child: Row(
+                    children: [
+                      Stack(
+                        children: [
+                          const Icon(
+                            Icons.shopping_cart_outlined,
+                            color: Colors.white,
+                            size: 28,
+                          ),
+                          if (totalItems > 0)
+                            Positioned(
+                              right: 0,
+                              top: 0,
+                              child: Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: BoxDecoration(
+                                  color: Colors.red,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                constraints: const BoxConstraints(
+                                  minWidth: 16,
+                                  minHeight: 16,
+                                ),
+                                child: Text(
+                                  '$totalItems',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '${cartItems.length} ${cartItems.length == 1 ? 'item' : 'items'} in cart',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _formatPrice(cartTotal),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: const [
+                            Text(
+                              'View Cart',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            SizedBox(width: 4),
+                            Icon(
+                              Icons.arrow_forward_ios,
+                              color: Colors.white,
+                              size: 14,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
-            icon: const Icon(Icons.shopping_cart),
-            label: Text(
-              'View Cart (${_cart.length} items) · ${_formatPrice(_calculateTotal())}',
-              style: const TextStyle(fontSize: 16),
-            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -1356,16 +1622,5 @@ class _StallDetailPageState extends State<StallDetailPage>
   String _formatPrice(double price) {
     final formatter = NumberFormat('#,##0', 'id_ID');
     return 'Rp ${formatter.format(price)}';
-  }
-
-  double _calculateTotal() {
-    return _cart.fold(0.0, (sum, item) => sum + item.totalPrice);
-  }
-}
-
-// Add this extension at the bottom of the file
-extension StringExtension on String {
-  String capitalize() {
-    return "${this[0].toUpperCase()}${substring(1).toLowerCase()}";
   }
 }

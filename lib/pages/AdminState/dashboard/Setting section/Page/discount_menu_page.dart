@@ -42,13 +42,11 @@ class _DiscountMenuPageState extends State<DiscountMenuPage> {
       // Load menu-discount relationships for each menu
       final appliedDiscounts = <int>{};
       for (final menu in menus) {
-        if (menu.id != null) {
-          final menuDiscounts =
-              await _discountService.getMenuDiscountsByMenuId(menu.id!);
-          if (menuDiscounts.any(
-              (md) => md.discountId == widget.discount.id && md.isActive)) {
-            appliedDiscounts.add(menu.id!);
-          }
+        final menuDiscounts =
+            await _discountService.getMenuDiscountsByMenuId(menu.id);
+        if (menuDiscounts
+            .any((md) => md.discountId == widget.discount.id && md.isActive)) {
+          appliedDiscounts.add(menu.id);
         }
       }
 
@@ -165,16 +163,16 @@ class _DiscountMenuPageState extends State<DiscountMenuPage> {
       setState(() => _isLoading = true);
 
       await _discountService.updateMenuDiscount(
-        menu.id!,
+        menu.id,
         widget.discount.id,
         value,
       );
 
       setState(() {
         if (value) {
-          _appliedMenuIds.add(menu.id!);
+          _appliedMenuIds.add(menu.id);
         } else {
-          _appliedMenuIds.remove(menu.id!);
+          _appliedMenuIds.remove(menu.id);
         }
       });
 

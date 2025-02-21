@@ -5,9 +5,9 @@ class StallStatusBadge extends StatelessWidget {
   final Stan stall;
 
   const StallStatusBadge({
-    Key? key,
+    super.key,
     required this.stall,
-  }) : super(key: key);
+  });
 
   String _getTimeString(TimeOfDay? time) {
     if (time == null) return 'N/A';

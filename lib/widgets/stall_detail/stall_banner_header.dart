@@ -9,12 +9,12 @@ class StallBannerHeader extends StatelessWidget {
   final int cartItemCount;
 
   const StallBannerHeader({
-    Key? key,
+    super.key,
     required this.stall,
     required this.isCollapsed,
     required this.onCartTap,
     required this.cartItemCount,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

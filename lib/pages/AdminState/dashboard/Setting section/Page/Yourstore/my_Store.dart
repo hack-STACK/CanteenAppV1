@@ -1530,7 +1530,8 @@ class _MyStorePageState extends State<MyStorePage>
                         const SizedBox(height: 4),
 
                         // Description
-                        if (menu.description?.isNotEmpty == true)  // Fix null check here
+                        if (menu.description?.isNotEmpty ==
+                            true) // Fix null check here
                           Text(
                             menu.description!,
                             style: TextStyle(
@@ -1731,7 +1732,7 @@ class _MyStorePageState extends State<MyStorePage>
       final bool newAvailability = !menu.isAvailable;
 
       // Update the menu availability
-      await _foodService.toggleMenuAvailability(menu.id!, newAvailability);
+      await _foodService.toggleMenuAvailability(menu.id, newAvailability);
 
       // Update local state
       setState(() {
@@ -1791,7 +1792,7 @@ class _MyStorePageState extends State<MyStorePage>
             onPressed: () async {
               try {
                 final newPrice = double.parse(priceController.text);
-                await _foodService.updateMenuPrice(menu.id!, newPrice);
+                await _foodService.updateMenuPrice(menu.id, newPrice);
 
                 // Update local state
                 setState(() {
@@ -1848,7 +1849,7 @@ class _MyStorePageState extends State<MyStorePage>
                 Navigator.pop(context);
                 setState(() => _isProcessing = true);
 
-                await _foodService.duplicateMenu(menu.id!);
+                await _foodService.duplicateMenu(menu.id);
 
                 // Reload menus and addons
                 if (_stall != null) {
@@ -1865,11 +1866,8 @@ class _MyStorePageState extends State<MyStorePage>
                   // Load addons for all menus
                   final Map<int, List<FoodAddon>> newAddonMap = {};
                   for (final menu in menus) {
-                    if (menu.id != null) {
-                      final addons =
-                          await _foodService.getAddonsForMenu(menu.id!);
-                      newAddonMap[menu.id!] = addons;
-                    }
+                    final addons = await _foodService.getAddonsForMenu(menu.id);
+                    newAddonMap[menu.id] = addons;
                   }
 
                   // Update addons state
@@ -1931,7 +1929,7 @@ class _MyStorePageState extends State<MyStorePage>
                   Navigator.pop(context); // Close bottom sheet
                   setState(() => _isLoading = true);
 
-                  await _foodService.deleteMenu(menu.id!);
+                  await _foodService.deleteMenu(menu.id);
 
                   // Update local state
                   setState(() {
@@ -1974,7 +1972,7 @@ class _MyStorePageState extends State<MyStorePage>
         barrierDismissible: false,
         builder: (dialogContext) => AddonDialog(
           addon: addon,
-          menuId: menu.id!,
+          menuId: menu.id,
         ),
       );
 
@@ -1983,10 +1981,10 @@ class _MyStorePageState extends State<MyStorePage>
         await _storeService.saveAddon(addonData);
 
         // Refresh the addons for this menu
-        final updatedAddons = await _foodService.getAddonsForMenu(menu.id!);
+        final updatedAddons = await _foodService.getAddonsForMenu(menu.id);
 
         setState(() {
-          _menuAddons[menu.id!] = updatedAddons;
+          _menuAddons[menu.id] = updatedAddons;
           _isProcessing = false;
         });
 
@@ -2045,7 +2043,7 @@ class _MyStorePageState extends State<MyStorePage>
                       key: ValueKey('${addon.id}-${addon.addonName}'),
                       addon: addon,
                       onEdit: () => _showAddonDialog(context, menu, addon),
-                      onDelete: () => _deleteAddon(context, menu.id!, addon),
+                      onDelete: () => _deleteAddon(context, menu.id, addon),
                     );
                   },
                 ),
@@ -2107,7 +2105,7 @@ class _MyStorePageState extends State<MyStorePage>
     return AddonCard(
       addon: addon,
       onEdit: () => _showAddonDialog(context, menu, addon),
-      onDelete: () => _deleteAddon(context, menu.id!, addon),
+      onDelete: () => _deleteAddon(context, menu.id, addon),
     );
   }
 

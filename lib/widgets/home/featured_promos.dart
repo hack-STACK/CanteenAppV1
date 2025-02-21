@@ -5,9 +5,9 @@ class FeaturedPromos extends StatelessWidget {
   final List<Stan> stalls;
 
   const FeaturedPromos({
-    Key? key,
+    super.key,
     required this.stalls,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

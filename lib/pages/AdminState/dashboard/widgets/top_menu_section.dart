@@ -76,7 +76,7 @@ class _TopMenuSectionState extends State<TopMenuSection> {
   List<Menu> _sortMenus(List<Menu> menus) {
     switch (_selectedFilter.value) {
       case 'Latest':
-        return menus..sort((a, b) => b.id!.compareTo(a.id!));
+        return menus..sort((a, b) => b.id.compareTo(a.id));
       case 'Popular':
         // Implement popular sorting logic
         return menus;
@@ -94,10 +94,7 @@ class _TopMenuSectionState extends State<TopMenuSection> {
 
   Future<void> _fetchAddons(List<Menu> menus) async {
     for (final menu in menus) {
-      if (menu.id != null) {
-        _menuAddons[menu.id!] =
-            await widget.foodService.getAddonsForMenu(menu.id!);
-      }
+      _menuAddons[menu.id] = await widget.foodService.getAddonsForMenu(menu.id);
     }
   }
 

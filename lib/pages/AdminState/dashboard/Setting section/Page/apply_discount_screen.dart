@@ -120,7 +120,8 @@ class _ApplyDiscountScreenState extends State<ApplyDiscountScreen> {
     return menus
         .where((menu) =>
             menu.foodName.toLowerCase().contains(query.toLowerCase()) ||
-            (menu.description?.toLowerCase() ?? '').contains(query)) // Fix null check here
+            (menu.description?.toLowerCase() ?? '')
+                .contains(query)) // Fix null check here
         .toList();
   }
 
@@ -179,9 +180,9 @@ class _ApplyDiscountScreenState extends State<ApplyDiscountScreen> {
           onChanged: (bool? value) {
             setState(() {
               if (value == true) {
-                _selectedMenuIds.add(menu.id!);
+                _selectedMenuIds.add(menu.id);
               } else {
-                _selectedMenuIds.remove(menu.id!);
+                _selectedMenuIds.remove(menu.id);
               }
             });
           },
@@ -191,7 +192,7 @@ class _ApplyDiscountScreenState extends State<ApplyDiscountScreen> {
             if (_selectedMenuIds.contains(menu.id)) {
               _selectedMenuIds.remove(menu.id);
             } else {
-              _selectedMenuIds.add(menu.id!);
+              _selectedMenuIds.add(menu.id);
             }
           });
         },

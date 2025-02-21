@@ -1,16 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:kantin/Models/Stan_model.dart';
-import 'package:shimmer/shimmer.dart';
 
 class RatingReviewsSection extends StatelessWidget {
   final Stan stall;
   final VoidCallback onSeeAllReviews;
 
   const RatingReviewsSection({
-    Key? key,
+    super.key,
     required this.stall,
     required this.onSeeAllReviews,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

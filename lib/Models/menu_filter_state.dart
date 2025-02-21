@@ -1,33 +1,31 @@
 import 'package:flutter/material.dart';
 
 class MenuFilterState {
+  final RangeValues priceRange;
   final Set<String> selectedTags;
   final String? searchQuery;
-  final String? sortBy;
-  final RangeValues priceRange;
-  final bool isGridView;
+  final String sortBy;
 
-  const MenuFilterState({
-    this.selectedTags = const {},
+  MenuFilterState({
+    RangeValues? priceRange,
+    Set<String>? selectedTags,
     this.searchQuery,
-    this.sortBy,
-    this.priceRange = const RangeValues(0, 1000000),
-    this.isGridView = false,
-  });
+    String? sortBy,
+  })  : priceRange = priceRange ?? const RangeValues(0, 1000000),
+        selectedTags = selectedTags ?? {},
+        sortBy = sortBy ?? 'recommended';
 
   MenuFilterState copyWith({
+    RangeValues? priceRange,
     Set<String>? selectedTags,
     String? searchQuery,
     String? sortBy,
-    RangeValues? priceRange,
-    bool? isGridView,
   }) {
     return MenuFilterState(
+      priceRange: priceRange ?? this.priceRange,
       selectedTags: selectedTags ?? this.selectedTags,
       searchQuery: searchQuery ?? this.searchQuery,
       sortBy: sortBy ?? this.sortBy,
-      priceRange: priceRange ?? this.priceRange,
-      isGridView: isGridView ?? this.isGridView,
     );
   }
 }

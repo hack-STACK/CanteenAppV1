@@ -88,6 +88,8 @@ class _HomepageState extends State<StudentPage>
   // Add new state variables
   String _selectedCategory = 'All';
 
+  bool _isDisposed = false; // Add this flag
+
   @override
   void initState() {
     super.initState();
@@ -225,19 +227,25 @@ class _HomepageState extends State<StudentPage>
       final popularStalls = List<Stan>.from(stalls)
         ..sort((a, b) => (b.rating ?? 0).compareTo(a.rating ?? 0));
 
-      setState(() {
-        _stalls = stalls;
-        _popularStalls = popularStalls.take(5).toList();
-        _isLoading = false;
-      });
+      if (!_isDisposed) {
+        // Check flag before setState
+        setState(() {
+          _stalls = stalls;
+          _popularStalls = popularStalls.take(5).toList();
+          _isLoading = false;
+        });
+      }
 
       // Apply initial filters
       _applyFilters();
     } catch (e) {
-      setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error loading stalls: $e')),
-      );
+      if (!_isDisposed) {
+        // Check flag before setState
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading stalls: $e')),
+        );
+      }
     }
   }
 
@@ -1247,6 +1255,7 @@ class _HomepageState extends State<StudentPage>
     _filteredStallsNotifier.dispose();
     _tabController.dispose();
     _scrollController.dispose();
+    _isDisposed = true; // Set flag when disposing
     super.dispose();
   }
 }

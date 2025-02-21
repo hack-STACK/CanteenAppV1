@@ -58,11 +58,10 @@ class _MenuSectionState extends State<MenuSection>
   late AnimationController _listAnimation;
   bool _showScrollToTop = false;
   String? _selectedSortOption;
-  RangeValues _priceRange = RangeValues(0, 1000000);
 
   // Add new properties for filtering and sorting
-  Set<String> _activeFilters = {};
-  String _searchQuery = '';
+  Set<String> _activeFilters = <String>{}; // Fixed initialization
+  String _searchQuery = ''; // Fixed initialization
 
   // Use the top-level enum
   SortOption _currentSort = SortOption.recommended;
@@ -70,64 +69,30 @@ class _MenuSectionState extends State<MenuSection>
   List<Menu> get _filteredAndSortedMenus {
     List<Menu> filtered = widget.menus;
 
-    // Apply category filter
-    if (widget.selectedCategory != 'All') {
-      filtered = filtered
-          .where((menu) =>
-              menu.type.toLowerCase() == widget.selectedCategory.toLowerCase())
-          .toList();
+    // Debug current state
+    print('Total menus before filtering: ${filtered.length}');
+    print('Selected category: ${widget.selectedCategory}');
+
+    // Only filter if not "all" category
+    if (widget.selectedCategory.toLowerCase() != 'all') {
+      filtered = filtered.where((menu) {
+        // Convert both to lowercase for comparison
+        final menuType = (menu.type ?? '').toLowerCase();
+        final selectedType = widget.selectedCategory.toLowerCase();
+
+        // Debug each menu item
+        print('Checking menu: ${menu.foodName}');
+        print('Menu type: "$menuType", Selected type: "$selectedType"');
+
+        return menuType == selectedType;
+      }).toList();
     }
 
-    // Apply search
-    if (_searchQuery.isNotEmpty) {
-      filtered = filtered
-          .where((menu) =>
-              menu.foodName
-                  .toLowerCase()
-                  .contains(_searchQuery.toLowerCase()) ||
-              (menu.description?.toLowerCase() ?? '')
-                  .contains(_searchQuery.toLowerCase()))
-          .toList();
-    }
-
-    // Apply additional filters
-    if (_activeFilters.contains('Popular')) {
-      filtered = filtered.where((menu) => menu.isPopular).toList();
-    }
-    if (_activeFilters.contains('Vegetarian')) {
-      filtered = filtered.where((menu) => menu.isVegetarian).toList();
-    }
-    if (_activeFilters.contains('Spicy')) {
-      filtered = filtered.where((menu) => menu.isSpicy).toList();
-    }
-
-    // Apply sorting
-    switch (_currentSort) {
-      case SortOption.priceAsc:
-        filtered.sort((a, b) => a.price.compareTo(b.price));
-        break;
-      case SortOption.priceDesc:
-        filtered.sort((a, b) => b.price.compareTo(a.price));
-        break;
-      case SortOption.nameAsc:
-        filtered.sort((a, b) => a.foodName.compareTo(b.foodName));
-        break;
-      case SortOption.nameDesc:
-        filtered.sort((a, b) => b.foodName.compareTo(a.foodName));
-        break;
-      case SortOption.ratingDesc:
-        filtered.sort((a, b) => (b.rating ?? 0).compareTo(a.rating ?? 0));
-        break;
-      case SortOption.recommended:
-        // Implement custom recommendation logic
-        filtered.sort((a, b) {
-          if (a.isRecommended != b.isRecommended) {
-            return a.isRecommended ? -1 : 1;
-          }
-          return (b.rating ?? 0).compareTo(a.rating ?? 0);
-        });
-        break;
-    }
+    // Debug filtered results
+    print('Filtered menus count: ${filtered.length}');
+    filtered.forEach((menu) {
+      print('Filtered menu: ${menu.foodName} (${menu.type})');
+    });
 
     return filtered;
   }
@@ -141,6 +106,12 @@ class _MenuSectionState extends State<MenuSection>
   final GlobalKey _gridKey = GlobalKey(debugLabel: 'grid_key');
   final GlobalKey _listKey = GlobalKey(debugLabel: 'list_key');
   final _scrollKey = const PageStorageKey<String>('menu_section');
+
+  // Add state for price range
+  late RangeValues _priceRange;
+  double _minPrice = 0;
+  double _maxPrice = 1000000;
+  List<Menu> _filteredMenus = [];
 
   @override
   void initState() {
@@ -156,6 +127,59 @@ class _MenuSectionState extends State<MenuSection>
     );
     _searchController.addListener(_onSearchChanged);
     _scrollController.addListener(_onScroll);
+    _initializePriceRange();
+    _filteredMenus = widget.menus;
+  }
+
+  void _initializePriceRange() {
+    if (widget.menus.isNotEmpty) {
+      _minPrice =
+          widget.menus.map((m) => m.price).reduce((a, b) => a < b ? a : b);
+      _maxPrice =
+          widget.menus.map((m) => m.price).reduce((a, b) => a > b ? a : b);
+      // Round up maxPrice to nearest thousand for better UX
+      _maxPrice = ((_maxPrice + 999) ~/ 1000) * 1000.0;
+    }
+    _priceRange = RangeValues(_minPrice, _maxPrice);
+  }
+
+  @override
+  void didUpdateWidget(MenuSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.menus != oldWidget.menus) {
+      _initializePriceRange();
+      _applyFilters();
+    }
+  }
+
+  void _applyFilters() {
+    setState(() {
+      _filteredMenus = widget.menus.where((menu) {
+        // Apply category filter
+        if (widget.selectedCategory.toLowerCase() != 'all' &&
+            menu.type.toLowerCase() != widget.selectedCategory.toLowerCase()) {
+          return false;
+        }
+
+        // Apply price filter
+        if (menu.price < _priceRange.start || menu.price > _priceRange.end) {
+          return false;
+        }
+
+        // Apply search filter if exists
+        if (_filterState.searchQuery?.isNotEmpty == true) {
+          return menu.foodName
+                  .toLowerCase()
+                  .contains(_filterState.searchQuery!.toLowerCase()) ||
+              (menu.description
+                      ?.toLowerCase()
+                      .contains(_filterState.searchQuery!.toLowerCase()) ??
+                  false);
+        }
+
+        return true;
+      }).toList();
+    });
   }
 
   void _onSearchChanged() {
@@ -168,51 +192,89 @@ class _MenuSectionState extends State<MenuSection>
   }
 
   List<Menu> _filterMenus() {
-    return widget.menus.where((menu) {
-      // Apply category filter
-      if (widget.selectedCategory != 'All' &&
-          menu.type != widget.selectedCategory.toLowerCase()) {
-        return false;
-      }
+    print('DEBUG: Starting filter and sort');
+    print('DEBUG: Initial menus count: ${widget.menus.length}');
+    print(
+        'DEBUG: Current price range: ${_priceRange.start} - ${_priceRange.end}');
+    print('DEBUG: Selected category: ${widget.selectedCategory}');
+    print('DEBUG: Current sort: $_currentSort');
 
-      // Apply tag filters
-      if (_filterState.selectedTags.isNotEmpty &&
-          !menu.tags.any((tag) => _filterState.selectedTags.contains(tag))) {
-        return false;
-      }
+    // First filter the menus
+    List<Menu> filtered = List<Menu>.from(
+        widget.menus); // Create a new list to avoid modifying original
 
-      // Apply price range filter
-      if (menu.price < _filterState.priceRange.start ||
-          menu.price > _filterState.priceRange.end) {
-        return false;
-      }
+    // Apply category filter
+    if (widget.selectedCategory.toLowerCase() != 'all') {
+      filtered = filtered.where((menu) {
+        final bool matches =
+            menu.type.toLowerCase() == widget.selectedCategory.toLowerCase();
+        print(
+            'DEBUG: Menu ${menu.foodName} type ${menu.type} matches category: $matches');
+        return matches;
+      }).toList();
+    }
 
-      // Apply search filter
-      if (_filterState.searchQuery?.isNotEmpty == true) {
-        final query = _filterState.searchQuery!;
-        return menu.foodName.toLowerCase().contains(query) ||
-            menu.description?.toLowerCase().contains(query) == true;
-      }
-
-      return true;
+    // Apply price filter
+    filtered = filtered.where((menu) {
+      final bool inRange =
+          menu.price >= _priceRange.start && menu.price <= _priceRange.end;
+      print(
+          'DEBUG: Menu ${menu.foodName} price ${menu.price} in range: $inRange');
+      return inRange;
     }).toList();
-  }
 
-  void _sortMenus(List<Menu> menus) {
-    switch (_filterState.sortBy) {
-      case 'price_asc':
-        menus.sort((a, b) => a.price.compareTo(b.price));
+    // Apply search filter if exists
+    if (_filterState.searchQuery?.isNotEmpty == true) {
+      filtered = filtered.where((menu) {
+        return menu.foodName
+                .toLowerCase()
+                .contains(_filterState.searchQuery!.toLowerCase()) ||
+            (menu.description
+                    ?.toLowerCase()
+                    .contains(_filterState.searchQuery!.toLowerCase()) ??
+                false);
+      }).toList();
+    }
+
+    print('DEBUG: After filtering: ${filtered.length} menus');
+
+    // Sort the filtered results
+    switch (_currentSort) {
+      case SortOption.priceAsc:
+        filtered.sort((a, b) {
+          print(
+              'DEBUG: Sorting price asc ${a.foodName}(${a.price}) vs ${b.foodName}(${b.price})');
+          return a.price.compareTo(b.price);
+        });
         break;
-      case 'price_desc':
-        menus.sort((a, b) => b.price.compareTo(a.price));
+      case SortOption.priceDesc:
+        filtered.sort((a, b) => b.price.compareTo(a.price));
         break;
-      case 'rating':
-        menus.sort((a, b) => b.rating.compareTo(a.rating));
+      case SortOption.nameAsc:
+        filtered.sort((a, b) => a.foodName.compareTo(b.foodName));
         break;
-      case 'name':
-        menus.sort((a, b) => a.foodName.compareTo(b.foodName));
+      case SortOption.nameDesc:
+        filtered.sort((a, b) => b.foodName.compareTo(a.foodName));
+        break;
+      case SortOption.ratingDesc:
+        filtered.sort((a, b) => (b.rating).compareTo(a.rating));
+        break;
+      case SortOption.recommended:
+        // Keep original order or implement recommendation logic
         break;
     }
+
+    print('DEBUG: Final filtered and sorted count: ${filtered.length}');
+    return filtered;
+  }
+
+  void _onSortChanged(SortOption value) {
+    print('DEBUG: Sort option changed to $value');
+    setState(() {
+      _currentSort = value;
+      // No need to call _applyFilters() here as setState will trigger build
+      // which will call _filterMenus()
+    });
   }
 
   void _onScroll() {
@@ -235,43 +297,52 @@ class _MenuSectionState extends State<MenuSection>
 
   @override
   Widget build(BuildContext context) {
-    final filteredMenus = _filterMenus();
-    _sortMenus(filteredMenus);
+    final filteredAndSortedMenus = _filterMenus();
+    print('DEBUG: Building with ${filteredAndSortedMenus.length} menus');
 
-    return SafeArea(
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          return Container(
-            height: constraints.maxHeight,
-            child: Column(
-              children: [
-                _buildSearchBar(),
-                _buildFilterSection(),
-                AnimatedSizeAndFade(
-                  child: _showFilters
-                      ? _buildAdvancedFilters()
-                      : const SizedBox.shrink(),
+    return Column(
+      children: [
+        // Remove _buildPriceRangeFilter() from here since it's already in _buildAdvancedFilters
+        Expanded(
+          child: filteredAndSortedMenus.isEmpty
+              ? Center(child: Text('No items found'))
+              : CustomScrollView(
+                  slivers: [
+                    SliverToBoxAdapter(
+                      child: Column(
+                        children: [
+                          _buildSearchBar(),
+                          AnimatedSizeAndFade(
+                            child: _showFilters
+                                ? _buildAdvancedFilters()
+                                : const SizedBox.shrink(),
+                          ),
+                          _buildSortAndViewOptions(),
+                        ],
+                      ),
+                    ),
+                    SliverFillRemaining(
+                      child: RefreshIndicator(
+                        onRefresh: () async {
+                          // Implement refresh logic if needed
+                          return Future.delayed(Duration(seconds: 1));
+                        },
+                        child: _filteredAndSortedMenus.isEmpty
+                            ? _buildEmptyState()
+                            : _isGridView
+                                ? _buildGridView(
+                                    MediaQuery.of(context).size.width,
+                                    items: filteredAndSortedMenus,
+                                  )
+                                : _buildListView(items: filteredAndSortedMenus),
+                      ),
+                    ),
+                    if (_showScrollToTop)
+                      SliverToBoxAdapter(child: SizedBox(height: 72)),
+                  ],
                 ),
-                _buildSortAndViewOptions(),
-                Expanded(
-                  child: RefreshIndicator(
-                    onRefresh: () async {
-                      // Implement refresh logic if needed
-                      return Future.delayed(Duration(seconds: 1));
-                    },
-                    child: _filteredAndSortedMenus.isEmpty
-                        ? _buildEmptyState()
-                        : _isGridView
-                            ? _buildGridView(MediaQuery.of(context).size.width)
-                            : _buildListView(),
-                  ),
-                ),
-                if (_showScrollToTop) SizedBox(height: 72),
-              ],
-            ),
-          );
-        },
-      ),
+        ),
+      ],
     );
   }
 
@@ -312,10 +383,9 @@ class _MenuSectionState extends State<MenuSection>
 
   Widget _buildAdvancedFilters() {
     return Container(
-      padding: const EdgeInsets.symmetric(
-          horizontal: 16, vertical: 8), // Added vertical padding
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Column(
-        mainAxisSize: MainAxisSize.min, // Added to minimize height
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Price range header and values in same row
@@ -327,7 +397,7 @@ class _MenuSectionState extends State<MenuSection>
                 style: TextStyle(fontWeight: FontWeight.bold),
               ),
               Text(
-                '${_formatPrice(_filterState.priceRange.start)} - ${_formatPrice(_filterState.priceRange.end)}',
+                'Rp ${_formatPrice(_priceRange.start)} - ${_formatPrice(_priceRange.end)}',
                 style: TextStyle(
                   fontSize: 12,
                   color: Colors.grey[600],
@@ -335,20 +405,21 @@ class _MenuSectionState extends State<MenuSection>
               ),
             ],
           ),
-          // Slider with reduced padding
-          Padding(
-            padding: EdgeInsets.symmetric(vertical: 4), // Reduced padding
-            child: RangeSlider(
-              values: _filterState.priceRange,
-              min: 0,
-              max: 1000000,
-              divisions: 20,
-              onChanged: (values) {
-                setState(() {
-                  _filterState = _filterState.copyWith(priceRange: values);
-                });
-              },
+          RangeSlider(
+            values: _priceRange,
+            min: _minPrice,
+            max: _maxPrice,
+            divisions: 20,
+            labels: RangeLabels(
+              _formatPrice(_priceRange.start),
+              _formatPrice(_priceRange.end),
             ),
+            onChanged: (values) {
+              setState(() {
+                _priceRange = values;
+                _applyFilters();
+              });
+            },
           ),
           // Tags with reduced spacing
           Wrap(
@@ -363,26 +434,6 @@ class _MenuSectionState extends State<MenuSection>
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildFilterSection() {
-    return Column(
-      children: [
-        _buildCategoryFilter(),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          padding: EdgeInsets.symmetric(horizontal: 16),
-          child: Row(
-            children: [
-              _buildFilterChip('Popular', Icons.trending_up_rounded),
-              _buildFilterChip('Vegetarian', Icons.eco_rounded),
-              _buildFilterChip('Spicy', Icons.whatshot_rounded),
-              _buildFilterChip('Best Seller', Icons.star_rounded),
-            ],
-          ),
-        ),
-      ],
     );
   }
 
@@ -439,9 +490,7 @@ class _MenuSectionState extends State<MenuSection>
   Widget _buildSortButton() {
     return PopupMenuButton<SortOption>(
       initialValue: _currentSort,
-      onSelected: (SortOption value) {
-        setState(() => _currentSort = value);
-      },
+      onSelected: _onSortChanged, // Use the new method
       itemBuilder: (context) => [
         CheckedPopupMenuItem(
           value: SortOption.recommended,
@@ -587,104 +636,346 @@ class _MenuSectionState extends State<MenuSection>
     );
   }
 
-  Widget _buildGridView(double maxWidth) {
-    final crossAxisCount =
-        (maxWidth / 250).floor().clamp(2, 3); // Increased card width
-    final spacing = 16.0;
+  Widget _buildGridView(double maxWidth, {required List<Menu> items}) {
+    final crossAxisCount = (maxWidth / 200).floor().clamp(2, 3);
+    final spacing = 12.0;
 
-    return CustomScrollView(
-      physics: AlwaysScrollableScrollPhysics(),
-      slivers: [
-        SliverPadding(
-          padding: EdgeInsets.all(spacing),
-          sliver: SliverGrid(
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: crossAxisCount,
-              childAspectRatio: 0.60, // Decreased to make cards taller
-              crossAxisSpacing: spacing,
-              mainAxisSpacing: spacing,
-            ),
-            delegate: SliverChildBuilderDelegate(
-              (context, index) =>
-                  _buildGridMenuItem(context, _filteredAndSortedMenus[index]),
-              childCount: _filteredAndSortedMenus.length,
-            ),
+    return GridView.builder(
+      padding: EdgeInsets.all(spacing),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: crossAxisCount,
+        childAspectRatio: 0.7, // Adjusted for more vertical space
+        crossAxisSpacing: spacing,
+        mainAxisSpacing: spacing,
+      ),
+      itemCount: items.length,
+      itemBuilder: (context, index) => AnimationConfiguration.staggeredGrid(
+        position: index,
+        duration: const Duration(milliseconds: 300),
+        columnCount: crossAxisCount,
+        child: SlideAnimation(
+          verticalOffset: 50.0,
+          child: FadeInAnimation(
+            child: _buildGridMenuItem(context, items[index]),
           ),
         ),
-      ],
+      ),
     );
   }
 
   Widget _buildGridMenuItem(BuildContext context, Menu menu) {
-    final heroTag = 'menu-${menu.id}-${widget.selectedCategory}';
+    final hasAddons = widget.menuAddons[menu.id]?.isNotEmpty ?? false;
+    final heroTag = 'menu-${menu.id}';
+
     return Hero(
       tag: heroTag,
       child: Material(
         borderRadius: BorderRadius.circular(16),
-        color: Colors.white,
-        elevation: 2,
-        child: ClipRRect(
+        elevation: 4,
+        shadowColor: Colors.black26,
+        child: InkWell(
+          onTap: () => widget.onMenuTap(menu),
           borderRadius: BorderRadius.circular(16),
-          child: InkWell(
-            onTap: () => widget.onMenuTap(menu),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Image section with increased height
-                SizedBox(
-                  height: 160, // Increased from 120
-                  width: double.infinity,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Image section with fixed aspect ratio
+              AspectRatio(
+                aspectRatio: 4 / 3,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
                       _buildCachedImage(menu),
-                      _buildImageOverlay(menu),
-                      if (!menu.isAvailable) _buildOutOfStockOverlay(),
+                      // Gradient overlay
+                      Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.transparent,
+                              Colors.black.withOpacity(0.3),
+                            ],
+                          ),
+                        ),
+                      ),
+                      // Badges and favorite button
+                      Positioned(
+                        top: 8,
+                        left: 8,
+                        right: 8,
+                        child: Row(
+                          children: [
+                            if (menu.isPopular || menu.isRecommended)
+                              Expanded(
+                                child: SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: Row(
+                                    children: [
+                                      if (menu.isPopular)
+                                        _buildAnimatedBadge(
+                                          'Popular',
+                                          Colors.orange.shade600,
+                                          Icons.trending_up_rounded,
+                                        ),
+                                      if (menu.isPopular && menu.isRecommended)
+                                        SizedBox(width: 4),
+                                      if (menu.isRecommended)
+                                        _buildAnimatedBadge(
+                                          'Chef\'s Choice',
+                                          Colors.green.shade600,
+                                          Icons.restaurant_rounded,
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            _buildQuickActionButton(menu),
+                          ],
+                        ),
+                      ),
+                      if (!menu.isAvailable) _buildEnhancedOutOfStockOverlay(),
                     ],
                   ),
                 ),
-                // Content section with better spacing
+              ),
+              // Content section
+              Expanded(
+                child: Padding(
+                  padding: EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Title and indicators
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              menu.foodName,
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                height: 1.2,
+                                color: Colors.grey[800],
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          _buildMenuIndicators(menu),
+                        ],
+                      ),
+                      SizedBox(height: 4),
+                      // Info row (rating & time)
+                      DefaultTextStyle(
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                          height: 1.2,
+                        ),
+                        child: Row(
+                          children: [
+                            if (menu.hasRating) _buildEnhancedRatingBadge(menu),
+                            if (menu.hasRating && menu.preparationTime != null)
+                              SizedBox(width: 8),
+                            if (menu.preparationTime != null)
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.schedule_outlined,
+                                    size: 12,
+                                    color: Colors.grey[600],
+                                  ),
+                                  SizedBox(width: 4),
+                                  Text('${menu.preparationTime} min'),
+                                ],
+                              ),
+                          ],
+                        ),
+                      ),
+                      if (hasAddons) ...[
+                        SizedBox(height: 4),
+                        _buildCustomizableTag(),
+                      ],
+                      Spacer(),
+                      // Price and add button
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  _formatPrice(menu.price),
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                    color: Theme.of(context).primaryColor,
+                                    height: 1.2,
+                                  ),
+                                ),
+                                if (menu.originalPrice != null &&
+                                    menu.originalPrice! > menu.price)
+                                  Text(
+                                    _formatPrice(menu.originalPrice!),
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      decoration: TextDecoration.lineThrough,
+                                      color: Colors.grey[400],
+                                      height: 1.2,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          if (menu.isAvailable)
+                            Material(
+                              color: Theme.of(context).primaryColor,
+                              borderRadius: BorderRadius.circular(8),
+                              elevation: 0,
+                              child: InkWell(
+                                onTap: () => widget.onAddToCart(menu),
+                                borderRadius: BorderRadius.circular(8),
+                                child: Container(
+                                  padding: EdgeInsets.all(8),
+                                  child: Icon(
+                                    Icons.add,
+                                    color: Colors.white,
+                                    size: 18,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCustomizableTag() {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: Theme.of(context).primaryColor.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.tune,
+            size: 12,
+            color: Theme.of(context).primaryColor,
+          ),
+          SizedBox(width: 4),
+          Text(
+            'Customizable',
+            style: TextStyle(
+              fontSize: 10,
+              color: Theme.of(context).primaryColor,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildListMenuItem(BuildContext context, Menu menu) {
+    final hasAddons = widget.menuAddons[menu.id]?.isNotEmpty ?? false;
+    final heroTag = 'menu-${menu.id}';
+
+    return Hero(
+      tag: heroTag,
+      child: Card(
+        elevation: 3,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => widget.onMenuTap(menu),
+          child: SizedBox(
+            height: 130,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Image section with aspect ratio
+                AspectRatio(
+                  aspectRatio: 1,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      _buildCachedImage(menu),
+                      _buildOverlayGradient(),
+                      if (!menu.isAvailable) _buildEnhancedOutOfStockOverlay(),
+                    ],
+                  ),
+                ),
+                // Content section
                 Expanded(
                   child: Padding(
                     padding: EdgeInsets.all(12),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Title with more height
-                        Text(
-                          menu.foodName,
-                          style: TextStyle(
-                            fontSize: 16, // Increased from 14
-                            fontWeight: FontWeight.w600,
-                            height: 1.2,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        if (menu.hasRating) ...[
-                          SizedBox(height: 8), // Increased from 4
-                          _buildRatingBadge(menu),
-                        ],
-                        if (menu.description?.isNotEmpty == true) ...[
-                          SizedBox(height: 8), // Increased from 4
-                          Expanded(
-                            child: Text(
-                              menu.description!,
-                              style: TextStyle(
-                                fontSize: 13, // Increased from 12
-                                color: Colors.grey[600],
-                                height: 1.3,
-                              ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                        // Price and action row with better spacing
-                        SizedBox(height: 12), // Increased from 8
+                        // Title row with favorite button
                         Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    menu.foodName,
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                      height: 1.2,
+                                    ),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  if (menu.description?.isNotEmpty == true) ...[
+                                    SizedBox(height: 4),
+                                    Text(
+                                      menu.description!,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey[600],
+                                        height: 1.2,
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                            SizedBox(width: 8),
+                            _buildQuickActionButton(menu),
+                          ],
+                        ),
+                        Spacer(),
+                        // Bottom section with price and button
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            // Left side - price and badges
                             Expanded(
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
@@ -693,7 +984,7 @@ class _MenuSectionState extends State<MenuSection>
                                   Text(
                                     _formatPrice(menu.price),
                                     style: TextStyle(
-                                      fontSize: 16, // Increased from 14
+                                      fontSize: 16,
                                       fontWeight: FontWeight.w700,
                                       color: Theme.of(context).primaryColor,
                                     ),
@@ -703,28 +994,178 @@ class _MenuSectionState extends State<MenuSection>
                                     Text(
                                       _formatPrice(menu.originalPrice!),
                                       style: TextStyle(
-                                        fontSize: 12,
+                                        fontSize: 11,
                                         decoration: TextDecoration.lineThrough,
                                         color: Colors.grey[500],
                                       ),
+                                    ),
+                                  if (hasAddons) ...[
+                                    SizedBox(height: 4),
+                                    _buildCustomizableTag(),
+                                  ],
+                                ],
+                              ),
+                            ),
+                            // Right side - add button
+                            if (menu.isAvailable)
+                              Material(
+                                color: Theme.of(context).primaryColor,
+                                borderRadius: BorderRadius.circular(8),
+                                child: InkWell(
+                                  onTap: () => widget.onAddToCart(menu),
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Container(
+                                    padding: EdgeInsets.all(8),
+                                    child: Icon(
+                                      Icons.add,
+                                      color: Colors.white,
+                                      size: 18,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMenuItem(BuildContext context, Menu menu) {
+    final hasAddons = widget.menuAddons[menu.id]?.isNotEmpty ?? false;
+    final heroTag = 'menu-${menu.id}';
+
+    return Hero(
+      tag: heroTag,
+      child: Card(
+        elevation: 2,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => widget.onMenuTap(menu),
+          child: SizedBox(
+            height: 120,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Image section with fixed width
+                SizedBox(
+                  width: 120,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      _buildCachedImage(menu),
+                      _buildOverlayGradient(),
+                      if (!menu.isAvailable) _buildEnhancedOutOfStockOverlay(),
+                    ],
+                  ),
+                ),
+                // Content section
+                Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Title row with favorite button
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                menu.foodName,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  height: 1.2,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            SizedBox(width: 8),
+                            _buildQuickActionButton(menu),
+                          ],
+                        ),
+                        SizedBox(height: 4),
+                        // Badges row
+                        if (menu.isPopular || menu.isRecommended)
+                          SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              children: [
+                                if (menu.isPopular)
+                                  _buildAnimatedBadge(
+                                    'Popular',
+                                    Colors.orange.shade600,
+                                    Icons.trending_up_rounded,
+                                  ),
+                                if (menu.isPopular && menu.isRecommended)
+                                  SizedBox(width: 4),
+                                if (menu.isRecommended)
+                                  _buildAnimatedBadge(
+                                    'Chef\'s Choice',
+                                    Colors.green.shade600,
+                                    Icons.restaurant_rounded,
+                                  ),
+                              ],
+                            ),
+                          ),
+                        Spacer(),
+                        // Price and Add button row
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    _formatPrice(menu.price),
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700,
+                                      color: Theme.of(context).primaryColor,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  if (menu.originalPrice != null &&
+                                      menu.originalPrice! > menu.price)
+                                    Text(
+                                      _formatPrice(menu.originalPrice!),
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        decoration: TextDecoration.lineThrough,
+                                        color: Colors.grey[500],
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                 ],
                               ),
                             ),
                             if (menu.isAvailable)
                               SizedBox(
-                                width: 36, // Increased from 28
-                                height: 36, // Increased from 28
+                                width: 32,
+                                height: 32,
                                 child: Material(
                                   color: Theme.of(context).primaryColor,
                                   borderRadius: BorderRadius.circular(8),
                                   child: InkWell(
                                     onTap: () => widget.onAddToCart(menu),
                                     borderRadius: BorderRadius.circular(8),
-                                    child: const Icon(
+                                    child: Icon(
                                       Icons.add,
                                       color: Colors.white,
-                                      size: 20, // Increased from 16
+                                      size: 18,
                                     ),
                                   ),
                                 ),
@@ -1166,15 +1607,6 @@ class _MenuSectionState extends State<MenuSection>
     );
   }
 
-  String _formatPrice(double price) {
-    final formatter = NumberFormat.currency(
-      locale: 'id_ID',
-      symbol: 'Rp',
-      decimalDigits: 0,
-    );
-    return formatter.format(price).replaceAll('Rp', 'Rp ');
-  }
-
   Widget _buildMenuContent(Menu menu) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1307,15 +1739,25 @@ class _MenuSectionState extends State<MenuSection>
   }
 
   Widget _buildCategoryFilter() {
+    // Simplified and explicit categories
+    final categories = [
+      CategoryOption('all', 'All', Icons.restaurant),
+      CategoryOption('food', 'Food', Icons.restaurant_menu),
+      CategoryOption('drink', 'Drink', Icons.local_drink),
+    ];
+
     return Container(
       height: 48,
       margin: EdgeInsets.symmetric(vertical: 8),
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: EdgeInsets.symmetric(horizontal: 16),
-        itemCount: widget.categories.length,
+        itemCount: categories.length,
         itemBuilder: (context, index) {
-          final category = widget.categories[index];
+          final category = categories[index];
+          final isSelected =
+              widget.selectedCategory.toLowerCase() == category.id;
+
           return Padding(
             padding: EdgeInsets.only(right: 8),
             child: ChoiceChip(
@@ -1325,7 +1767,7 @@ class _MenuSectionState extends State<MenuSection>
                   Icon(
                     category.icon,
                     size: 16,
-                    color: widget.selectedCategory == category.id
+                    color: isSelected
                         ? Colors.white
                         : Theme.of(context).primaryColor,
                   ),
@@ -1333,9 +1775,12 @@ class _MenuSectionState extends State<MenuSection>
                   Text(category.name),
                 ],
               ),
-              selected: widget.selectedCategory == category.id,
+              selected: isSelected,
               onSelected: (selected) {
-                if (selected) widget.onCategorySelected(category.id);
+                if (selected) {
+                  print('Selecting category: ${category.id}');
+                  widget.onCategorySelected(category.id);
+                }
               },
             ),
           );
@@ -1410,18 +1855,18 @@ class _MenuSectionState extends State<MenuSection>
     });
   }
 
-  Widget _buildListView() {
+  Widget _buildListView({required List<Menu> items}) {
     _listAnimation.forward();
     return MediaQuery.removePadding(
       context: context,
       removeTop: true,
       child: ListView.separated(
         physics: const AlwaysScrollableScrollPhysics(),
-        itemCount: _filteredAndSortedMenus.length,
+        itemCount: items.length,
         separatorBuilder: (context, index) => const SizedBox(height: 16),
         padding: const EdgeInsets.all(16),
         itemBuilder: (context, index) {
-          return _buildMenuItem(context, _filteredAndSortedMenus[index]);
+          return _buildListMenuItem(context, items[index]);
         },
       ),
     );
@@ -1451,162 +1896,6 @@ class _MenuSectionState extends State<MenuSection>
         if (loadingProgress == null) return child;
         return _buildImageLoading();
       },
-    );
-  }
-
-  Widget _buildMenuItem(BuildContext context, Menu menu) {
-    final heroTag = 'menu-${menu.id}-${widget.selectedCategory}';
-    return Container(
-      height: 120,
-      child: Material(
-        borderRadius: BorderRadius.circular(16),
-        color: Colors.white,
-        elevation: 2,
-        child: InkWell(
-          onTap: () => widget.onMenuTap(menu),
-          borderRadius: BorderRadius.circular(16),
-          child: Padding(
-            padding: const EdgeInsets.all(0),
-            child: Row(
-              children: [
-                // Image Section with Overlay
-                SizedBox(
-                  width: 120,
-                  height: 120,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.only(
-                      topLeft: Radius.circular(16),
-                      bottomLeft: Radius.circular(16),
-                    ),
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        Hero(
-                          tag: heroTag,
-                          child: _buildCachedImage(menu),
-                        ),
-                        _buildOverlayGradient(),
-                        if (!menu.isAvailable)
-                          Center(child: _buildOutOfStockBadge()),
-                        Positioned(
-                          top: 8,
-                          right: 8,
-                          child: _buildQuickActions(menu),
-                        ),
-                        Positioned(
-                          bottom: 8,
-                          left: 8,
-                          child: _buildBadgesRow(menu),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                // Content Section
-                Expanded(
-                  child: Padding(
-                    padding: EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Title and Rating
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                menu.foodName,
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                  letterSpacing: -0.2,
-                                ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            if (menu.hasRating) _buildRatingBadge(menu),
-                          ],
-                        ),
-                        SizedBox(height: 4),
-                        // Description
-                        if (menu.description?.isNotEmpty == true)
-                          Expanded(
-                            child: Text(
-                              menu.description!,
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: Colors.grey[600],
-                                height: 1.3,
-                              ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        // Price and Action Row
-                        Row(
-                          children: [
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  _formatPrice(menu.price),
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w700,
-                                    color: Theme.of(context).primaryColor,
-                                  ),
-                                ),
-                                if (menu.originalPrice != null &&
-                                    menu.originalPrice! > menu.price)
-                                  Text(
-                                    _formatPrice(menu.originalPrice!),
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      decoration: TextDecoration.lineThrough,
-                                      color: Colors.grey[500],
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            Spacer(),
-                            if (menu.isAvailable) _buildAddButton(menu),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildRatingBadge(Menu menu) {
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-      decoration: BoxDecoration(
-        color: Colors.amber.shade100,
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.star_rounded, color: Colors.amber, size: 14),
-          SizedBox(width: 2),
-          Text(
-            menu.formattedRating,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: Colors.amber.shade900,
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -1722,6 +2011,461 @@ class _MenuSectionState extends State<MenuSection>
       ),
     );
   }
+
+  Widget _buildMenuIndicators(Menu menu) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (menu.isVegetarian)
+          Padding(
+            padding: EdgeInsets.only(left: 4),
+            child: Tooltip(
+              message: 'Vegetarian',
+              child: Icon(Icons.eco, size: 16, color: Colors.green),
+            ),
+          ),
+        if (menu.isSpicy)
+          Padding(
+            padding: EdgeInsets.only(left: 4),
+            child: Tooltip(
+              message: 'Spicy',
+              child: Icon(Icons.whatshot, size: 16, color: Colors.red),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildRatingAndTimeRow(Menu menu) {
+    return Row(
+      children: [
+        if (menu.hasRating) _buildRatingBadge(menu),
+        if (menu.hasRating && menu.preparationTime != null) SizedBox(width: 8),
+        if (menu.preparationTime != null)
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.schedule,
+                size: 14,
+                color: Colors.grey[600],
+              ),
+              SizedBox(width: 4),
+              Text(
+                '${menu.preparationTime} min',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[600],
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+      ],
+    );
+  }
+
+  Widget _buildAddonsPreview(Menu menu) {
+    final addons = widget.menuAddons[menu.id] ?? [];
+    if (addons.isEmpty) return SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          'Options available:',
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey[600],
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        SizedBox(height: 4),
+        Wrap(
+          spacing: 4,
+          runSpacing: 4,
+          children: addons.take(2).map((addon) {
+            return Container(
+              padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                addon.addonName,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.grey[800],
+                ),
+              ),
+            );
+          }).toList()
+            ..addAll([
+              if (addons.length > 2)
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    '+${addons.length - 2} more',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Theme.of(context).primaryColor,
+                    ),
+                  ),
+                ),
+            ]),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPriceInfo(Menu menu) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          _formatPrice(menu.price),
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            color: Theme.of(context).primaryColor,
+            letterSpacing: -0.5,
+          ),
+        ),
+        if (menu.originalPrice != null && menu.originalPrice! > menu.price)
+          Text(
+            _formatPrice(menu.originalPrice!),
+            style: TextStyle(
+              fontSize: 12,
+              decoration: TextDecoration.lineThrough,
+              color: Colors.grey[400],
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildHeaderSection(Menu menu) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Title and indicators
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Text(
+                menu.foodName,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  height: 1.2,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            _buildMenuIndicators(menu),
+          ],
+        ),
+        SizedBox(height: 8),
+        // Rating and preparation time
+        _buildRatingAndTimeRow(menu),
+      ],
+    );
+  }
+
+  String _formatPrice(double price) {
+    final formatter = NumberFormat.currency(
+      locale: 'id_ID',
+      symbol: 'Rp',
+      decimalDigits: 0,
+    );
+    return formatter.format(price).replaceAll('Rp', 'Rp ');
+  }
+
+  Widget _buildRatingBadge(Menu menu) {
+    if (!menu.hasRating) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.amber.shade50,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: Colors.amber.shade100),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.star_rounded, color: Colors.amber, size: 14),
+          const SizedBox(width: 2),
+          Text(
+            menu.formattedRating,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Colors.amber.shade900,
+            ),
+          ),
+          if (menu.totalRatings > 0) ...[
+            const SizedBox(width: 2),
+            Text(
+              '(${menu.totalRatings})',
+              style: TextStyle(
+                fontSize: 10,
+                color: Colors.grey[600],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAnimatedBadge(String label, Color color, IconData icon) {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.9),
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: color.withOpacity(0.3),
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: Colors.white),
+          SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.3,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEnhancedRatingBadge(Menu menu) {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.amber.shade50,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: Colors.amber.shade200, width: 0.5),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.star_rounded, color: Colors.amber.shade600, size: 12),
+          SizedBox(width: 2),
+          Text(
+            menu.formattedRating,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: Colors.amber.shade900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(Menu menu, bool hasAddons) {
+    return Row(
+      children: [
+        if (menu.preparationTime != null)
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.schedule_outlined,
+                  size: 12, color: Colors.grey.shade600),
+              SizedBox(width: 4),
+              Text(
+                '${menu.preparationTime} min',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.grey.shade600,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        if (hasAddons) ...[
+          if (menu.preparationTime != null)
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 6),
+              child: Text('•', style: TextStyle(color: Colors.grey.shade400)),
+            ),
+          Text(
+            'Customizable',
+            style: TextStyle(
+              fontSize: 11,
+              color: Theme.of(context).primaryColor,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildQuickActionButton(Menu menu) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black12,
+            blurRadius: 4,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => widget.onToggleFavorite(menu),
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: EdgeInsets.all(8),
+            child: Icon(
+              widget.favoriteMenus.contains(menu.id)
+                  ? Icons.favorite
+                  : Icons.favorite_border,
+              color: Colors.red,
+              size: 20,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEnhancedOutOfStockOverlay() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.7),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      child: Center(
+        child: Container(
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black26,
+                blurRadius: 8,
+                offset: Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.not_interested, size: 16, color: Colors.red[600]),
+              SizedBox(width: 8),
+              Text(
+                'Out of Stock',
+                style: TextStyle(
+                  color: Colors.red[600],
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPriceStack(Menu menu) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          _formatPrice(menu.price),
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            color: Theme.of(context).primaryColor,
+          ),
+        ),
+        if (menu.originalPrice != null && menu.originalPrice! > menu.price)
+          Text(
+            _formatPrice(menu.originalPrice!),
+            style: TextStyle(
+              fontSize: 12,
+              decoration: TextDecoration.lineThrough,
+              color: Colors.grey[500],
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildEnhancedAddButton(Menu menu) {
+    return Material(
+      color: Theme.of(context).primaryColor,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: () => widget.onAddToCart(menu),
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.add_shopping_cart_rounded,
+                color: Colors.white,
+                size: 16,
+              ),
+              SizedBox(width: 4),
+              Text(
+                'Add',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// Add this class at the top of the file
+class CategoryOption {
+  final String id;
+  final String name;
+  final IconData icon;
+
+  CategoryOption(this.id, this.name, this.icon);
 }
 
 // Add this animation widget

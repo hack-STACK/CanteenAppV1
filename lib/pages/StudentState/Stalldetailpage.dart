@@ -15,6 +15,7 @@ import 'package:kantin/widgets/stall_detail/stall_info_section.dart';
 import 'package:kantin/widgets/stall_detail/menu_section.dart';
 import 'package:kantin/Models/stall_detail_models.dart'; // Add this import and remove local declarations
 import 'package:kantin/widgets/stall_detail/review_section.dart'; // Add this import
+import 'package:kantin/models/menu_filter_state.dart';
 
 class StallDetailPage extends StatefulWidget {
   final Stan stall;
@@ -29,8 +30,8 @@ class StallDetailPage extends StatefulWidget {
 
 class _StallDetailPageState extends State<StallDetailPage>
     with SingleTickerProviderStateMixin {
-  // Replace individual keys with a ValueKey
-  final _scrollKey = const PageStorageKey<String>('stall_detail');
+  // Remove duplicate and unnecessary keys
+  // final _scrollKey = const PageStorageKey<String>('stall_detail');
   final _scaffoldKey = GlobalKey<ScaffoldState>();
 
   final FoodService _foodService = FoodService();
@@ -82,6 +83,27 @@ class _StallDetailPageState extends State<StallDetailPage>
   List<CartItem> get _cart =>
       Provider.of<Restaurant>(context, listen: false).cart;
 
+  final List<MenuCategory> categories = [
+    MenuCategory(
+      id: 'all',
+      name: 'All',
+      icon: Icons.restaurant_menu,
+    ),
+    MenuCategory(
+      id: 'food',
+      name: 'Food',
+      icon: Icons.restaurant,
+    ),
+    MenuCategory(
+      id: 'drink',
+      name: 'Drinks',
+      icon: Icons.local_drink,
+    ),
+  ];
+
+  // Add this with other state variables
+  late MenuFilterState _filterState;
+
   @override
   void initState() {
     super.initState();
@@ -99,6 +121,48 @@ class _StallDetailPageState extends State<StallDetailPage>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadData();
     });
+    _loadStallMenus();
+    // Initialize filter state
+    _filterState = MenuFilterState();
+  }
+
+  Future<void> _loadStallMenus() async {
+    try {
+      // Debug print to track stall ID
+      print('Loading menus for stall ID: ${widget.stall.id}');
+
+      // Use _supabase instead of supabase
+      final response = await _supabase
+          .from('menu')
+          .select()
+          .eq('stall_id', widget.stall.id)
+          .order('food_name');
+
+      // Debug print raw response
+      print('Raw menu response: $response');
+
+      if (mounted) {
+        setState(() {
+          _menus = (response as List)
+              .map((menu) => Menu.fromMap(menu as Map<String, dynamic>))
+              .toList();
+
+          // Debug print loaded menus
+          print('Loaded ${_menus.length} menus');
+          _menus.forEach((menu) {
+            print('Menu: ${menu.foodName}, Type: ${menu.type}');
+          });
+        });
+      }
+    } catch (e) {
+      print('Error loading menus: $e');
+      // Show error to user
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading menu items: $e')),
+        );
+      }
+    }
   }
 
   @override
@@ -301,7 +365,23 @@ class _StallDetailPageState extends State<StallDetailPage>
   void _filterMenus(String category) {
     setState(() {
       _selectedCategory = category;
-      _menus = _categorizedMenus[category] ?? [];
+      _applyFilters();
+    });
+  }
+
+  void _applyFilters() {
+    final filteredMenus = _categorizedMenus[_selectedCategory]?.where((menu) {
+          // Only apply category filter
+          if (_selectedCategory.toLowerCase() != 'all' &&
+              menu.type.toLowerCase() != _selectedCategory.toLowerCase()) {
+            return false;
+          }
+          return true;
+        }).toList() ??
+        [];
+
+    setState(() {
+      _menus = filteredMenus;
     });
   }
 
@@ -1089,40 +1169,46 @@ class _StallDetailPageState extends State<StallDetailPage>
             onRefresh: _loadData,
             child: NestedScrollView(
               controller: _scrollController,
-              physics: const ClampingScrollPhysics(),
-              headerSliverBuilder: (context, innerBoxIsScrolled) => [
-                StallBannerHeader(
-                  stall: widget.stall,
-                  isCollapsed: _isCollapsed,
-                  onCartTap: _showCart,
-                  cartItemCount: _cartItemCount,
-                ),
-                SliverToBoxAdapter(
-                  child: Column(
-                    children: [
-                      StallInfoSection(
-                        stall: widget.stall,
-                        metrics: _buildMetrics(),
-                        schedule: _scheduleByDay,
-                        amenities: _amenities,
-                        paymentMethods: _paymentMethods,
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: ReviewSection(
-                          stall: widget.stall,
-                          onSeeAllReviews: () {},
-                        ),
-                      ),
-                    ],
+              physics: const BouncingScrollPhysics(),
+              headerSliverBuilder: (context, innerBoxIsScrolled) {
+                return <Widget>[
+                  StallBannerHeader(
+                    stall: widget.stall,
+                    isCollapsed: _isCollapsed,
+                    onCartTap: _showCart,
+                    cartItemCount: _cartItemCount,
                   ),
-                ),
-              ],
+                  SliverToBoxAdapter(
+                    child: Column(
+                      children: [
+                        StallInfoSection(
+                          stall: widget.stall,
+                          metrics: _buildMetrics(),
+                          schedule: _scheduleByDay,
+                          amenities: _amenities,
+                          paymentMethods: _paymentMethods,
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: ReviewSection(
+                            stall: widget.stall,
+                            onSeeAllReviews: () {},
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ];
+              },
               body: MenuSection(
+                key: ValueKey(
+                    'menu_section_${widget.stall.id}'), // Add unique key
                 selectedCategory: _selectedCategory,
-                categories: _buildCategories(),
+                categories: categories,
                 menus: _menus,
-                onCategorySelected: _filterMenus,
+                onCategorySelected: (category) {
+                  setState(() => _selectedCategory = category);
+                },
                 onMenuTap: _showMenuDetail,
                 onAddToCart: _addToCart,
                 loadingState: _loadingState,

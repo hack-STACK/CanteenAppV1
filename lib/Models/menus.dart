@@ -8,7 +8,7 @@ class Menu {
   final int id;
   final String foodName;
   final double price;
-  final String type;
+  final String type; // Should be "food" or "drink"
   final String? photo;
   final String? description;
   final int stallId; // Ensure this is non-nullable
@@ -48,16 +48,22 @@ class Menu {
     this.preparationTime,
     this.originalPrice,
   })  : type = type.toLowerCase(),
+        assert(type.toLowerCase() == 'food' || type.toLowerCase() == 'drink'),
         rating = rating ?? defaultRating,
         totalRatings = totalRatings ?? defaultTotalRatings,
         addons = addons ?? []; // Initialize addons list
 
   factory Menu.fromMap(Map<String, dynamic> map) {
+    final type = (map['type'] as String?)?.toLowerCase() ?? 'food';
+    if (type != 'food' && type != 'drink') {
+      throw FormatException(
+          'Invalid menu type: $type. Must be "food" or "drink"');
+    }
     return Menu(
       id: map['id'] as int,
       foodName: map['food_name'] as String,
       price: (map['price'] as num).toDouble(),
-      type: map['type'] as String,
+      type: type,
       photo: map['photo'] as String?,
       description: map['description'] as String?,
       stallId: map['stall_id'] as int,
@@ -139,11 +145,16 @@ class Menu {
 
     try {
       final stallData = json['stall'] as Map<String, dynamic>?;
+      final type = (json['type'] as String?)?.toLowerCase() ?? 'food';
+      if (type != 'food' && type != 'drink') {
+        throw FormatException(
+            'Invalid menu type: $type. Must be "food" or "drink"');
+      }
       return Menu(
         id: json['id'] as int,
         foodName: json['food_name'] as String? ?? 'Unknown Item',
         price: (json['price'] as num?)?.toDouble() ?? 0.0,
-        type: (json['type'] as String?) ?? 'food',
+        type: type,
         photo: json['photo'] as String?,
         description: json['description'] as String?,
         stallId: stallId,

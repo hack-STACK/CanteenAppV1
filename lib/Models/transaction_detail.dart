@@ -17,6 +17,15 @@ class TransactionDetail {
   double? _cachedTotal;
   double? _cachedSavings;
 
+  // Add new static data fields
+  final String? menuName;
+  final double? menuPrice;
+  final String? menuPhoto;
+  final String? addonName;
+  final double? addonPrice;
+  final int? addonQuantity;
+  final double? addonSubtotal;
+
   TransactionDetail({
     required this.id,
     required this.transactionId,
@@ -30,6 +39,14 @@ class TransactionDetail {
     this.appliedDiscountPercentage = 0.0,
     required this.originalPrice,
     required this.discountedPrice,
+    // Add new parameters
+    this.menuName,
+    this.menuPrice,
+    this.menuPhoto,
+    this.addonName,
+    this.addonPrice,
+    this.addonQuantity,
+    this.addonSubtotal,
   }) {
     // Validate constraints from database schema
     if (quantity <= 0) {
@@ -60,6 +77,14 @@ class TransactionDetail {
           (json['applied_discount_percentage'] as num?)?.toDouble() ?? 0.0,
       originalPrice: (json['original_price'] as num).toDouble(),
       discountedPrice: (json['discounted_price'] as num).toDouble(),
+      // Add new fields
+      menuName: json['menu_name'],
+      menuPrice: (json['menu_price'] as num?)?.toDouble(),
+      menuPhoto: json['menu_photo'],
+      addonName: json['addon_name'],
+      addonPrice: (json['addon_price'] as num?)?.toDouble(),
+      addonQuantity: json['addon_quantity'],
+      addonSubtotal: (json['addon_subtotal'] as num?)?.toDouble(),
     );
   }
 
@@ -82,6 +107,14 @@ class TransactionDetail {
           (data['applied_discount_percentage'] as num?)?.toDouble() ?? 0.0,
       originalPrice: originalPrice,
       discountedPrice: discountedPrice,
+      // Add new fields
+      menuName: data['menu_name'],
+      menuPrice: (data['menu_price'] as num?)?.toDouble(),
+      menuPhoto: data['menu_photo'],
+      addonName: data['addon_name'],
+      addonPrice: (data['addon_price'] as num?)?.toDouble(),
+      addonQuantity: data['addon_quantity'],
+      addonSubtotal: (data['addon_subtotal'] as num?)?.toDouble(),
     );
   }
 
@@ -98,6 +131,14 @@ class TransactionDetail {
       'applied_discount_percentage': appliedDiscountPercentage,
       'original_price': originalPrice,
       'discounted_price': discountedPrice,
+      // Add new fields
+      'menu_name': menuName,
+      'menu_price': menuPrice,
+      'menu_photo': menuPhoto,
+      'addon_name': addonName,
+      'addon_price': addonPrice,
+      'addon_quantity': addonQuantity,
+      'addon_subtotal': addonSubtotal,
     };
   }
 

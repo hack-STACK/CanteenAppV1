@@ -6,10 +6,10 @@ class DiscountBadge extends StatelessWidget {
   final bool compact;
 
   const DiscountBadge({
-    Key? key,
+    super.key,
     required this.discountPercentage,
     this.compact = false,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

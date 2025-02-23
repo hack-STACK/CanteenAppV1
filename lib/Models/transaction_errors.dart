@@ -1,10 +1,10 @@
 class TransactionError implements Exception {
   final String message;
+  final String? code;
   final dynamic originalError;
 
-  TransactionError(this.message, {this.originalError});
+  TransactionError(this.message, {this.code, this.originalError});
 
   @override
-  String toString() =>
-      'TransactionError: $message ${originalError != null ? '($originalError)' : ''}';
+  String toString() => message;
 }

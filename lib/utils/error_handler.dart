@@ -50,8 +50,7 @@ class ErrorHandler {
     }
 
     return TransactionError(
-      'Failed to cancel order: $message',
-      code: 'UNKNOWN',
+      'An unknown error occurred',
       originalError: error,
     );
   }

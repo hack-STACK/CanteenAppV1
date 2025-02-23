@@ -220,40 +220,46 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
       final allOrders = await _supabase
           .from('transactions')
           .select('''
-            *,
-            items:transaction_details ( 
-              id,
-              quantity,
-              unit_price,
-              subtotal,
-              notes,
-              original_price,
-              discounted_price,
-              applied_discount_percentage,
-              menu:menu_id (
-                id,
-                food_name,
-                photo,
-                reviews!menu_id (*), 
-                stall:stalls (
-                  id,
-                  nama_stalls,
-                  image_url,
-                  Banner_img,
-                  deskripsi
-                )
-              )
-            )
-          ''')
+      *,
+      items:transaction_details (
+        id,
+        quantity,
+        unit_price,
+        subtotal,
+        notes,
+        original_price,
+        discounted_price,
+        applied_discount_percentage,
+        menu:menu_id (
+          id,
+          food_name,      
+          photo,     
+          reviews!menu_id (*),
+          stall:stalls (
+            id,
+            nama_stalls,
+            image_url,
+            Banner_img,
+            deskripsi
+          )
+        ),
+        addon_name,        
+        addon_price,       
+        addon_quantity,    
+        addon_subtotal     
+      )
+    ''')
           .eq('student_id', widget.studentId)
           .order('created_at', ascending: false);
-
-      // Log the raw response for debugging
-      _logger.debug('Raw orders response: $allOrders');
+      // Debug log for add-ons
+      print('\n=== Debug: First order add-ons ===');
+      if (allOrders.isNotEmpty && allOrders[0]['items'].isNotEmpty) {
+        print('First item addons: ${allOrders[0]['items'][0]['addons']}');
+      }
+      print('================================\n');
 
       // Apply virtual IDs to orders
-      final ordersWithVirtualIds =
-          (allOrders as List<Map<String, dynamic>>).withVirtualIds();
+      final ordersWithVirtualIds = (allOrders).withVirtualIds();
 
       if (mounted) {
         setState(() {
@@ -994,7 +1000,26 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
                 return _buildErrorItem('Order #${order['id']}', 1);
               }
 
-              final items = snapshot.data?['items'] ?? [];
+              // Safely handle null or empty data
+              final data = snapshot.data;
+              if (data == null || !data.containsKey('items')) {
+                return _buildErrorItem(
+                  'Order #${order['id']}',
+                  1,
+                  message: 'No order details available',
+                );
+              }
+
+              final items =
+                  List<Map<String, dynamic>>.from(data['items'] ?? []);
+              if (items.isEmpty) {
+                return _buildErrorItem(
+                  'Order #${order['id']}',
+                  1,
+                  message: 'No items in this order',
+                );
+              }
+
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -1009,8 +1034,7 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
                       ),
                     ),
                   ),
-                  ...List<Map<String, dynamic>>.from(items)
-                      .map((item) => _buildOrderItem(item)),
+                  ...items.map((item) => _buildOrderItem(item)),
                   const SizedBox(height: 24),
                   const Divider(thickness: 1),
                 ],
@@ -1024,14 +1048,13 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
 
   material.Widget _buildOrderItem(Map<String, dynamic> item) {
     // Debug logging - combine into single argument
-    _logger.debug('Order item data: ' +
-        {
-          'original_price': item['original_price'],
-          'discounted_price': item['discounted_price'],
-          'applied_discount_percentage': item['applied_discount_percentage'],
-          'quantity': item['quantity'],
-          'menu_data': item['menu']
-        }.toString());
+    _logger.debug('Order item data: ${{
+      'original_price': item['original_price'],
+      'discounted_price': item['discounted_price'],
+      'applied_discount_percentage': item['applied_discount_percentage'],
+      'quantity': item['quantity'],
+      'menu_data': item['menu']
+    }}');
 
     // Extract static values from transaction_details
     final originalPrice = (item['original_price'] as num?)?.toDouble() ?? 0.0;
@@ -1052,16 +1075,15 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
     final savings = originalSubtotal - subtotal;
 
     // Validate calculations
-    _logger.debug('Price calculations: ' +
-        {
-          'originalPrice': originalPrice,
-          'discountedPrice': discountedPrice,
-          'quantity': quantity,
-          'subtotal': subtotal,
-          'originalSubtotal': originalSubtotal,
-          'savings': savings,
-          'hasDiscount': hasDiscount
-        }.toString());
+    _logger.debug('Price calculations: ${{
+      'originalPrice': originalPrice,
+      'discountedPrice': discountedPrice,
+      'quantity': quantity,
+      'subtotal': subtotal,
+      'originalSubtotal': originalSubtotal,
+      'savings': savings,
+      'hasDiscount': hasDiscount
+    }}');
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
@@ -1640,7 +1662,32 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
       List<dynamic> items, Map<String, dynamic> order) {
     if (items.isEmpty) {
       _logger.warn('No items found for order ${order['id']}');
-      return const Text('No items in this order');
+      return Container(
+        padding: const EdgeInsets.all(16),
+        margin: const EdgeInsets.symmetric(vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.info_outline, color: Colors.grey.shade600),
+            const SizedBox(width: 12),
+            const Text('No items in this order'),
+          ],
+        ),
+      );
+    }
+
+    // Safe type conversion of items
+    final safeItems = items.whereType<Map<String, dynamic>>().toList();
+    if (safeItems.isEmpty) {
+      _logger.error('Invalid item format in order ${order['id']}');
+      return _buildErrorItem(
+        'Order #${order['id']}',
+        1,
+        message: 'Invalid order data format',
+      );
     }
 
     return Column(
@@ -1654,41 +1701,37 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
           ),
         ),
         const SizedBox(height: 8),
-        ...items.map((item) {
-          final menuData = item['menu'];
-          final menuId = menuData?['id'] ?? item['menu_id'];
-          final quantity = item['quantity'] ?? 1;
-          final menuName = menuData?['food_name'] ?? 'Unknown Item';
-
-          if (menuId == null) {
-            _logger.error("Missing menu ID for item in order ${order['id']}");
-            return const SizedBox.shrink();
-          }
-
-          return FutureBuilder<Map<String, dynamic>>(
-            future: _getItemDetails(menuId, menuData, quantity),
-            builder: (context, AsyncSnapshot<Map<String, dynamic>> snapshot) {
-              if (snapshot.hasError) {
-                _logger.error("Error loading item details: ${snapshot.error}");
-                return _buildErrorItem(menuName, quantity);
-              }
-
-              if (!snapshot.hasData) {
-                return _buildLoadingItem(menuName, quantity);
-              }
-
-              final data = snapshot.data!;
-              return _buildItemCard(
-                menuName: menuName,
-                quantity: quantity,
-                ratingData: data['rating'] as Map<String, dynamic>,
-                priceData: data['price'] as Map<String, dynamic>,
-                order: order,
-                item: item,
-              );
+        ...safeItems.map((item) {
+          _logger.debug('Processing item: $item');
+          return EnhancedOrderCard(
+            item: {
+              ...item,
+              'addons': item['addons'] ?? [],
             },
+            order: order,
+            priceData: {
+              'hasDiscount': item['applied_discount_percentage'] != null &&
+                  (item['applied_discount_percentage'] as num) > 0,
+              'originalPrice':
+                  (item['original_price'] as num?)?.toDouble() ?? 0.0,
+              'discountedPrice':
+                  (item['discounted_price'] as num?)?.toDouble() ??
+                      (item['original_price'] as num?)?.toDouble() ??
+                      0.0,
+              'discountPercentage':
+                  (item['applied_discount_percentage'] as num?)?.toDouble() ??
+                      0.0,
+              'quantity': item['quantity'] as int? ?? 1,
+              'subtotal': ((item['discounted_price'] as num?)?.toDouble() ??
+                      (item['original_price'] as num?)?.toDouble() ??
+                      0.0) *
+                  (item['quantity'] as int? ?? 1),
+            },
+            ratingData: {'average': 0.0, 'count': 0},
+            isCompleted: _isOrderCompleted(order),
+            onRatePressed: () => _refreshOrders(),
           );
-        }),
+        }).toList(),
       ],
     );
   }
@@ -1780,18 +1823,39 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
   }
 
 // Widget for error state
-  material.Widget _buildErrorItem(String menuName, int quantity) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+  material.Widget _buildErrorItem(String orderId, int quantity,
+      {String? message}) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.red.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.red.shade200),
+      ),
       child: Row(
         children: [
+          Icon(Icons.error_outline, color: Colors.red.shade700),
+          const SizedBox(width: 12),
           Expanded(
-            child: Text(
-              '${quantity}x $menuName',
-              style: const TextStyle(fontSize: 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  orderId,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                if (message != null)
+                  Text(
+                    message,
+                    style: TextStyle(
+                      color: Colors.red.shade700,
+                      fontSize: 12,
+                    ),
+                  ),
+              ],
             ),
           ),
-          material.Icon(Icons.error_outline, color: Colors.red[700], size: 16),
         ],
       ),
     );

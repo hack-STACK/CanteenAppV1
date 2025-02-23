@@ -2,7 +2,6 @@ import 'package:kantin/Models/menu_cart_item.dart';
 import 'package:kantin/Models/transaction_model.dart';
 import 'package:kantin/Services/Database/refund_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:kantin/Models/Restaurant.dart';
 import 'package:kantin/utils/api_exception.dart'
     hide TransactionError; // Hide TransactionError from api_exception
 import 'package:kantin/models/enums/transaction_enums.dart';
@@ -48,6 +47,7 @@ class TransactionService {
 
           return {
             'menu_id': detail['menu_id'],
+            'menu_name': detail['menu_name'], // Tambahkan ini!
             'quantity': detail['quantity'],
             'unit_price': detail['unit_price'],
             'subtotal': detail['subtotal'],
@@ -97,36 +97,31 @@ class TransactionService {
         .asyncMap((orders) async {
           _logger.debug('Received ${orders.length} orders from stream');
 
+          // Jika tidak ada orders, kembalikan list kosong
+          if (orders.isEmpty) {
+            _logger.debug('No orders found for studentId: $studentId');
+            return [];
+          }
+
           final List<Map<String, dynamic>> ordersWithDetails =
               await Future.wait(
             orders.map((order) async {
               final List<dynamic> details = await _supabase
                   .from('transaction_details')
                   .select('''
-                    id,
-                    quantity,
-                    unit_price,
-                    subtotal,
-                    notes,
-                    menu:menu_id (
-                      id,
-                      food_name,
-                      price,
-                      photo,
-                      stall:stall_id (*)
-                    ),
-                    addons:transaction_addon_details (
-                      id,
-                      quantity,
-                      unit_price,
-                      subtotal,
-                      addon:addon_id (
-                        id,
-                        addon_name,
-                        price
-                      )
-                    )
-                  ''')
+                  id,
+                  quantity,
+                  unit_price,
+                  subtotal,
+                  notes,
+                  menu_name, 
+                  menu_price,
+                  menu_photo,
+                  addons, 
+                  original_price,
+                  discounted_price,
+                  applied_discount_percentage
+                ''')
                   .eq('transaction_id', order['id'])
                   .order('created_at', ascending: true);
 
@@ -563,16 +558,18 @@ class TransactionService {
     return _supabase
         .from('transactions')
         .select('''
+        *,
+        transaction_details (
           *,
-          transaction_details (
-            *,
-            menu (*),
-            transaction_addon_details (
-              *,
-              addon:food_addons (*)
-            )
+          menu (
+            id,
+            food_name,
+            price,
+            photo,
+            stall:stall_id (*)
           )
-        ''')
+        )
+      ''')
         .eq('stall_id', stallId)
         .eq('status', TransactionStatus.pending.name)
         .order('created_at', ascending: false)
@@ -839,7 +836,7 @@ class TransactionService {
               id,
               addon_name
             )
-          ''').filter('transaction_detail_id', 'in', '(' + transactionDetailIds.join(',') + ')');
+          ''').filter('transaction_detail_id', 'in', '(${transactionDetailIds.join(',')})');
 
       // Group addon details by transaction_detail_id
       final Map<int, List<Map<String, dynamic>>> addonsByDetailId = {};
@@ -873,6 +870,90 @@ class TransactionService {
         'error': e.toString(),
         'items': [],
       };
+    }
+  }
+
+  Future<void> createNewTransaction({
+    required int studentId,
+    required int stallId,
+    required List<CartItem> menuItems,
+    required String paymentStatus,
+    required double totalAmount, // Add this parameter
+    required OrderType orderType,
+    String? deliveryAddress,
+  }) async {
+    try {
+      // Start a Supabase transaction
+      final transaction = await _supabase
+          .from('transactions')
+          .insert({
+            'student_id': studentId,
+            'stall_id': stallId,
+            'status': 'pending',
+            'payment_status': paymentStatus,
+            'total_amount': totalAmount, // Add this field
+            'order_type': orderType.name,
+            'delivery_address': deliveryAddress,
+            'created_at': DateTime.now().toIso8601String(),
+            'updated_at': DateTime.now().toIso8601String(),
+          })
+          .select()
+          .single();
+
+      final transactionId = transaction['id'] as int;
+
+      // Create transaction details with validation
+      for (var item in menuItems) {
+        if (item.menu.foodName.trim().isEmpty) {
+          throw tx_errors.TransactionError(
+            'Menu name is required for all items',
+            code: 'VALIDATION_ERROR',
+          );
+        }
+
+        final detailsData = {
+          'transaction_id': transactionId,
+          'menu_id': item.menu.id,
+          'menu_name': item.menu.foodName.trim(),
+          'menu_price': item.menu.price,
+          'menu_photo': item.menu.photo ?? '',
+          'quantity': item.quantity,
+          'unit_price': item.discountedPrice ?? item.menu.price,
+          'subtotal': (item.discountedPrice ?? item.menu.price) * item.quantity,
+          'notes': item.note ?? '',
+          'applied_discount_percentage': item.discountPercentage ?? 0.0,
+          'original_price': item.originalPrice ?? item.menu.price,
+          'discounted_price': item.discountedPrice ?? item.menu.price,
+        };
+
+        // Include addon information with validation
+        if (item.selectedAddons.isNotEmpty) {
+          final addon = item.selectedAddons.first;
+          if (addon.addonName.trim().isEmpty) {
+            throw tx_errors.TransactionError(
+              'Addon name is required',
+              code: 'VALIDATION_ERROR',
+            );
+          }
+
+          detailsData.addAll({
+            'addon_name': addon.addonName.trim(),
+            'addon_price': addon.price,
+            'addon_quantity': item.quantity,
+            'addon_subtotal': addon.price * item.quantity,
+          });
+        }
+
+        await _supabase.from('transaction_details').insert(detailsData);
+      }
+
+      _logger.info('Successfully created transaction with ID: $transactionId');
+    } catch (e) {
+      _logger.error('Failed to create transaction:', e);
+      throw tx_errors.TransactionError(
+        'Failed to create transaction: $e',
+        originalError: e,
+      );
     }
   }
 }

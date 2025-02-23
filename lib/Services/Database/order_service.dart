@@ -1,4 +1,3 @@
-import 'package:kantin/Models/Restaurant.dart';
 import 'package:kantin/Models/menu_cart_item.dart';
 import 'package:kantin/Models/menus.dart';
 import 'package:kantin/Models/orderItem.dart';
@@ -460,6 +459,47 @@ class OrderService {
           .update({'status': newStatus}).eq('id', itemId);
     } catch (e) {
       throw Exception('Failed to update order item status: $e');
+    }
+  }
+
+  // Fetch transaction details
+  Future<List<TransactionDetail>> fetchTransactionDetails(
+      int transactionId) async {
+    try {
+      final response = await _client.from('transaction_details').select('''
+            *,
+            menu:menu_id(*),
+            addons:transaction_addon_details(
+              *,
+              addon:addon_id(*)
+            )
+          ''').eq('transaction_id', transactionId);
+
+      return (response as List)
+          .map((detail) => TransactionDetail.fromJson(detail))
+          .toList();
+    } catch (e) {
+      throw Exception('Failed to fetch transaction details: $e');
+    }
+  }
+
+  // Handle discounts
+  Future<void> applyDiscount(int transactionId, double discountAmount) async {
+    try {
+      final response = await _client
+          .from('transactions')
+          .select('total_amount')
+          .eq('id', transactionId)
+          .single();
+
+      final totalAmount = response['total_amount'] as double;
+      final newTotalAmount = totalAmount - discountAmount;
+
+      await _client
+          .from('transactions')
+          .update({'total_amount': newTotalAmount}).eq('id', transactionId);
+    } catch (e) {
+      throw Exception('Failed to apply discount: $e');
     }
   }
 }

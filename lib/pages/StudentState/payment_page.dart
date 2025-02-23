@@ -362,34 +362,46 @@ class _PaymentPageState extends State<PaymentPage>
       _logger.info('Starting transaction submission');
       setState(() => _transactionLog = 'Initializing transaction...');
 
-      final stallId = _getStallIdSafely(restaurant);
-      if (stallId == null) {
-        throw payment_errors.StallValidationError(
-          message: 'Could not determine stall ID. Please try again.',
+      // Calculate total amount first
+      final totalAmount = await _calculateFinalTotal(restaurant);
+
+      // Validate total amount
+      if (totalAmount <= 0) {
+        throw payment_errors.PaymentValidationError(
+          message: 'Invalid total amount',
         );
       }
 
-      _validateTransactionData(restaurant);
+      // Validate cart items before submission
+      for (var item in restaurant.cart) {
+        if (item.menu.foodName.trim().isEmpty) {
+          throw payment_errors.PaymentValidationError(
+            message: 'Menu name is required for all items',
+          );
+        }
 
-      final transactionDetails =
-          await _prepareTransactionDetails(restaurant.cart);
+        if (item.selectedAddons.isNotEmpty) {
+          for (var addon in item.selectedAddons) {
+            if (addon.addonName.trim().isEmpty) {
+              throw payment_errors.PaymentValidationError(
+                message: 'Addon name is required for all selected add-ons',
+              );
+            }
+          }
+        }
+      }
 
-      final transactionId = await _transactionService.createTransaction(
+      await _transactionService.createNewTransaction(
         studentId: widget.StudentId,
-        stallId: stallId,
-        totalAmount: _calculateFinalTotal(restaurant),
+        stallId: _getStallId(restaurant),
+        menuItems: _ensureValidMenuItems(restaurant.cart),
+        paymentStatus: 'paid',
+        totalAmount: totalAmount, // Add this parameter
         orderType: _selectedOrderType,
         deliveryAddress: _selectedOrderType == OrderType.delivery
             ? restaurant.deliveryAddress
             : null,
-        notes: noteController.text,
-        details: transactionDetails,
       );
-
-      await _updatePaymentStatus(transactionId);
-
-      _logger.info('Transaction completed successfully: $transactionId');
-      _transactionId = transactionId.toString();
 
       return true;
     } catch (e) {
@@ -398,50 +410,35 @@ class _PaymentPageState extends State<PaymentPage>
     }
   }
 
-  // Add new helper methods for better error handling
-  int? _getStallIdSafely(Restaurant restaurant) {
-    try {
-      return _getStallId(restaurant);
-    } catch (e) {
-      _logger.error('Error getting stall ID', e);
-      return null;
-    }
-  }
-
-  void _validateTransactionData(Restaurant restaurant) {
-    if (restaurant.cart.isEmpty) {
-      throw payment_errors.PaymentValidationError(message: 'Cart is empty');
-    }
-
-    if (_selectedOrderType == OrderType.delivery) {
-      try {
-        restaurant.validateDeliveryAddress();
-      } catch (e) {
+  // Add new validation method
+  List<CartItem> _ensureValidMenuItems(List<CartItem> items) {
+    return items.map((item) {
+      // Ensure menu name is not empty
+      if (item.menu.foodName.trim().isEmpty) {
         throw payment_errors.PaymentValidationError(
-          message: e.toString(),
+          message: 'Menu name cannot be empty',
         );
       }
-    }
 
-    double totalAmount = restaurant.calculateSubtotal();
-    if (totalAmount <= 0) {
-      throw payment_errors.PaymentValidationError(
-          message: 'Invalid order amount');
-    }
+      // Validate addons if present
+      final validAddons = item.selectedAddons.map((addon) {
+        if (addon.addonName.trim().isEmpty) {
+          throw payment_errors.PaymentValidationError(
+            message: 'Addon name cannot be empty',
+          );
+        }
+        return addon;
+      }).toList();
 
-    // Validate each item
-    for (var item in restaurant.cart) {
-      if (item.quantity <= 0) {
-        throw payment_errors.PaymentValidationError(
-          message: 'Invalid quantity for ${item.menu.foodName}',
-        );
-      }
-      if (item.menu.price <= 0) {
-        throw payment_errors.PaymentValidationError(
-          message: 'Invalid price for ${item.menu.foodName}',
-        );
-      }
-    }
+      return CartItem(
+        menu: item.menu,
+        quantity: item.quantity,
+        selectedAddons: validAddons,
+        note: item.note?.trim() ?? '',
+        originalPrice: item.originalPrice ?? item.menu.price,
+        discountedPrice: item.discountedPrice ?? item.menu.price,
+      );
+    }).toList();
   }
 
   Future<int> _createTransactionWithRetry(
@@ -463,7 +460,7 @@ class _PaymentPageState extends State<PaymentPage>
         transactionId = await _transactionService.createTransaction(
           studentId: widget.StudentId,
           stallId: stallId,
-          totalAmount: _calculateFinalTotal(restaurant),
+          totalAmount: await _calculateFinalTotal(restaurant),
           orderType: _selectedOrderType, // This is correct, keep as enum
           deliveryAddress: _selectedOrderType == OrderType.delivery
               ? restaurant.deliveryAddress
@@ -845,7 +842,7 @@ class _PaymentPageState extends State<PaymentPage>
           Text(
             'Checkout',
             style: TextStyle(
-              color: Theme.of(context).colorScheme.onBackground,
+              color: Theme.of(context).colorScheme.onSurface,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -862,7 +859,7 @@ class _PaymentPageState extends State<PaymentPage>
       leading: IconButton(
         icon: Icon(
           Icons.arrow_back_ios,
-          color: Theme.of(context).colorScheme.onBackground,
+          color: Theme.of(context).colorScheme.onSurface,
         ),
         onPressed: () {
           if (_currentStep > 0) {
@@ -1058,7 +1055,7 @@ class _PaymentPageState extends State<PaymentPage>
                 ),
               ),
             );
-          }).toList(),
+          }),
         ],
       ),
     );
@@ -1143,7 +1140,7 @@ class _PaymentPageState extends State<PaymentPage>
                 ),
               ),
             );
-          }).toList(),
+          }),
         ],
       ),
     );
@@ -1690,7 +1687,7 @@ Final Total: $finalTotal
               ],
             ),
           );
-        }).toList(),
+        }),
       ],
     );
   }
@@ -1890,46 +1887,6 @@ Final Total: $finalTotal
       cart,
       enableDebug: !kReleaseMode,
     );
-  }
-
-  double _calculateFinalTotal(Restaurant restaurant) {
-    double total = 0.0;
-    double totalSavings = 0.0;
-
-    print('\n=== Final Total Calculation ===');
-
-    for (var item in restaurant.cart) {
-      // Calculate main item totals
-      final originalTotal = item.originalPrice * item.quantity;
-      final discountedTotal = item.discountedPrice * item.quantity;
-      final itemSavings = originalTotal - discountedTotal;
-
-      // Calculate addon total
-      final addonTotal = item.selectedAddons.fold(
-        0.0,
-        (sum, addon) => sum + ((addon.price ?? 0.0) * item.quantity),
-      );
-
-      print('Item: ${item.menu.foodName}');
-      print('Original Total: $originalTotal');
-      print('Discounted Total: $discountedTotal');
-      print('Savings: $itemSavings');
-      print('Addon Total: $addonTotal');
-
-      total += discountedTotal + addonTotal;
-      totalSavings += itemSavings;
-    }
-
-    final deliveryFee = _selectedOrderType == OrderType.delivery ? 2000.0 : 0.0;
-    final finalTotal = total + deliveryFee;
-
-    print('Subtotal: $total');
-    print('Total Savings: $totalSavings');
-    print('Delivery Fee: $deliveryFee');
-    print('Final Total: $finalTotal');
-    print('============================\n');
-
-    return finalTotal;
   }
 
   Widget _buildEnhancedOrderItem(CartItem item) {
@@ -2351,7 +2308,7 @@ Final Total: $finalTotal
                 ],
               ),
             );
-          }).toList(),
+          }),
           if (item.note?.isNotEmpty == true) ...[
             const SizedBox(height: 8),
             Container(
@@ -2359,7 +2316,7 @@ Final Total: $finalTotal
               decoration: BoxDecoration(
                 color: Theme.of(context)
                     .colorScheme
-                    .surfaceVariant
+                    .surfaceContainerHighest
                     .withOpacity(0.5),
                 borderRadius: BorderRadius.circular(8),
               ),
@@ -2388,11 +2345,59 @@ Final Total: $finalTotal
       ),
     );
   }
+
+  // Add this method inside the _PaymentPageState class
+  Future<double> _calculateFinalTotal(Restaurant restaurant) async {
+    double subtotal = 0.0;
+    double totalDiscount = 0.0;
+
+    if (kReleaseMode == false) {
+      print('\n=== Final Total Calculation Debug ===');
+    }
+
+    // Calculate per item including addons and discounts
+    for (var item in restaurant.cart) {
+      final originalTotal = item.originalPrice * item.quantity;
+      final discountedTotal = item.discountedPrice * item.quantity;
+
+      // Calculate addon total for this item
+      final addonTotal = item.selectedAddons.fold(
+        0.0,
+        (sum, addon) => sum + (addon.price * item.quantity),
+      );
+
+      subtotal += discountedTotal + addonTotal;
+      totalDiscount += originalTotal - discountedTotal;
+
+      if (kReleaseMode == false) {
+        print('Item: ${item.menu.foodName}');
+        print('Original Total: $originalTotal');
+        print('Discounted Total: $discountedTotal');
+        print('Addon Total: $addonTotal');
+        print('Item Discount: ${originalTotal - discountedTotal}');
+      }
+    }
+
+    // Add delivery fee if applicable
+    final deliveryFee = _selectedOrderType == OrderType.delivery ? 2000.0 : 0.0;
+    final finalTotal = subtotal + deliveryFee;
+
+    if (kReleaseMode == false) {
+      print('Summary:');
+      print('Subtotal (with addons): $subtotal');
+      print('Total Discount: $totalDiscount');
+      print('Delivery Fee: $deliveryFee');
+      print('Final Total: $finalTotal');
+      print('===========================\n');
+    }
+
+    return finalTotal;
+  }
 }
 
 // Add new DashedDivider widget
 class DashedDivider extends StatelessWidget {
-  const DashedDivider({Key? key}) : super(key: key);
+  const DashedDivider({super.key});
 
   @override
   Widget build(BuildContext context) {

@@ -30,7 +30,7 @@ class PriceFormatter {
     final hasDiscount =
         discountedPrice != null && discountedPrice < originalPrice;
     final savings =
-        hasDiscount ? (originalPrice - discountedPrice!) * quantity : 0.0;
+        hasDiscount ? (originalPrice - discountedPrice) * quantity : 0.0;
 
     print('Effective Price: $effectivePrice');
     print('Subtotal: $subtotal');

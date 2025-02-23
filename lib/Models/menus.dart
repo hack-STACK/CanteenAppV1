@@ -448,7 +448,7 @@ class Menu {
       final supabase = Supabase.instance.client;
       final now = DateTime.now().toUtc().toIso8601String();
 
-      print('Fetching discounts for menu ${id} at $now');
+      print('Fetching discounts for menu $id at $now');
 
       final response = await supabase
           .from('menu_discounts')
@@ -474,7 +474,7 @@ class Menu {
 
       print('Raw discount response: $response');
 
-      if (response != null && (response as List).isNotEmpty) {
+      if ((response as List).isNotEmpty) {
         final discountData = response.first;
         final discountInfo = discountData['discounts'];
 

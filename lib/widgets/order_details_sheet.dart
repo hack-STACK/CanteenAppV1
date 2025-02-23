@@ -314,8 +314,10 @@ class OrderDetailsSheet extends StatelessWidget {
   }
 
   Widget _buildOrderItem(BuildContext context, Map<String, dynamic> item) {
-    // Extract values from transaction_details
-    final originalPrice = (item['original_price'] as num?)?.toDouble() ?? 0.0;
+    // Extract the unit price directly from the transaction details
+    final unitPrice = (item['unit_price'] as num?)?.toDouble();
+    final originalPrice =
+        (item['original_price'] as num?)?.toDouble() ?? unitPrice ?? 0.0;
     final discountedPrice =
         (item['discounted_price'] as num?)?.toDouble() ?? originalPrice;
     final quantity = item['quantity'] as int? ?? 1;
@@ -325,6 +327,15 @@ class OrderDetailsSheet extends StatelessWidget {
     final menuItem = item['menu'] ?? {};
     final menuName = menuItem['food_name'] ?? 'Unknown Item';
     final menuPhoto = menuItem['photo'] as String?;
+
+    // Debug print the extracted values
+    print('\n=== Price Debug Info ===');
+    print('Unit Price: $unitPrice');
+    print('Original Price: $originalPrice');
+    print('Discounted Price: $discountedPrice');
+    print('Quantity: $quantity');
+    print('Discount %: $discountPercentage');
+    print('=====================\n');
 
     final hasDiscount = discountPercentage > 0;
     final savings = (originalPrice - discountedPrice) * quantity;

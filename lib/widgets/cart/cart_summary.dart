@@ -6,11 +6,11 @@ class CartSummary extends StatelessWidget {
   final double finalTotal;
 
   const CartSummary({
-    Key? key,
+    super.key,
     required this.subtotal,
     required this.totalDiscount,
     required this.finalTotal,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

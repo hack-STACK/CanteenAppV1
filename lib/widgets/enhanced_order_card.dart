@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:kantin/utils/price_formatter.dart';
 import 'package:kantin/widgets/order_details_sheet.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -107,30 +108,37 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> {
 
   @override
   Widget build(BuildContext context) {
-    final priceData = _calculatePrices(widget.item);
+    // Add null checks and default values
+    final safeItem = widget.item;
+    if (safeItem == null) {
+      return const SizedBox();
+    }
 
-    // Debug the calculated prices
-    print('\n=== Price Calculation Debug ===');
-    print('Price Data: $priceData');
-    print('============================\n');
+    final theme = Theme.of(context);
+    final menuName = safeItem['menu']?['food_name'] ?? 'Unknown Item';
+    final menuPhoto = safeItem['menu']?['photo'];
+    final quantity = safeItem['quantity'] as int? ?? 1;
+
+    // Debug logs
+    print('\n=== EnhancedOrderCard Debug ===');
+    print('Item Data: ${widget.item}');
+    print('Price Data: ${widget.priceData}');
+    print('Rating Data: ${widget.ratingData}');
+    print('===========================\n');
 
     // Debug transaction details data
     print('\n=== Transaction Details Debug ===');
-    // print('Item data: ${widget.item}');
-    print('Original price from transaction: ${widget.item['original_price']}');
+    print('Original price from transaction: ${safeItem['original_price']}');
+    print('Discounted price from transaction: ${safeItem['discounted_price']}');
     print(
-        'Discounted price from transaction: ${widget.item['discounted_price']}');
-    print(
-        'Applied discount % from transaction: ${widget.item['applied_discount_percentage']}');
-    print('Quantity: ${widget.item['quantity']}');
+        'Applied discount % from transaction: ${safeItem['applied_discount_percentage']}');
+    print('Quantity: ${safeItem['quantity']}');
 
     // Get stored discount info from transaction_details with safety checks
-    final originalPrice = (widget.item['original_price'] as num?)?.toDouble();
-    final discountedPrice =
-        (widget.item['discounted_price'] as num?)?.toDouble();
+    final originalPrice = (safeItem['original_price'] as num?)?.toDouble();
+    final discountedPrice = (safeItem['discounted_price'] as num?)?.toDouble();
     final discountPercentage =
-        (widget.item['applied_discount_percentage'] as num?)?.toDouble();
-    final quantity = widget.item['quantity'] as int? ?? 1;
+        (safeItem['applied_discount_percentage'] as num?)?.toDouble();
 
     print('Parsed values:');
     print('Original Price: $originalPrice');
@@ -148,7 +156,7 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> {
     final totalDiscounted = validDiscountedPrice * quantity;
     final savings = totalOriginal - totalDiscounted;
 
-    // Create price data object with correct types
+    // Create updated price data object with correct types
     final updatedPriceData = {
       'hasDiscount': savings > 0,
       'originalPrice': validOriginalPrice,
@@ -159,81 +167,66 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> {
       'discountPercentage': validDiscountPercentage,
     };
 
-    final theme = Theme.of(context);
     final addons = widget.item['addons'] as List<dynamic>? ?? [];
-    final menuName = widget.item['menu']?['food_name'] ?? 'Unknown Item';
-    final menuPhoto = widget.item['menu']?['photo'];
 
-    return Hero(
-      tag: 'order_${widget.order['id']}',
-      child: AnimationConfiguration.staggeredList(
-        position: widget.order['id'] as int,
-        duration: const Duration(milliseconds: 375),
-        child: SlideAnimation(
-          verticalOffset: 50.0,
-          child: FadeInAnimation(
-            child: Material(
-              // Add Material widget for ripple effect
-              color: Colors.transparent,
-              child: InkWell(
-                // Add InkWell for tap feedback
-                onTap: () => _showOrderDetails(context),
-                splashColor: Colors.blue.withOpacity(0.3),
-                highlightColor: Colors.blue.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(24),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    border: Border.all(
-                        color: Colors.blue.withOpacity(0.2)), // Debug border
-                    borderRadius: BorderRadius.circular(24),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.grey.withOpacity(0.1),
-                        spreadRadius: 1,
-                        blurRadius: 10,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  margin:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: Stack(
-                    children: [
-                      Column(
-                        children: [
-                          _buildModernHeader(
-                            context,
-                            menuName: menuName,
-                            menuPhoto: menuPhoto,
-                            quantity: quantity,
-                            theme: theme,
-                          ),
-                          _buildEnhancedContent(
-                            context,
-                            hasDiscount:
-                                updatedPriceData['hasDiscount'] as bool,
-                            originalPrice:
-                                updatedPriceData['originalPrice'] as double,
-                            discountedPrice:
-                                updatedPriceData['discountedPrice'] as double,
-                            savings: updatedPriceData['savings'] as double,
-                            addons: addons,
-                            theme: theme,
-                          ),
-                        ],
-                      ),
-                      _buildStatusIndicators(context),
-                      _buildQuickActions(context),
-                    ],
-                  ),
+    // Replace the Hero and AnimationConfiguration with this simpler structure
+    return AnimatedOpacity(
+      duration: const Duration(milliseconds: 300),
+      opacity: 1.0,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => _showOrderDetails(context),
+          splashColor: Colors.blue.withOpacity(0.3),
+          highlightColor: Colors.blue.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(24),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: Colors.blue.withOpacity(0.2)),
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.grey.withOpacity(0.1),
+                  spreadRadius: 1,
+                  blurRadius: 10,
+                  offset: const Offset(0, 2),
                 ),
-              ),
+              ],
+            ),
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Stack(
+              children: [
+                Column(
+                  children: [
+                    _buildModernHeader(
+                      context,
+                      menuName: menuName,
+                      menuPhoto: menuPhoto,
+                      quantity: quantity,
+                      theme: theme,
+                    ),
+                    _buildEnhancedContent(
+                      context,
+                      hasDiscount: updatedPriceData['hasDiscount'] as bool,
+                      originalPrice:
+                          updatedPriceData['originalPrice'] as double,
+                      discountedPrice:
+                          updatedPriceData['discountedPrice'] as double,
+                      savings: updatedPriceData['savings'] as double,
+                      addons: addons,
+                      theme: theme,
+                    ),
+                  ],
+                ),
+                _buildStatusIndicators(context),
+                _buildQuickActions(context),
+              ],
             ),
           ),
         ),
       ),
-    );
+    ).animate().fadeIn(duration: 300.ms).slideY(begin: 0.2);
   }
 
   Widget _buildModernHeader(
@@ -281,90 +274,212 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> {
     required List<dynamic> addons,
     required ThemeData theme,
   }) {
-    print('\n=== Enhanced Content Debug ===');
-    print('Has Discount: $hasDiscount');
-    print('Original Price: $originalPrice');
-    print('Discounted Price: $discountedPrice');
-    print('Savings: $savings');
-    print('============================\n');
+    // Cast the addons list to the correct type
+    final List<Map<String, dynamic>> typedAddons = addons.map((addon) {
+      if (addon is Map<String, dynamic>) {
+        return addon;
+      }
+      // If the addon is not already a Map<String, dynamic>, convert it
+      return Map<String, dynamic>.from(addon as Map);
+    }).toList();
 
-    // Calculate discount percentage here instead of accessing priceData
-    final discountPercentage = hasDiscount
+    // Only show discount if there's an actual price difference
+    final bool showDiscount = hasDiscount &&
+        savings > 0 &&
+        originalPrice > discountedPrice &&
+        discountedPrice > 0;
+
+    final discountPercentage = showDiscount
         ? ((originalPrice - discountedPrice) / originalPrice * 100).round()
         : 0;
 
-    return Padding(
+    // Calculate totals
+    final double basePrice = showDiscount ? discountedPrice : originalPrice;
+    final double totalAddons = _calculateAddonTotal(addons);
+    final double finalTotal = basePrice + totalAddons;
+
+    return Container(
       padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(24)),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (hasDiscount) ...[
-            Container(
-              padding: const EdgeInsets.all(12),
-              margin: const EdgeInsets.only(top: 8),
-              decoration: BoxDecoration(
-                color: Colors.green.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.green.shade200),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.local_offer,
-                          size: 16, color: Colors.green.shade700),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Applied Discount: $discountPercentage%',
-                        style: TextStyle(
-                          color: Colors.green.shade700,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Original price: ${_formatPrice(originalPrice)} → ${_formatPrice(discountedPrice)}',
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                      fontSize: 12,
-                    ),
-                  ),
-                  Text(
-                    'You saved: ${_formatPrice(savings)}',
-                    style: TextStyle(
-                      color: Colors.green.shade700,
-                      fontWeight: FontWeight.w500,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+          // Price Section with Optional Discount
+          _buildPriceSection(
+            showDiscount: showDiscount,
+            originalPrice: originalPrice,
+            discountedPrice: discountedPrice,
+            discountPercentage: discountPercentage,
+          ),
+
+          // Add-ons Section if present
           if (addons.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            _buildModernAddonsSection(addons),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Divider(height: 1),
+            ),
+            _buildAddonsSection(typedAddons),
           ],
-          const SizedBox(height: 16),
-          _buildModernTotalSection(theme, discountedPrice),
-          if (widget.isCompleted) ...[
-            const SizedBox(height: 16),
-            _buildModernActionButtons(context),
-          ],
+
+          // Total Section
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Divider(height: 1),
+          ),
+          _buildTotalSection(
+            basePrice: basePrice,
+            addonsTotal: totalAddons,
+            finalTotal: finalTotal,
+            theme: theme,
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildPlaceholder() {
-    return Container(
-      width: 120,
-      height: 120,
-      color: Colors.grey[200],
-      child: Icon(Icons.restaurant, size: 40, color: Colors.grey[400]),
+  Widget _buildPriceSection({
+    required bool showDiscount,
+    required double originalPrice,
+    required double discountedPrice,
+    required int discountPercentage,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Price',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[600],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                if (showDiscount) ...[
+                  const SizedBox(height: 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.red.shade200),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.local_offer,
+                            size: 12, color: Colors.red.shade700),
+                        const SizedBox(width: 4),
+                        Text(
+                          '$discountPercentage% OFF',
+                          style: TextStyle(
+                            color: Colors.red.shade700,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (showDiscount)
+                  Text(
+                    _formatPrice(originalPrice),
+                    style: TextStyle(
+                      decoration: TextDecoration.lineThrough,
+                      color: Colors.grey[500],
+                      fontSize: 13,
+                    ),
+                  ),
+                Text(
+                  _formatPrice(discountedPrice),
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: showDiscount ? Colors.red.shade700 : Colors.black87,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAddonsSection(List<Map<String, dynamic>> addons) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Add-ons',
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            color: Colors.grey,
+          ),
+        ),
+        const SizedBox(height: 8),
+        ...addons.map((addon) {
+          final addonData = addon['addon'];
+          final quantity = addon['quantity'] as int? ?? 1;
+          final unitPrice = (addon['unit_price'] as num?)?.toDouble() ?? 0.0;
+          final subtotal = (addon['subtotal'] as num?)?.toDouble() ?? 0.0;
+          final name = addonData['addon_name'] ?? 'Unknown Add-on';
+
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    '${quantity}x',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    name,
+                    style: const TextStyle(fontSize: 14),
+                  ),
+                ),
+                Text(
+                  'Rp ${subtotal.toStringAsFixed(0)}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+      ],
     );
   }
 
@@ -438,6 +553,8 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> {
   }
 
   Widget _buildModernAddonsSection(List<dynamic> addons) {
+    if (addons.isEmpty) return const SizedBox.shrink();
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -448,41 +565,85 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Add-ons',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: Colors.grey,
-            ),
+          Row(
+            children: [
+              Icon(Icons.add_circle_outline, size: 16, color: Colors.grey[600]),
+              const SizedBox(width: 8),
+              Text(
+                'Add-ons',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.grey[700],
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
+          // Map each add-on
           ...addons.map((addon) {
-            // Get values directly from transaction_addon_details
+            // Extract addon data
+            final addonData = addon['addon'] ?? {};
             final quantity = addon['quantity'] as int? ?? 1;
             final unitPrice = (addon['unit_price'] as num?)?.toDouble() ?? 0.0;
             final subtotal = (addon['subtotal'] as num?)?.toDouble() ??
                 (quantity * unitPrice);
-            final name = addon['addon']?['addon_name'] ?? 'Unknown Add-on';
+            final name = addonData['addon_name'] ?? 'Unknown Add-on';
 
+            // Build addon row
             return Padding(
-              padding: const EdgeInsets.only(bottom: 4),
+              padding: const EdgeInsets.only(bottom: 8),
               child: Row(
                 children: [
-                  Text(
-                    '${quantity}x',
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                      fontSize: 12,
+                  // Quantity badge
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Colors.blue.shade100,
+                      ),
+                    ),
+                    child: Text(
+                      '${quantity}x',
+                      style: TextStyle(
+                        color: Colors.blue.shade700,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 8),
+                  // Add-on name and details
                   Expanded(
-                    child: Text(
-                      name,
-                      style: const TextStyle(fontSize: 13),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          name,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        if (unitPrice > 0) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            '@${_formatPrice(unitPrice)} each',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
+                  // Subtotal
                   Text(
                     _formatPrice(subtotal),
                     style: const TextStyle(
@@ -499,24 +660,80 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> {
     ).animate().slideY(begin: 0.2, duration: 400.ms, delay: 100.ms);
   }
 
-  Widget _buildModernTotalSection(ThemeData theme, double total) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  Widget _buildModernTotalSection(
+    ThemeData theme,
+    double basePrice, [
+    List<dynamic>? addons,
+  ]) {
+    if (addons == null || addons.isEmpty) {
+      // Simple total without addons
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          const Text(
+            'Total',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          Text(
+            _formatPrice(basePrice),
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: theme.primaryColor,
+            ),
+          ),
+        ],
+      );
+    }
+
+    // Calculate total with addons
+    final addonTotal = addons.fold<double>(
+      0.0,
+      (sum, addon) => sum + ((addon['subtotal'] as num?)?.toDouble() ?? 0.0),
+    );
+
+    final total = basePrice + addonTotal;
+
+    return Column(
       children: [
-        const Text(
-          'Total',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Add-ons Total',
+                style: TextStyle(color: Colors.grey[600]),
+              ),
+              Text(
+                _formatPrice(addonTotal),
+                style: TextStyle(color: Colors.grey[800]),
+              ),
+            ],
           ),
         ),
-        Text(
-          _formatPrice(total),
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: theme.primaryColor,
-          ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Total',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            Text(
+              _formatPrice(total),
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: theme.primaryColor,
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -797,16 +1014,34 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> {
               color: Colors.green,
               icon: FontAwesomeIcons.seedling,
             ),
-          if (widget.priceData['hasDiscount'])
+          if (widget.priceData['hasDiscount']) ...[
             _buildChip(
-              label:
-                  '${((widget.priceData['savings'] / widget.priceData['originalPrice']) * 100).round()}% OFF',
+              label: _calculateDiscountPercentage(),
               color: Colors.purple,
               icon: Icons.local_offer,
             ),
+          ],
         ],
       ),
     ).animate().slideX(begin: -0.2, duration: 400.ms);
+  }
+
+  // Add this helper method to safely calculate the discount percentage
+  String _calculateDiscountPercentage() {
+    try {
+      final originalPrice = widget.priceData['originalPrice'] as double?;
+      final savings = widget.priceData['savings'] as double?;
+
+      if (originalPrice == null || originalPrice == 0 || savings == null) {
+        return '0% OFF';
+      }
+
+      final percentage = (savings / originalPrice * 100).round();
+      return '$percentage% OFF';
+    } catch (e) {
+      print('Error calculating discount percentage: $e');
+      return '0% OFF';
+    }
   }
 
   Widget _buildChip({
@@ -931,99 +1166,68 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> {
 
   Map<String, dynamic> _calculatePrices(Map<String, dynamic> item) {
     try {
-      // Debug header
       print('\n============= Transaction Details Debug =============');
 
-      // Menu Item Debug Section
-      print('\n----- Main Menu Item -----');
-      print('Menu ID: ${item['menu']?['id']}');
-      print('Menu Name: ${item['menu']?['food_name']}');
-      print('Base Menu Price: ${item['menu']?['price']}');
-
-      // Get all price fields with proper null handling
-      final menuPrice = (item['menu']?['price'] as num?)?.toDouble() ?? 0.0;
-      final originalPrice = item['original_price'] != null
-          ? double.parse(item['original_price'].toString())
-          : menuPrice;
-      final unitPrice = item['unit_price'] != null
-          ? double.parse(item['unit_price'].toString())
-          : originalPrice;
-      final discountedPrice = item['discounted_price'] != null
-          ? double.parse(item['discounted_price'].toString())
-          : unitPrice;
-      final discountPercentage = item['applied_discount_percentage'] != null
-          ? double.parse(item['applied_discount_percentage'].toString())
-          : ((originalPrice - unitPrice) / originalPrice * 100);
+      // Ensure we have valid numbers, defaulting to 0.0 if null
+      final originalPrice = (item['original_price'] as num?)?.toDouble() ?? 0.0;
+      final unitPrice =
+          (item['unit_price'] as num?)?.toDouble() ?? originalPrice;
+      final discountedPrice =
+          (item['discounted_price'] as num?)?.toDouble() ?? unitPrice;
+      final discountPercentage =
+          (item['applied_discount_percentage'] as num?)?.toDouble() ?? 0.0;
       final quantity = item['quantity'] as int? ?? 1;
 
-      print('\n----- Price Calculations -----');
+      print('\n----- Price Fields from Transaction -----');
       print('Original Price: $originalPrice');
       print('Unit Price: $unitPrice');
       print('Discounted Price: $discountedPrice');
       print('Discount %: $discountPercentage');
       print('Quantity: $quantity');
 
-      // Calculate main item totals
-      final totalOriginal = originalPrice * quantity;
-      final totalDiscounted = discountedPrice * quantity;
-      final savings = totalOriginal - totalDiscounted;
-
-      print('\n----- Main Item Totals -----');
-      print('Total Original: $totalOriginal');
-      print('Total Discounted: $totalDiscounted');
-      print('Savings: $savings');
-
-      // Addons Debug Section
-      print('\n----- Add-ons Details -----');
-      final addons = item['addon_items'] as List<dynamic>? ?? [];
+      // Calculate addons total with null safety
+      final addons = item['addons'] as List<dynamic>? ?? [];
       double addonTotal = 0.0;
 
-      if (addons.isEmpty) {
-        print('No add-ons for this item');
-      } else {
-        print('Found ${addons.length} add-ons:');
-      }
-
       for (final addon in addons) {
-        print('\nAdd-on: ${addon['addon']?['addon_name']}');
+        if (addon == null) continue; // Skip null addons
         final addonQuantity = addon['quantity'] as int? ?? 0;
         final addonPrice = (addon['unit_price'] as num?)?.toDouble() ?? 0.0;
         final addonSubtotal = (addon['subtotal'] as num?)?.toDouble() ??
             (addonQuantity * addonPrice);
-
-        print('  Quantity: $addonQuantity');
-        print('  Unit Price: $addonPrice');
-        print('  Subtotal: $addonSubtotal');
-
         addonTotal += addonSubtotal;
       }
 
-      print('\n----- Final Calculations -----');
+      // Ensure we don't divide by zero
+      final totalOriginal = originalPrice * quantity;
+      final totalDiscounted = discountedPrice * quantity;
+      final savings = originalPrice > 0 ? totalOriginal - totalDiscounted : 0.0;
+
+      // Only calculate discount percentage if there's an actual price difference
+      final calculatedDiscountPercentage =
+          (originalPrice > discountedPrice && originalPrice > 0)
+              ? ((originalPrice - discountedPrice) / originalPrice * 100)
+                  .clamp(0.0, 100.0)
+              : 0.0;
+
       final result = {
-        'hasDiscount': discountPercentage > 0,
+        'hasDiscount': calculatedDiscountPercentage >
+            0, // Only true if there's an actual discount
         'originalPrice': originalPrice,
         'discountedPrice': discountedPrice,
-        'totalOriginal': totalOriginal + addonTotal,
-        'totalDiscounted': totalDiscounted + addonTotal,
+        'totalOriginal': totalOriginal,
+        'totalDiscounted': totalDiscounted,
         'savings': savings,
-        'discountPercentage': discountPercentage,
+        'discountPercentage': calculatedDiscountPercentage,
         'addonTotal': addonTotal,
-        'unitPrice': unitPrice,
-        'subtotal': discountedPrice * quantity + addonTotal,
+        'subtotal': totalDiscounted + addonTotal,
       };
 
-      print('Total with Add-ons: ${result['totalDiscounted']}');
-      print('Total Add-ons: $addonTotal');
-      print('Final Subtotal: ${result['subtotal']}');
-      print('==============================================\n');
-
+      print('Final Result: $result');
       return result;
     } catch (e, stack) {
-      print('\n!!! Error calculating prices !!!');
-      print('Error: $e');
-      print('Stack trace: $stack');
-      print('==============================================\n');
-
+      print('Error calculating prices: $e\n$stack');
+      // Return safe default values if calculation fails
       return {
         'hasDiscount': false,
         'originalPrice': 0.0,
@@ -1033,9 +1237,192 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> {
         'savings': 0.0,
         'discountPercentage': 0.0,
         'addonTotal': 0.0,
-        'unitPrice': 0.0,
         'subtotal': 0.0,
       };
     }
+  }
+
+  double _calculateAddonTotal(List<dynamic> addons) {
+    if (addons.isEmpty) return 0.0;
+
+    return addons.fold<double>(
+      0.0,
+      (sum, addon) {
+        // Use subtotal from transaction_addon_details if available
+        final subtotal = (addon['subtotal'] as num?)?.toDouble();
+        if (subtotal != null) return sum + subtotal;
+
+        // Otherwise calculate from quantity and unit_price
+        final quantity = addon['quantity'] as int? ?? 0;
+        final unitPrice = (addon['unit_price'] as num?)?.toDouble() ?? 0.0;
+        return sum + (quantity * unitPrice);
+      },
+    );
+  }
+
+  Widget _buildOrderItem(BuildContext context, Map<String, dynamic> item) {
+    // Extract the unit price directly from the transaction details
+    final unitPrice = (item['unit_price'] as num?)?.toDouble();
+    final originalPrice =
+        (item['original_price'] as num?)?.toDouble() ?? unitPrice ?? 0.0;
+    final discountedPrice =
+        (item['discounted_price'] as num?)?.toDouble() ?? originalPrice;
+    final quantity = item['quantity'] as int? ?? 1;
+    final discountPercentage =
+        (item['applied_discount_percentage'] as num?)?.toDouble() ?? 0.0;
+    final notes = item['notes'] as String?;
+    final menuItem = item['menu'] ?? {};
+    final menuName = menuItem['food_name'] ?? 'Unknown Item';
+    final menuPhoto = menuItem['photo'] as String?;
+    final addons = item['addons'] as List<dynamic>? ?? [];
+
+    // Add debug logging for price calculations
+    print('\n=== Order Item Price Debug Info ===');
+    print('Unit Price: $unitPrice');
+    print('Original Price: $originalPrice');
+    print('Discounted Price: $discountedPrice');
+    print('Quantity: $quantity');
+    print('Discount %: $discountPercentage');
+    print('=====================\n');
+
+    final hasDiscount = discountPercentage > 0;
+    final savings = (originalPrice - discountedPrice) * quantity;
+    final subtotal = discountedPrice * quantity;
+
+    return Card(
+      // ... existing card UI code ...
+      child: Column(
+        children: [
+          // ... existing menu item display code ...
+
+          if (addons.isNotEmpty) ...[
+            const Divider(),
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Add-ons',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ...addons.map((addon) {
+                    final addonData = addon['addon'];
+                    final addonQuantity = addon['quantity'] as int? ?? 1;
+                    final addonPrice =
+                        (addon['unit_price'] as num?)?.toDouble() ?? 0.0;
+                    final addonSubtotal = addonPrice * addonQuantity;
+
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade100,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              '${addonQuantity}x',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              addonData['addon_name'] ?? 'Unknown Add-on',
+                              style: const TextStyle(fontSize: 14),
+                            ),
+                          ),
+                          Text(
+                            PriceFormatter.format(addonSubtotal),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTotalSection({
+    required double basePrice,
+    required double addonsTotal,
+    required double finalTotal,
+    required ThemeData theme,
+  }) {
+    return Column(
+      children: [
+        if (addonsTotal > 0)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Add-ons Total',
+                  style: TextStyle(color: Colors.grey[600]),
+                ),
+                Text(
+                  _formatPrice(addonsTotal),
+                  style: TextStyle(color: Colors.grey[800]),
+                ),
+              ],
+            ),
+          ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Total',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            Text(
+              _formatPrice(finalTotal),
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: theme.primaryColor,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPlaceholder() {
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      color: Colors.grey[200],
+      child: Center(
+        child: Icon(
+          Icons.restaurant,
+          size: 40,
+          color: Colors.grey[400],
+        ),
+      ),
+    );
   }
 }

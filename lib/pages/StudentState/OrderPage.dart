@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart' hide Widget;
+import 'package:flutter/material.dart';
 import 'package:flutter/material.dart' as material show Icon, Widget;
 import 'package:intl/intl.dart';
 import 'package:kantin/Services/Auth/auth_Service.dart';
@@ -59,8 +59,9 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
   final _refreshKey = GlobalKey<RefreshIndicatorState>();
   StreamSubscription? _orderSubscription;
 
-  String _currentSortField = 'created_at'; // Remove final
-  bool _sortAscending = false; // Remove final
+  String _currentSortField =
+      'created_at_timestamp'; // Changed from 'created_at'
+  bool _sortAscending = false; // Keep false for descending (latest first)
 
   late AnimationController _refreshIconController;
   late AnimationController _slideController;
@@ -259,7 +260,8 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
       print('================================\n');
 
       // Apply virtual IDs to orders
-      final ordersWithVirtualIds = (allOrders).withVirtualIds();
+      final ordersWithVirtualIds =
+          OrderListExtension(allOrders).withVirtualIds();
 
       if (mounted) {
         setState(() {
@@ -698,18 +700,22 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
           children: [
             Container(
               padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Theme.of(context).scaffoldBackgroundColor,
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(20)),
+              ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
+                  Text(
                     'Sort Orders',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
                   ),
                   IconButton(
-                    icon: const material.Icon(Icons.close),
+                    icon: const Icon(Icons.close),
                     onPressed: () => Navigator.pop(context),
                   ),
                 ],
@@ -719,33 +725,59 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
             Expanded(
               child: ListView(
                 children: [
-                  _buildSortOption(
+                  _buildSortOptionTile(
                     context,
                     setState,
                     'Date',
                     'created_at',
                     Icons.calendar_today,
+                    subtitle: 'Sort by order date',
                   ),
-                  _buildSortOption(
+                  _buildSortOptionTile(
                     context,
                     setState,
                     'Amount',
                     'total_amount',
                     Icons.attach_money,
+                    subtitle: 'Sort by order total',
                   ),
-                  _buildSortOption(
+                  _buildSortOptionTile(
                     context,
                     setState,
                     'Status',
                     'status',
                     Icons.info_outline,
+                    subtitle: 'Sort by order status',
                   ),
-                  _buildSortOption(
+                  _buildSortOptionTile(
                     context,
                     setState,
                     'Order Type',
                     'order_type',
                     Icons.local_shipping,
+                    subtitle: 'Sort by delivery method',
+                  ),
+                  _buildSortOptionTile(
+                    context,
+                    setState,
+                    'Items Count',
+                    'items_count',
+                    Icons.shopping_basket,
+                    subtitle: 'Sort by number of items',
+                  ),
+                  // Add a reset option
+                  ListTile(
+                    leading: const Icon(Icons.restore),
+                    title: const Text('Reset Sort'),
+                    subtitle: const Text('Return to default sorting'),
+                    onTap: () {
+                      setState(() {
+                        _currentSortField = 'created_at_timestamp';
+                        _sortAscending = false; // Latest first
+                      });
+                      _sortOrders();
+                      Navigator.pop(context);
+                    },
                   ),
                 ],
               ),
@@ -756,23 +788,64 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
     );
   }
 
-  material.Widget _buildSortOption(
+  Widget _buildSortOptionTile(
     BuildContext context,
     StateSetter setState,
     String label,
     String field,
-    IconData icon,
-  ) {
+    IconData icon, {
+    String? subtitle,
+  }) {
     final bool isSelected = _currentSortField == field;
+    final Color selectedColor = Theme.of(context).primaryColor;
 
     return ListTile(
-      leading: material.Icon(icon,
-          color: isSelected ? Theme.of(context).primaryColor : null),
-      title: Text(label),
+      leading: Icon(
+        icon,
+        color: isSelected ? selectedColor : null,
+      ),
+      title: Text(
+        label,
+        style: TextStyle(
+          color: isSelected ? selectedColor : null,
+          fontWeight: isSelected ? FontWeight.bold : null,
+        ),
+      ),
+      subtitle: subtitle != null
+          ? Text(
+              subtitle,
+              style: TextStyle(
+                fontSize: 12,
+                color: isSelected ? selectedColor.withOpacity(0.7) : null,
+              ),
+            )
+          : null,
       trailing: isSelected
-          ? material.Icon(
-              _sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
-              color: Theme.of(context).primaryColor,
+          ? Container(
+              decoration: BoxDecoration(
+                color: selectedColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    _sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
+                    size: 16,
+                    color: selectedColor,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    _sortAscending ? 'Asc' : 'Desc',
+                    style: TextStyle(
+                      color: selectedColor,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
             )
           : null,
       selected: isSelected,
@@ -785,7 +858,6 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
             _sortAscending = true;
           }
         });
-
         _sortOrders();
         Navigator.pop(context);
       },
@@ -794,64 +866,76 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
 
   void _sortOrders() {
     setState(() {
-      comparator(Map<String, dynamic> a, Map<String, dynamic> b) {
+      final comparator = (Map<String, dynamic> a, Map<String, dynamic> b) {
         dynamic valueA = a[_currentSortField];
         dynamic valueB = b[_currentSortField];
 
-        // Handle special cases
-        if (_currentSortField == 'created_at') {
-          valueA = DateTime.parse(valueA);
-          valueB = DateTime.parse(valueB);
-        } else if (_currentSortField == 'total_amount') {
-          valueA = (valueA as num).toDouble();
-          valueB = (valueB as num).toDouble();
+        // Special handling for different fields
+        switch (_currentSortField) {
+          case 'created_at':
+          case 'created_at_timestamp':
+            // Convert to timestamps for consistent comparison
+            final timestampA = valueA is int
+                ? valueA
+                : DateTime.parse(a['created_at']).millisecondsSinceEpoch;
+            final timestampB = valueB is int
+                ? valueB
+                : DateTime.parse(b['created_at']).millisecondsSinceEpoch;
+            // Always sort timestamps in descending order (latest first)
+            return timestampB.compareTo(timestampA);
+          // ...rest of the cases remain the same...
         }
 
         // Handle null values
+        if (valueA == null && valueB == null) return 0;
         if (valueA == null) return _sortAscending ? -1 : 1;
         if (valueB == null) return _sortAscending ? 1 : -1;
 
-        // Custom sorting for status
-        if (_currentSortField == 'status') {
-          final statusOrder = {
-            'pending': 0,
-            'confirmed': 1,
-            'cooking': 2,
-            'ready': 3,
-            'delivering': 4,
-            'completed': 5,
-            'cancelled': 6,
-          };
-          valueA = statusOrder[valueA.toLowerCase()] ?? -1;
-          valueB = statusOrder[valueB.toLowerCase()] ?? -1;
-        }
-
         int comparison;
-        if (valueA is DateTime) {
-          comparison = valueA.compareTo(valueB);
-        } else if (valueA is num) {
+        if (valueA is num) {
           comparison = valueA.compareTo(valueB);
         } else {
           comparison = valueA.toString().compareTo(valueB.toString());
         }
 
         return _sortAscending ? comparison : -comparison;
-      }
+      };
 
       _activeOrders.sort(comparator);
       _orderHistory.sort(comparator);
     });
 
-    // Show a confirmation snackbar
+    // Show sort confirmation
     if (mounted) {
+      final String fieldName =
+          _currentSortField.replaceAll('_', ' ').toLowerCase();
+      final String direction = _sortAscending ? 'ascending' : 'descending';
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            'Sorted by ${_currentSortField.replaceAll('_', ' ').toLowerCase()} '
-            '(${_sortAscending ? 'ascending' : 'descending'})',
+          content: Row(
+            children: [
+              Icon(
+                _sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
+                color: Colors.white,
+                size: 16,
+              ),
+              const SizedBox(width: 8),
+              Text('Sorted by $fieldName ($direction)'),
+            ],
           ),
-          duration: const Duration(seconds: 2),
           behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+          action: SnackBarAction(
+            label: 'Reset',
+            onPressed: () {
+              setState(() {
+                _currentSortField = 'created_at';
+                _sortAscending = false;
+                _sortOrders();
+              });
+            },
+          ),
         ),
       );
     }

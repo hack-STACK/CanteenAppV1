@@ -21,6 +21,8 @@ import 'package:kantin/utils/image_helper.dart';
 import 'package:kantin/models/enums/payment_method_extension.dart';
 import 'package:kantin/models/enums/order_type_extension.dart';
 import 'package:kantin/widgets/badges/discount_badge.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 
 class PaymentPage extends StatefulWidget {
   final int StudentId; // Make this non-nullable
@@ -339,9 +341,18 @@ class _PaymentPageState extends State<PaymentPage>
     final message = ErrorHandler.getErrorMessage(error);
     _logger.error('Payment Error', error);
 
+    String displayMessage;
+    if (error is PostgrestException) {
+      displayMessage = 'Database error: ${error.message}';
+    } else if (error is payment_errors.PaymentError) {
+      displayMessage = error.message;
+    } else {
+      displayMessage = message;
+    }
+
     _showErrorDialog(
       title: 'Payment Failed',
-      message: message,
+      message: displayMessage,
       error: error,
       retryAction: error is! TimeoutException ? _retryPayment : null,
     );
@@ -362,7 +373,16 @@ class _PaymentPageState extends State<PaymentPage>
       _logger.info('Starting transaction submission');
       setState(() => _transactionLog = 'Initializing transaction...');
 
-      // Calculate total amount first
+      // Validate payment method
+      if (_selectedPaymentMethod == null) {
+        throw payment_errors.PaymentValidationError(
+          message: 'Payment method must be selected',
+        );
+      }
+
+      _logger.debug('Selected payment method: ${_selectedPaymentMethod.name}');
+
+      // Calculate total amount
       final totalAmount = await _calculateFinalTotal(restaurant);
 
       // Validate total amount
@@ -372,73 +392,62 @@ class _PaymentPageState extends State<PaymentPage>
         );
       }
 
-      // Validate cart items before submission
-      for (var item in restaurant.cart) {
-        if (item.menu.foodName.trim().isEmpty) {
-          throw payment_errors.PaymentValidationError(
-            message: 'Menu name is required for all items',
-          );
-        }
+      // Create transaction with payment method
+      final response = await _supabase
+          .from('transactions')
+          .insert({
+            'student_id': widget.StudentId,
+            'stall_id': _getStallId(restaurant),
+            'status': TransactionStatus.pending.name,
+            'payment_status': PaymentStatus.unpaid.name,
+            'payment_method': _selectedPaymentMethod.name
+                .toLowerCase(), // Ensure lowercase for DB enum
+            'total_amount': totalAmount,
+            'order_type': _selectedOrderType.name
+                .toLowerCase(), // Ensure lowercase for DB enum
+            'delivery_address': _selectedOrderType == OrderType.delivery
+                ? restaurant.deliveryAddress
+                : null,
+          })
+          .select()
+          .single();
 
-        if (item.selectedAddons.isNotEmpty) {
-          for (var addon in item.selectedAddons) {
-            if (addon.addonName.trim().isEmpty) {
-              throw payment_errors.PaymentValidationError(
-                message: 'Addon name is required for all selected add-ons',
-              );
-            }
-          }
-        }
-      }
+      _logger.info('Transaction created successfully: ${response['id']}');
 
-      await _transactionService.createNewTransaction(
-        studentId: widget.StudentId,
-        stallId: _getStallId(restaurant),
-        menuItems: _ensureValidMenuItems(restaurant.cart),
-        paymentStatus: 'paid',
-        totalAmount: totalAmount, // Add this parameter
-        orderType: _selectedOrderType,
-        deliveryAddress: _selectedOrderType == OrderType.delivery
-            ? restaurant.deliveryAddress
-            : null,
+      // Create transaction details
+      await _detailsService.createTransactionDetails(
+        response['id'],
+        _ensureValidMenuItems(restaurant.cart),
       );
 
       return true;
     } catch (e) {
       _logger.error('Transaction error:', e);
+      if (e is PostgrestException) {
+        _logger.error('Supabase error details:', {
+          'message': e.message,
+          'details': e.details,
+        });
+      }
       rethrow;
     }
   }
 
-  // Add new validation method
-  List<CartItem> _ensureValidMenuItems(List<CartItem> items) {
-    return items.map((item) {
-      // Ensure menu name is not empty
-      if (item.menu.foodName.trim().isEmpty) {
-        throw payment_errors.PaymentValidationError(
-          message: 'Menu name cannot be empty',
-        );
-      }
+  // Add payment method validation
+  bool _validatePaymentMethod(PaymentMethod method) {
+    final validMethods = ['cash', 'e_wallet', 'bank_transfer', 'credit_card'];
+    return validMethods.contains(method.name.toLowerCase());
+  }
 
-      // Validate addons if present
-      final validAddons = item.selectedAddons.map((addon) {
-        if (addon.addonName.trim().isEmpty) {
-          throw payment_errors.PaymentValidationError(
-            message: 'Addon name cannot be empty',
-          );
-        }
-        return addon;
-      }).toList();
+  // Update the payment method selection handler
+  void _handlePaymentMethodSelection(PaymentMethod method) {
+    if (!_validatePaymentMethod(method)) {
+      _showError('Invalid payment method selected');
+      return;
+    }
 
-      return CartItem(
-        menu: item.menu,
-        quantity: item.quantity,
-        selectedAddons: validAddons,
-        note: item.note?.trim() ?? '',
-        originalPrice: item.originalPrice ?? item.menu.price,
-        discountedPrice: item.discountedPrice ?? item.menu.price,
-      );
-    }).toList();
+    setState(() => _selectedPaymentMethod = method);
+    _logger.debug('Payment method selected: ${method.name}');
   }
 
   Future<int> _createTransactionWithRetry(
@@ -1082,12 +1091,7 @@ class _PaymentPageState extends State<PaymentPage>
                 borderRadius: BorderRadius.circular(16),
                 elevation: isSelected ? 2 : 1,
                 child: InkWell(
-                  onTap: () {
-                    setState(() => _selectedPaymentMethod = method);
-                    if (method != PaymentMethod.credit_card) {
-                      _moveToNextStep();
-                    }
-                  },
+                  onTap: () => _handlePaymentMethodSelection(method),
                   borderRadius: BorderRadius.circular(16),
                   child: Container(
                     padding: const EdgeInsets.all(16),
@@ -2392,6 +2396,18 @@ Final Total: $finalTotal
     }
 
     return finalTotal;
+  }
+
+  // Add this method before the build method
+  List<CartItem> _ensureValidMenuItems(List<CartItem> items) {
+    return items.map((item) {
+      if (item.menu.foodName.trim().isEmpty) {
+        throw payment_errors.PaymentValidationError(
+          message: 'Menu name is required for all items',
+        );
+      }
+      return item;
+    }).toList();
   }
 }
 

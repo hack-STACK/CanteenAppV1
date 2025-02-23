@@ -9,6 +9,27 @@ import 'package:kantin/utils/logger.dart';
 import 'package:kantin/Models/transaction_errors.dart'
     as tx_errors; // Add alias
 
+// Add this extension at the top of the file
+extension OrderListExtension on List<Map<String, dynamic>> {
+  List<Map<String, dynamic>> withVirtualIds() {
+    // Sort by created_at first to ensure correct ordering
+    final sorted = [...this]..sort((a, b) {
+        final aDate = DateTime.parse(a['created_at']);
+        final bDate = DateTime.parse(b['created_at']);
+        return bDate.compareTo(aDate); // Latest first
+      });
+
+    // Assign virtual IDs starting from the latest (highest number)
+    for (var i = 0; i < sorted.length; i++) {
+      sorted[i] = {
+        ...sorted[i],
+        'virtual_id': sorted.length - i, // Latest gets highest number
+      };
+    }
+    return sorted;
+  }
+}
+
 class TransactionService {
   final _supabase = Supabase.instance.client;
   final _logger = Logger();
@@ -97,7 +118,6 @@ class TransactionService {
         .asyncMap((orders) async {
           _logger.debug('Received ${orders.length} orders from stream');
 
-          // Jika tidak ada orders, kembalikan list kosong
           if (orders.isEmpty) {
             _logger.debug('No orders found for studentId: $studentId');
             return [];
@@ -106,38 +126,69 @@ class TransactionService {
           final List<Map<String, dynamic>> ordersWithDetails =
               await Future.wait(
             orders.map((order) async {
+              final localCreatedAt =
+                  DateTime.parse(order['created_at']).toLocal();
+
+              // Modified query to include add-on details
               final List<dynamic> details = await _supabase
                   .from('transaction_details')
                   .select('''
-                  id,
-                  quantity,
-                  unit_price,
-                  subtotal,
-                  notes,
-                  menu_name, 
-                  menu_price,
-                  menu_photo,
-                  addons, 
-                  original_price,
-                  discounted_price,
-                  applied_discount_percentage
-                ''')
+                    id,
+                    quantity,
+                    unit_price,
+                    subtotal,
+                    notes,
+                    menu_name,
+                    menu_price,
+                    menu_photo,
+                    original_price,
+                    discounted_price,
+                    applied_discount_percentage,
+                    addon_name,
+                    addon_price,
+                    addon_quantity,
+                    addon_subtotal
+                  ''')
                   .eq('transaction_id', order['id'])
                   .order('created_at', ascending: true);
 
+              // Transform details to include add-ons in a more structured way
+              final transformedDetails = details.map((detail) {
+                // Include add-on information if it exists
+                final Map<String, dynamic> addon = detail['addon_name'] != null
+                    ? {
+                        'addon_name': detail['addon_name'],
+                        'addon_price': detail['addon_price'] ?? 0.0,
+                        'addon_quantity': detail['addon_quantity'] ?? 0,
+                        'addon_subtotal': detail['addon_subtotal'] ?? 0.0,
+                      }
+                    : {};
+
+                return {
+                  ...detail,
+                  'addons': addon.isNotEmpty
+                      ? [addon]
+                      : [], // Include as array for consistency
+                };
+              }).toList();
+
+              _logger.debug(
+                  'Transformed details with addons: $transformedDetails');
+
               return {
                 ...order,
-                'items': details,
-                'created_at_timestamp':
-                    DateTime.parse(order['created_at']).millisecondsSinceEpoch,
+                'created_at': localCreatedAt.toIso8601String(),
+                'created_at_timestamp': localCreatedAt.millisecondsSinceEpoch,
+                'items': transformedDetails,
               };
             }),
           );
 
+          // Sort by local timestamp descending (latest first)
           ordersWithDetails.sort((a, b) => (b['created_at_timestamp'] as int)
               .compareTo(a['created_at_timestamp'] as int));
 
-          return ordersWithDetails;
+          return ordersWithDetails.withVirtualIds();
         });
   }
 
@@ -634,26 +685,16 @@ class TransactionService {
             applied_discount_percentage,
             original_price,
             discounted_price,
+            transaction:transaction_id(
+              payment_method,
+              payment_status
+            ),
             menu:menu_id (
               id, 
               food_name,
               photo,
               price,
               stall:stalls (*)
-            ),
-            addon_items:transaction_addon_details (
-              id,
-              quantity,
-              unit_price,
-              subtotal,
-              addon:addon_id (
-                id,
-                addon_name,
-                price,
-                is_required,
-                stock_quantity,
-                Description
-              )
             )
           ''').eq('transaction_id', orderId);
 
@@ -801,67 +842,44 @@ class TransactionService {
       _logger.info(
           'Fetching static order details for transaction: $transactionId');
 
-      // First fetch the main transaction details
-      final transactionDetails =
-          await _supabase.from('transaction_details').select('''
+      final response = await _supabase.from('transaction_details').select('''
             id,
             transaction_id,
             menu_id,
+            menu_name,
             quantity,
             unit_price,
-            original_price,
-            discounted_price,
             subtotal,
             notes,
+            original_price,
+            discounted_price,
+            applied_discount_percentage,
+            created_at,
+            transaction:transaction_id(
+              payment_method,
+              payment_status
+            ),
             menu:menu_id (
               id,
               food_name,
-              photo
+              photo,
+              description,
+              price,
+              stall:stalls (
+                id,
+                nama_stalls,
+                image_url,
+                Banner_img,
+                deskripsi
+              )
             )
           ''').eq('transaction_id', transactionId);
 
-      // Fetch addon details for all transaction details
-      final transactionDetailIds =
-          (transactionDetails as List).map((detail) => detail['id']).toList();
-
-      final addonDetails =
-          await _supabase.from('transaction_addon_details').select('''
-            id,
-            transaction_detail_id,
-            addon_id,
-            quantity,
-            unit_price,
-            subtotal,
-            addon:addon_id (
-              id,
-              addon_name
-            )
-          ''').filter('transaction_detail_id', 'in', '(${transactionDetailIds.join(',')})');
-
-      // Group addon details by transaction_detail_id
-      final Map<int, List<Map<String, dynamic>>> addonsByDetailId = {};
-      for (final addon in addonDetails) {
-        final detailId = addon['transaction_detail_id'] as int;
-        addonsByDetailId[detailId] = [
-          ...(addonsByDetailId[detailId] ?? []),
-          addon
-        ];
-      }
-
-      // Combine details with their addons
-      final enrichedDetails = transactionDetails.map((detail) {
-        return {
-          ...detail,
-          'addons': addonsByDetailId[detail['id']] ?? [],
-        };
-      }).toList();
-
-      _logger
-          .debug('Fetched ${enrichedDetails.length} items with static pricing');
+      _logger.debug('Fetched ${response.length} items with static pricing');
 
       return {
         'success': true,
-        'items': enrichedDetails,
+        'items': response,
       };
     } catch (e, stack) {
       _logger.error('Error fetching order tracking details', e, stack);

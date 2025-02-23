@@ -53,4 +53,59 @@ extension PaymentMethodExtension on PaymentMethod {
         return 'Pay with credit card';
     }
   }
+
+  static PaymentMethod? fromString(String? value) {
+    if (value == null || value.isEmpty) return null;
+
+    try {
+      return PaymentMethod.values.firstWhere(
+        (method) => method.name.toLowerCase() == value.toLowerCase(),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String get displayLabel {
+    switch (this) {
+      case PaymentMethod.cash:
+        return 'Cash Payment';
+      case PaymentMethod.e_wallet:
+        return 'E-Wallet';
+      case PaymentMethod.bank_transfer:
+        return 'Bank Transfer';
+      case PaymentMethod.credit_card:
+        return 'Credit Card';
+    }
+  }
+
+  static String getDisplayLabel(String? method) {
+    if (method == null) {
+      debugPrint('Payment method is null');
+      return 'Not Provided';
+    }
+
+    if (method.isEmpty) {
+      debugPrint('Payment method is empty string');
+      return 'Not Provided';
+    }
+
+    try {
+      final normalizedMethod = method.toLowerCase().trim();
+      debugPrint('Attempting to parse payment method: $normalizedMethod');
+
+      final paymentMethod = PaymentMethod.values.firstWhere(
+        (e) => e.name.toLowerCase() == normalizedMethod,
+        orElse: () {
+          debugPrint('No matching payment method found for: $normalizedMethod');
+          return PaymentMethod.cash; // Default to cash
+        },
+      );
+
+      return paymentMethod.label;
+    } catch (e) {
+      debugPrint('Error parsing payment method: $method, Error: $e');
+      return 'Not Provided';
+    }
+  }
 }

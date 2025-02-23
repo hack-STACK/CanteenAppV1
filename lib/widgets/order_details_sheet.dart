@@ -3,13 +3,16 @@ import 'package:intl/intl.dart';
 import 'package:kantin/models/enums/transaction_enums.dart'; // Changed Models to models
 import 'package:kantin/Services/Database/transaction_service.dart';
 import 'package:kantin/services/menu_service.dart';
+import 'package:kantin/utils/logger.dart';
 import 'package:kantin/utils/price_formatter.dart';
 import 'package:timeline_tile/timeline_tile.dart';
+import 'package:kantin/models/enums/payment_method_extension.dart';
 
 class OrderDetailsSheet extends StatelessWidget {
   final Map<String, dynamic> order;
   final VoidCallback onRefresh;
   final MenuService _menuService = MenuService();
+  Logger _logger = Logger();
 
   OrderDetailsSheet({
     super.key,
@@ -496,7 +499,11 @@ class OrderDetailsSheet extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          _buildPaymentRow('Payment Method', _getPaymentMethod()),
+          _buildPaymentRow(
+            'Payment Method',
+            _getPaymentMethod(),
+            valueColor: Theme.of(context).primaryColor,
+          ),
           _buildPaymentRow(
             'Payment Status',
             _getPaymentStatus(),
@@ -548,19 +555,22 @@ class OrderDetailsSheet extends StatelessWidget {
   }
 
   String _getPaymentMethod() {
-    final methodStr = order['payment_method']?.toString().toLowerCase();
-    if (methodStr == null) return 'Unknown Method';
+    // Extract payment method from nested transaction data if available
+    final methodStr = order['transaction']?['payment_method'] ??
+        order['payment_method']?.toString();
 
-    try {
-      final method = PaymentMethod.values.firstWhere(
-        (e) => e.name == methodStr,
-        orElse: () => throw Exception('Invalid payment method'),
-      );
-      return method.label;
-    } catch (e) {
-      debugPrint('Error parsing payment method: $e');
-      return 'Unknown Method';
+    _logger.debug('Raw payment method: $methodStr');
+
+    if (methodStr == null) {
+      _logger.warn('Payment method is null for order ${order['id']}');
+      return 'Not Provided';
     }
+
+    // Get display label from extension
+    final displayLabel = PaymentMethodExtension.getDisplayLabel(methodStr);
+    _logger.debug('Parsed payment method: $displayLabel');
+
+    return displayLabel;
   }
 
   String _getPaymentStatus() {

@@ -10,10 +10,16 @@ class TransactionDetailsService {
 
   Future<Map<String, dynamic>> getTransactionDetails(int transactionId) async {
     try {
-      final result = await _supabase
-          .from('transaction_details')
-          .select('*, menu:menu_id(*)')
-          .eq('transaction_id', transactionId);
+      final result = await _supabase.from('transaction_details').select('''
+            *,
+            menu:menu_id (
+              id,
+              food_name,
+              photo,
+              description,
+              price
+            )
+          ''').eq('transaction_id', transactionId);
 
       return {'success': true, 'items': result};
     } catch (e) {
@@ -146,6 +152,26 @@ class TransactionDetailsService {
         'error': e.toString(),
         'items': [],
       };
+    }
+  }
+
+  Future<void> createTransactionDetails(
+    int transactionId,
+    List<CartItem> items,
+  ) async {
+    try {
+      final details = await prepareTransactionDetails(items);
+
+      // Insert all details
+      for (var detail in details) {
+        await _supabase.from('transaction_details').insert({
+          ...detail,
+          'transaction_id': transactionId,
+        });
+      }
+    } catch (e) {
+      _logger.error('Error creating transaction details:', e);
+      throw Exception('Failed to create transaction details: $e');
     }
   }
 }

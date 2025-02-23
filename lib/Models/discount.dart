@@ -23,13 +23,15 @@ class Discount {
     String? type,
     bool? isActive,
     this.stallId,
-  })  : createdAt = createdAt ?? DateTime.now().toUtc(),  // Ensure UTC timestamps
+  })  : createdAt =
+            createdAt ?? DateTime.now().toUtc(), // Ensure UTC timestamps
         updatedAt = updatedAt ?? DateTime.now().toUtc(),
         type = type ?? 'mainPrice',
         isActive = isActive ?? true {
     // Validate type against allowed values
     if (!validTypes.contains(this.type)) {
-      throw ArgumentError('Invalid discount type: ${this.type}. Must be one of: $validTypes');
+      throw ArgumentError(
+          'Invalid discount type: ${this.type}. Must be one of: $validTypes');
     }
   }
 
@@ -53,9 +55,14 @@ class Discount {
     );
   }
 
+  factory Discount.fromJson(Map<String, dynamic> json) {
+    // Reuse existing fromMap logic since JSON structure matches
+    return Discount.fromMap(json);
+  }
+
   Map<String, dynamic> toMap() {
     return {
-      if (id != 0) 'id': id,  // Only include id if it's not 0 (new record)
+      if (id != 0) 'id': id, // Only include id if it's not 0 (new record)
       'discount_name': discountName,
       'discount_percentage': discountPercentage,
       'start_date': startDate.toUtc().toIso8601String(),

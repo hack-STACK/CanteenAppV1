@@ -2,13 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:kantin/models/enums/transaction_enums.dart'; // Changed Models to models
 import 'package:kantin/Services/Database/transaction_service.dart';
+import 'package:kantin/services/menu_service.dart';
+import 'package:kantin/utils/price_formatter.dart';
 import 'package:timeline_tile/timeline_tile.dart';
 
 class OrderDetailsSheet extends StatelessWidget {
   final Map<String, dynamic> order;
   final VoidCallback onRefresh;
+  final MenuService _menuService = MenuService();
 
-  const OrderDetailsSheet({
+  OrderDetailsSheet({
     super.key,
     required this.order,
     required this.onRefresh,
@@ -24,24 +27,36 @@ class OrderDetailsSheet extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          _buildDragHandle(),
           _buildHeader(context),
           Expanded(
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildOrderProgress(context),
-                  _buildDeliveryInfo(context),
-                  _buildOrderDetails(context),
-                  _buildPaymentSummary(context),
-                  if (_showActionButtons(order['status']))
-                    _buildActionButtons(context),
-                  const SizedBox(height: 16),
-                ],
-              ),
+            child: CustomScrollView(
+              slivers: [
+                SliverToBoxAdapter(child: _buildOrderProgress(context)),
+                SliverToBoxAdapter(child: _buildDeliveryInfo(context)),
+                _buildOrderItems(context),
+                SliverToBoxAdapter(child: _buildPaymentDetails(context)),
+                if (_showActionButtons(order['status']))
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: _buildActionButtons(context),
+                  ),
+              ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildDragHandle() {
+    return Container(
+      width: 40,
+      height: 4,
+      margin: const EdgeInsets.symmetric(vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.grey[300],
+        borderRadius: BorderRadius.circular(2),
       ),
     );
   }
@@ -77,9 +92,8 @@ class OrderDetailsSheet extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    DateFormat('MMM d, y • h:mm a').format(
-                      DateTime.parse(order['created_at']),
-                    ),
+                    DateFormat('MMM d, y • h:mm a')
+                        .format(DateTime.parse(order['created_at']).toLocal()),
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: Colors.grey[600],
                         ),
@@ -246,35 +260,201 @@ class OrderDetailsSheet extends StatelessWidget {
     );
   }
 
-  Widget _buildOrderDetails(BuildContext context) {
-    final items = order['items'] as List?;
+  Widget _buildOrderItems(BuildContext context) {
+    return FutureBuilder<Map<String, dynamic>>(
+      future: _fetchStaticOrderDetails(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return SliverToBoxAdapter(
+            child: Center(
+              child: Text('Error loading order details: ${snapshot.error}'),
+            ),
+          );
+        }
 
-    if (items == null || items.isEmpty) {
-      return Container(
-        margin: const EdgeInsets.all(16),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.grey.shade200,
-              blurRadius: 10,
-              offset: const Offset(0, 5),
+        if (!snapshot.hasData) {
+          return const SliverToBoxAdapter(
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        final items = snapshot.data!['items'] as List;
+
+        return SliverList(
+          delegate: SliverChildBuilderDelegate(
+            (context, index) => _buildOrderItem(context, items[index]),
+            childCount: items.length,
+          ),
+        );
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>> _fetchStaticOrderDetails() async {
+    try {
+      final transactionService = TransactionService();
+      final result =
+          await transactionService.fetchOrderTrackingDetails(order['id']);
+
+      if (!result['success']) {
+        throw Exception(result['error'] ?? 'Failed to fetch order details');
+      }
+
+      return {
+        'items': result['items'],
+        'total': (result['items'] as List).fold<double>(
+          0,
+          (sum, item) => sum + ((item['subtotal'] as num).toDouble()),
+        )
+      };
+    } catch (e) {
+      debugPrint('Error fetching static order details: $e');
+      rethrow;
+    }
+  }
+
+  Widget _buildOrderItem(BuildContext context, Map<String, dynamic> item) {
+    // Extract values from transaction_details
+    final originalPrice = (item['original_price'] as num?)?.toDouble() ?? 0.0;
+    final discountedPrice =
+        (item['discounted_price'] as num?)?.toDouble() ?? originalPrice;
+    final quantity = item['quantity'] as int? ?? 1;
+    final discountPercentage =
+        (item['applied_discount_percentage'] as num?)?.toDouble() ?? 0.0;
+    final notes = item['notes'] as String?;
+    final menuItem = item['menu'] ?? {};
+    final menuName = menuItem['food_name'] ?? 'Unknown Item';
+    final menuPhoto = menuItem['photo'] as String?;
+
+    final hasDiscount = discountPercentage > 0;
+    final savings = (originalPrice - discountedPrice) * quantity;
+    final subtotal = discountedPrice * quantity;
+
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (menuPhoto != null)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.network(
+                  menuPhoto,
+                  width: 60,
+                  height: 60,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    width: 60,
+                    height: 60,
+                    color: Colors.grey[200],
+                    child: const Icon(Icons.fastfood, color: Colors.grey),
+                  ),
+                ),
+              ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    menuName,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                  if (notes != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      'Note: $notes',
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 12,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '${quantity}x',
+                          style: TextStyle(
+                            color: Colors.blue.shade700,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      if (hasDiscount) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.red.shade50,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            '-${discountPercentage.round()}%',
+                            style: TextStyle(
+                              color: Colors.red.shade700,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (hasDiscount)
+                  Text(
+                    PriceFormatter.format(originalPrice * quantity),
+                    style: TextStyle(
+                      decoration: TextDecoration.lineThrough,
+                      color: Colors.grey[600],
+                      fontSize: 13,
+                    ),
+                  ),
+                Text(
+                  PriceFormatter.format(subtotal),
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: hasDiscount ? Colors.red.shade700 : Colors.black87,
+                  ),
+                ),
+                if (savings > 0)
+                  Text(
+                    'Save ${PriceFormatter.format(savings)}',
+                    style: TextStyle(
+                      color: Colors.green.shade700,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+              ],
             ),
           ],
         ),
-        child: Center(
-          child: Text(
-            'No items found',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.grey[600],
-                ),
-          ),
-        ),
-      );
-    }
+      ),
+    );
+  }
 
+  Widget _buildPaymentDetails(BuildContext context) {
     return Container(
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(16),
@@ -294,288 +474,43 @@ class OrderDetailsSheet extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(Icons.receipt_long, color: Theme.of(context).primaryColor),
+              Icon(Icons.payment, color: Theme.of(context).primaryColor),
               const SizedBox(width: 8),
               Text(
-                'Order Items',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleMedium
-                    ?.copyWith(fontWeight: FontWeight.bold),
+                'Payment Details',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
               ),
             ],
           ),
           const SizedBox(height: 16),
-          ...items.map((item) => _buildItemRow(context, item)),
-          if (order['notes']?.isNotEmpty ?? false) ...[
-            const Divider(height: 24),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Icon(Icons.note, size: 16, color: Colors.amber),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    order['notes'] ?? '',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Colors.grey[600],
-                        ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildItemRow(BuildContext context, dynamic item) {
-    try {
-      final quantity = item['quantity'] as int? ?? 0;
-      final menuItem = item['menu'] as Map<String, dynamic>?;
-      final addons =
-          (item['addons'] as List?)?.cast<Map<String, dynamic>>() ?? [];
-
-      if (menuItem == null) {
-        return _buildErrorCard(context, 'Menu item details not found');
-      }
-
-      final menuPrice = (menuItem['price'] as num?)?.toDouble() ?? 0;
-      final menuSubtotal = menuPrice * quantity;
-
-      return Card(
-        elevation: 2,
-        margin: const EdgeInsets.symmetric(vertical: 8),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: Colors.grey.shade200),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Quantity Badge
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).primaryColor.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: Theme.of(context).primaryColor.withOpacity(0.3),
-                      ),
-                    ),
-                    child: Text(
-                      '${quantity}x',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Theme.of(context).primaryColor,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  // Item Details
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          menuItem['food_name'] ?? 'Unknown Item',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 16,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          NumberFormat.currency(
-                            locale: 'id',
-                            symbol: 'Rp ',
-                            decimalDigits: 0,
-                          ).format(menuSubtotal),
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey[600],
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        if (addons.isNotEmpty) ...[
-                          const SizedBox(height: 12),
-                          const Divider(),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Add-ons:',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.grey[600],
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          ...addons
-                              .map((addon) => _buildAddonItem(context, addon)),
-                        ],
-                      ],
-                    ),
-                  ),
-                  // Total Price
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(
-                        NumberFormat.currency(
-                          locale: 'id',
-                          symbol: 'Rp ',
-                          decimalDigits: 0,
-                        ).format(_calculateItemTotal(menuSubtotal, addons)),
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
-                      if (addons.isNotEmpty)
-                        Text(
-                          'Includes add-ons',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.grey[500],
-                          ),
-                        ),
-                    ],
-                  ),
-                ],
-              ),
-            ],
+          _buildPaymentRow('Payment Method', _getPaymentMethod()),
+          _buildPaymentRow(
+            'Payment Status',
+            _getPaymentStatus(),
+            valueColor: _getPaymentStatusColor(),
           ),
-        ),
-      );
-    } catch (e, stack) {
-      debugPrint('Error building item row: $e\n$stack');
-      return _buildErrorCard(context, 'Error displaying item');
-    }
-  }
-
-  Widget _buildAddonItem(BuildContext context, Map<String, dynamic> addon) {
-    try {
-      final addonData = addon['addon'] as Map<String, dynamic>?;
-      if (addonData == null) return const SizedBox.shrink();
-
-      final addonQuantity = addon['quantity'] as int? ?? 0;
-      final addonPrice = (addonData['price'] as num?)?.toDouble() ?? 0;
-      final addonSubtotal = addonPrice * addonQuantity;
-
-      return Padding(
-        padding: const EdgeInsets.only(left: 16, bottom: 8),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: Colors.grey[100],
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: const Icon(Icons.add, size: 12, color: Colors.grey),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                '${addonData['addon_name']} (${addonQuantity}x)',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Colors.grey[700],
-                ),
-              ),
-            ),
-            Text(
-              NumberFormat.currency(
-                locale: 'id',
-                symbol: 'Rp ',
-                decimalDigits: 0,
-              ).format(addonSubtotal),
-              style: TextStyle(
-                fontSize: 13,
-                color: Colors.grey[600],
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      );
-    } catch (e) {
-      debugPrint('Error building addon item: $e');
-      return const SizedBox.shrink();
-    }
-  }
-
-  Widget _buildErrorCard(BuildContext context, String message) {
-    return Card(
-      color: Colors.red[50],
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            const Icon(Icons.error_outline, color: Colors.red),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                message,
-                style: const TextStyle(color: Colors.red),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  double _calculateItemTotal(
-      double menuSubtotal, List<Map<String, dynamic>> addons) {
-    try {
-      double total = menuSubtotal;
-      for (var addon in addons) {
-        final addonQuantity = addon['quantity'] as int? ?? 0;
-        final addonPrice = (addon['addon']?['price'] as num?)?.toDouble() ?? 0;
-        total += addonPrice * addonQuantity;
-      }
-      return total;
-    } catch (e) {
-      debugPrint('Error calculating total: $e');
-      return menuSubtotal;
-    }
-  }
-
-  Widget _buildPaymentSummary(BuildContext context) {
-    final subtotal = order['total_amount'] as num;
-    const deliveryFee = 2000;
-    final total = subtotal + deliveryFee;
-
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        children: [
-          _buildPriceRow('Subtotal', subtotal.toDouble()),
-          _buildPriceRow('Delivery Fee', deliveryFee.toDouble()),
           const Divider(height: 24),
-          _buildPriceRow('Total', total.toDouble(), isTotal: true),
+          _buildPaymentRow(
+            'Total Amount',
+            _formatPrice(order['total_amount'] ?? 0),
+            valueStyle: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).primaryColor,
+                ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildPriceRow(String label, double amount, {bool isTotal = false}) {
+  Widget _buildPaymentRow(
+    String label,
+    String value, {
+    Color? valueColor,
+    TextStyle? valueStyle,
+  }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -583,23 +518,80 @@ class OrderDetailsSheet extends StatelessWidget {
         children: [
           Text(
             label,
-            style: TextStyle(
-              fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
+            style: const TextStyle(
+              color: Colors.grey,
+              fontWeight: FontWeight.w500,
             ),
           ),
           Text(
-            NumberFormat.currency(
-              locale: 'id',
-              symbol: 'Rp ',
-              decimalDigits: 0,
-            ).format(amount),
-            style: TextStyle(
-              fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
-            ),
+            value,
+            style: valueStyle ??
+                TextStyle(
+                  fontWeight: FontWeight.w500,
+                  color: valueColor,
+                ),
           ),
         ],
       ),
     );
+  }
+
+  String _getPaymentMethod() {
+    final methodStr = order['payment_method']?.toString().toLowerCase();
+    if (methodStr == null) return 'Unknown Method';
+
+    try {
+      final method = PaymentMethod.values.firstWhere(
+        (e) => e.name == methodStr,
+        orElse: () => throw Exception('Invalid payment method'),
+      );
+      return method.label;
+    } catch (e) {
+      debugPrint('Error parsing payment method: $e');
+      return 'Unknown Method';
+    }
+  }
+
+  String _getPaymentStatus() {
+    final statusStr =
+        order['payment_status']?.toString().toLowerCase() ?? 'unpaid';
+    try {
+      final status = PaymentStatus.values.firstWhere(
+        (e) => e.name == statusStr,
+        orElse: () => PaymentStatus.unpaid,
+      );
+      switch (status) {
+        case PaymentStatus.unpaid:
+          return 'Unpaid';
+        case PaymentStatus.paid:
+          return 'Paid';
+        case PaymentStatus.refunded:
+          return 'Refunded';
+      }
+    } catch (e) {
+      debugPrint('Error parsing payment status: $e');
+      return 'Unpaid';
+    }
+  }
+
+  Color _getPaymentStatusColor() {
+    final statusStr =
+        order['payment_status']?.toString().toLowerCase() ?? 'unpaid';
+    try {
+      final status = PaymentStatus.values.firstWhere(
+        (e) => e.name == statusStr,
+        orElse: () => PaymentStatus.unpaid,
+      );
+
+      return switch (status) {
+        PaymentStatus.paid => Colors.green,
+        PaymentStatus.unpaid => Colors.orange,
+        PaymentStatus.refunded => Colors.purple,
+      };
+    } catch (e) {
+      debugPrint('Error getting payment status color: $e');
+      return Colors.grey;
+    }
   }
 
   Widget _buildActionButtons(BuildContext context) {
@@ -735,5 +727,209 @@ class OrderDetailsSheet extends StatelessWidget {
 
   bool _showActionButtons(String status) {
     return status.toLowerCase() == 'pending';
+  }
+
+  String _formatPrice(num amount) {
+    return NumberFormat.currency(
+      locale: 'id',
+      symbol: 'Rp ',
+      decimalDigits: 0,
+    ).format(amount);
+  }
+
+  Widget _buildErrorItem(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.red.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.red.shade200),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.error_outline, color: Colors.red.shade700),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Error loading item details',
+              style: TextStyle(color: Colors.red.shade700),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLoadingItem() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 20,
+            height: 20,
+            margin: const EdgeInsets.only(right: 12),
+            child: const CircularProgressIndicator(strokeWidth: 2),
+          ),
+          const Text('Loading item details...'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAddons(BuildContext context, List<Map<String, dynamic>> addons) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Add-ons',
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            color: Colors.grey[700],
+            fontSize: 14,
+          ),
+        ),
+        const SizedBox(height: 8),
+        ...addons.map((addon) {
+          final addonData = addon['addon'];
+          final quantity = addon['quantity'] as int? ?? 1;
+          final price = (addon['unit_price'] as num?)?.toDouble() ?? 0.0;
+          final subtotal = price * quantity;
+
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    '${quantity}x',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    addonData['addon_name'] ?? 'Unknown Add-on',
+                    style: const TextStyle(fontSize: 14),
+                  ),
+                ),
+                Text(
+                  _formatPrice(subtotal),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
+  Widget _buildOrderSummary() {
+    double subtotal = 0;
+    double totalSavings = 0;
+
+    for (var item in order['items']) {
+      final originalPrice = (item['original_price'] as num?)?.toDouble() ?? 0.0;
+      final discountedPrice =
+          (item['discounted_price'] as num?)?.toDouble() ?? originalPrice;
+      final quantity = (item['quantity'] as num?)?.toInt() ?? 1;
+
+      subtotal += discountedPrice * quantity;
+      totalSavings += (originalPrice - discountedPrice) * quantity;
+    }
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            _buildPriceRow('Subtotal', subtotal),
+            if (totalSavings > 0) ...[
+              const SizedBox(height: 8),
+              _buildSavingsRow('Total Savings', totalSavings),
+            ],
+            const Divider(),
+            _buildPriceRow('Total', subtotal, isTotal: true),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPriceRow(String label, double amount, {bool isTotal = false}) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontWeight: isTotal ? FontWeight.bold : FontWeight.w500,
+            fontSize: isTotal ? 16 : 14,
+          ),
+        ),
+        Text(
+          _formatPrice(amount),
+          style: TextStyle(
+            fontWeight: isTotal ? FontWeight.bold : FontWeight.w500,
+            fontSize: isTotal ? 16 : 14,
+            color: isTotal ? Colors.green.shade700 : Colors.grey[800],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSavingsRow(String label, double amount) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.green.shade50,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              color: Colors.green.shade700,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          Text(
+            _formatPrice(amount),
+            style: TextStyle(
+              color: Colors.green.shade700,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+extension StringExtension on String {
+  String capitalize() {
+    return "${this[0].toUpperCase()}${substring(1).toLowerCase()}";
   }
 }

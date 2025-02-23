@@ -65,6 +65,25 @@ class Transaction {
       ),
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'student_id': studentId,
+      'student_name': studentName,
+      'stall_id': stallId,
+      'total_amount': totalAmount,
+      'order_type': orderType.name,
+      'delivery_address': deliveryAddress,
+      'notes': notes,
+      'status': status.name,
+      'payment_status': paymentStatus.name,
+      'created_at': createdAt.toIso8601String(),
+      'details': details.map((detail) => detail.toJson()).toList(),
+      'payment_method': paymentMethod.name,
+      'items': details.map((detail) => detail.toJson()).toList(),
+    };
+  }
 }
 
 class TransactionDetail {
@@ -102,6 +121,19 @@ class TransactionDetail {
               .toList() ??
           [],
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'menu_id': menuId,
+      'quantity': quantity,
+      'unit_price': unitPrice,
+      'subtotal': subtotal,
+      'notes': notes,
+      'menu': menu?.toJson(),
+      'addons': addons.map((addon) => addon.toJson()).toList(),
+    };
   }
 }
 

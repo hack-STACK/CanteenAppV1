@@ -262,7 +262,7 @@ class _OrderCardState extends State<OrderCard> {
                         const SizedBox(width: 4),
                         Text(
                           DateFormat('MMM d, y • h:mm a')
-                              .format(widget.order.createdAt),
+                              .format(widget.order.createdAt.toLocal()),
                           style: TextStyle(
                             color: Colors.grey[600],
                             fontSize: 12,

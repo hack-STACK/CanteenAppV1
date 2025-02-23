@@ -35,9 +35,30 @@ class OrderItem {
   });
 
   factory OrderItem.fromJson(Map<String, dynamic> json) {
-    final menuPrice =
-        json['menu'] != null ? (json['menu']['price'] ?? 0).toDouble() : 0.0;
+    Menu? menuItem;
+    if (json['menu'] != null) {
+      menuItem = Menu.fromJson(json['menu']);
+      print('DEBUG OrderItem Menu Info:');
+      print('Menu Item: ${menuItem.foodName}');
+      print('Base Price: ${menuItem.price}');
+      print('Original Price: ${menuItem.originalPrice}');
+      print('Discounted Price: ${menuItem.discountedPrice}');
+      print('Has Discount: ${menuItem.hasDiscount}');
+    }
+
     final quantity = json['quantity'] ?? 1;
+    final unitPrice = menuItem?.discountedPrice ?? menuItem?.price ?? 0.0;
+    final originalPrice = menuItem?.originalPrice ?? unitPrice;
+
+    print('DEBUG OrderItem Calculations:');
+    print('Unit Price: $unitPrice');
+    print('Original Price: $originalPrice');
+    print('Quantity: $quantity');
+
+    final subtotal =
+        (json['subtotal'] as num?)?.toDouble() ?? (unitPrice * quantity);
+
+    print('Calculated Subtotal: $subtotal');
 
     List<OrderAddonDetail> addonDetails = [];
 
@@ -63,16 +84,28 @@ class OrderItem {
       addonId: json['addon_id'],
       userId: json['user_id'],
       stallId: json['stall_id'],
-      menu: json['menu'] != null ? Menu.fromJson(json['menu']) : null,
+      menu: menuItem,
       quantity: quantity,
-      unitPrice: menuPrice,
-      subtotal: (json['subtotal'] ?? (menuPrice * quantity)).toDouble(),
+      unitPrice: unitPrice,
+      subtotal: subtotal,
       notes: json['notes'],
       status: json['status'] ?? 'pending',
       addons: addonDetails,
       createdAt: DateTime.parse(json['created_at']),
     );
   }
+
+  // Update calculation methods
+  bool get hasDiscount => menu?.hasDiscount ?? false;
+
+  double get originalUnitPrice =>
+      menu?.originalPrice ?? menu?.price ?? unitPrice;
+
+  double get originalSubtotal => originalUnitPrice * quantity;
+
+  double get savings => hasDiscount ? originalSubtotal - subtotal : 0;
+
+  double get discountPercentage => menu?.discountPercent ?? 0;
 }
 
 class OrderAddonDetail {
@@ -110,5 +143,16 @@ class OrderAddonDetail {
       unitPrice: price,
       subtotal: price * quantity,
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'addon_id': addonId,
+      'quantity': quantity,
+      'unit_price': unitPrice,
+      'subtotal': subtotal,
+      'addon': addon?.toJson(),
+    };
   }
 }

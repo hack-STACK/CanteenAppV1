@@ -1,4 +1,5 @@
 import 'package:kantin/Models/Restaurant.dart';
+import 'package:kantin/Models/menu_cart_item.dart';
 import 'package:kantin/Models/menus.dart';
 import 'package:kantin/Models/orderItem.dart';
 import 'package:kantin/Models/student_models.dart';
@@ -322,10 +323,13 @@ class OrderService {
     try {
       _logger.info('Fetching order items for order #$orderId');
 
-      final response = await _client.from('order_items').select('''
+      // Fix the query syntax for nested selects
+      final response = await _client.from('transaction_details').select('''
         id,
         quantity,
         unit_price,
+        subtotal,
+        notes,
         menu:menu_id (
           id,
           food_name,
@@ -337,61 +341,100 @@ class OrderService {
           category,
           rating,
           total_ratings,
-          stall:stall_id (
-            id,
-            nama_stalls
-          )
+          stall_id
         ),
-        addon:food_addons( 
+        addons:transaction_addon_details (
           id,
-          addon_name,
-          price,
-          is_available,
-          Description
-        ),
-        status,
-        transaction_id,
-        created_at
+          quantity,
+          unit_price,
+          subtotal,
+          addon:addon_id (
+            id,
+            addon_name,
+            price
+          )
+        )
       ''').eq('transaction_id', orderId).order('created_at');
 
       _logger.debug('Received ${response.length} order items');
 
-      return response.map((item) {
-        final menu = item['menu'];
-        final addon = item['addon'];
-        final quantity = item['quantity'] ?? 1;
-        final unitPrice =
-            (item['unit_price'] ?? menu?['price'] ?? 0).toDouble();
-        final subtotal = unitPrice * quantity;
+      final List<OrderItem> items = [];
+      for (var item in response) {
+        try {
+          final menu = item['menu'];
+          if (menu == null) {
+            _logger.info('Menu data is null for order item ${item['id']}');
+            continue;
+          }
 
-        List<OrderAddonDetail> addonDetails = [];
+          // Ensure the menu has a stall_id
+          if (menu['stall_id'] == null) {
+            _logger.info('Stall ID is missing for menu ${menu['id']}');
+            menu['stall_id'] = 0;
+          }
 
-        if (addon != null) {
-          final addonPrice = (addon['price'] as num?)?.toDouble() ?? 0.0;
-          addonDetails.add(OrderAddonDetail(
-            id: addon['id'].toString(),
-            addonId: addon['id'],
-            addonName: addon['addon_name'] ?? 'Unknown Addon',
-            price: addonPrice,
+          final addons = item['addons'] as List<dynamic>? ?? [];
+          final quantity = item['quantity'] ?? 1;
+
+          // Fix type conversion for prices
+          final unitPrice = (item['unit_price'] is int)
+              ? (item['unit_price'] as int).toDouble()
+              : (item['unit_price'] ?? menu['price'] ?? 0).toDouble();
+
+          final subtotal = (item['subtotal'] is int)
+              ? (item['subtotal'] as int).toDouble()
+              : item['subtotal']?.toDouble() ?? (unitPrice * quantity);
+
+          List<OrderAddonDetail> addonDetails = [];
+
+          // Process addons with proper type conversion
+          for (var addon in addons) {
+            final addonData = addon['addon'];
+            if (addonData != null) {
+              final addonQuantity = addon['quantity'] ?? 1;
+
+              // Fix addon price conversion
+              final addonUnitPrice = (addon['unit_price'] is int)
+                  ? (addon['unit_price'] as int).toDouble()
+                  : (addon['unit_price'] ?? addonData['price'] ?? 0).toDouble();
+
+              final addonSubtotal = (addon['subtotal'] is int)
+                  ? (addon['subtotal'] as int).toDouble()
+                  : addon['subtotal']?.toDouble() ??
+                      (addonUnitPrice * addonQuantity);
+
+              addonDetails.add(OrderAddonDetail(
+                id: addon['id'].toString(),
+                addonId: addonData['id'],
+                addonName: addonData['addon_name'] ?? 'Unknown Addon',
+                price: addonUnitPrice,
+                quantity: addonQuantity,
+                unitPrice: addonUnitPrice,
+                subtotal: addonSubtotal,
+              ));
+            }
+          }
+
+          items.add(OrderItem(
+            id: item['id'].toString(),
+            orderId: orderId,
+            menu: Menu.fromJson(menu),
             quantity: quantity,
-            unitPrice: addonPrice,
-            subtotal: addonPrice * quantity,
+            unitPrice: unitPrice,
+            subtotal: subtotal,
+            status: 'pending', // Status will be managed at transaction level
+            addons: addonDetails,
+            createdAt:
+                DateTime.now(), // Use transaction creation date if needed
           ));
+        } catch (itemError, stack) {
+          _logger.error('Error processing order item: $itemError');
+          _logger.error('Stack trace: $stack');
+          continue;
         }
+      }
 
-        return OrderItem(
-          id: item['id'].toString(),
-          orderId: item['transaction_id'],
-          menu: menu != null ? Menu.fromJson(menu) : null,
-          quantity: quantity,
-          unitPrice: unitPrice,
-          subtotal: subtotal +
-              (addonDetails.isNotEmpty ? addonDetails[0].subtotal : 0),
-          status: item['status'] ?? 'pending',
-          addons: addonDetails,
-          createdAt: DateTime.parse(item['created_at']),
-        );
-      }).toList();
+      return items;
     } catch (e, stack) {
       _logger.error('Failed to fetch order items', e, stack);
       throw Exception('Failed to fetch order items: $e');

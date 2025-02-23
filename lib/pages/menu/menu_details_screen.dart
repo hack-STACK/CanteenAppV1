@@ -12,7 +12,6 @@ import 'package:kantin/Models/menus.dart';
 import 'package:kantin/Models/menus_addon.dart';
 import 'package:kantin/services/database/foodService.dart';
 import 'package:kantin/services/database/discountService.dart';
-import 'package:kantin/theme/merchant_theme.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:kantin/widgets/addon_dialog.dart';
 import 'package:flutter/services.dart';
@@ -714,206 +713,203 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
       onWillPop: _onWillPop,
       child: ScaffoldMessenger(
         key: _scaffoldKey,
-        child: Theme(
-          data: MerchantTheme.lightTheme(),
-          child: Scaffold(
-            appBar: AppBar(
-              title: Text(_currentMenu.foodName),
-              actions: [
-                if (_hasUnsavedChanges)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: Center(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .primary
-                              .withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          'Unsaved',
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.primary,
-                            fontSize: 12,
-                          ),
+        child: Scaffold(
+          appBar: AppBar(
+            title: Text(_currentMenu.foodName),
+            actions: [
+              if (_hasUnsavedChanges)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .primary
+                            .withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        'Unsaved',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.primary,
+                          fontSize: 12,
                         ),
                       ),
                     ),
                   ),
-                IconButton(
-                  icon: const Icon(Icons.qr_code),
-                  onPressed: _showQRCode,
                 ),
-                PopupMenuButton(
-                  itemBuilder: (context) => [
-                    const PopupMenuItem(
-                      value: 'duplicate',
-                      child: Text('Duplicate Menu'),
-                    ),
-                    const PopupMenuItem(
-                      value: 'delete',
-                      child: Text('Delete Menu',
-                          style: TextStyle(color: Colors.red)),
-                    ),
-                  ],
-                  onSelected: (value) {
-                    if (value == 'duplicate') _duplicateMenu();
-                    if (value == 'delete') _confirmDelete();
-                  },
-                ),
-              ],
-            ),
-            body: GestureDetector(
-              onTap: () => FocusScope.of(context).unfocus(),
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : SingleChildScrollView(
-                      controller: _scrollController,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          MenuImageGallery(
-                            images: _imagePaths,
-                            onImagePicked: _handleImagePicked,
-                            onImageRemoved: _removeImage,
-                            isLoading: _isLoading,
-                          ),
-                          if (_hasUnsavedChanges &&
-                              MediaQuery.of(context).size.width >= 600)
-                            Padding(
-                              padding: const EdgeInsets.all(16),
-                              child: Card(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .primary
-                                    .withOpacity(0.1),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(16),
-                                  child: Row(
-                                    children: [
-                                      const Icon(Icons.info_outline),
-                                      const SizedBox(width: 16),
-                                      const Expanded(
-                                        child: Text('You have unsaved changes'),
-                                      ),
-                                      TextButton(
-                                        onPressed: () {
-                                          _formKey.currentState?.reset();
-                                          setState(
-                                              () => _hasUnsavedChanges = false);
-                                        },
-                                        child: const Text('Discard'),
-                                      ),
-                                    ],
-                                  ),
+              IconButton(
+                icon: const Icon(Icons.qr_code),
+                onPressed: _showQRCode,
+              ),
+              PopupMenuButton(
+                itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: 'duplicate',
+                    child: Text('Duplicate Menu'),
+                  ),
+                  const PopupMenuItem(
+                    value: 'delete',
+                    child: Text('Delete Menu',
+                        style: TextStyle(color: Colors.red)),
+                  ),
+                ],
+                onSelected: (value) {
+                  if (value == 'duplicate') _duplicateMenu();
+                  if (value == 'delete') _confirmDelete();
+                },
+              ),
+            ],
+          ),
+          body: GestureDetector(
+            onTap: () => FocusScope.of(context).unfocus(),
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : SingleChildScrollView(
+                    controller: _scrollController,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        MenuImageGallery(
+                          images: _imagePaths,
+                          onImagePicked: _handleImagePicked,
+                          onImageRemoved: _removeImage,
+                          isLoading: _isLoading,
+                        ),
+                        if (_hasUnsavedChanges &&
+                            MediaQuery.of(context).size.width >= 600)
+                          Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Card(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .primary
+                                  .withOpacity(0.1),
+                              child: Padding(
+                                padding: const EdgeInsets.all(16),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.info_outline),
+                                    const SizedBox(width: 16),
+                                    const Expanded(
+                                      child: Text('You have unsaved changes'),
+                                    ),
+                                    TextButton(
+                                      onPressed: () {
+                                        _formKey.currentState?.reset();
+                                        setState(
+                                            () => _hasUnsavedChanges = false);
+                                      },
+                                      child: const Text('Discard'),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
-                          Form(
-                            key: _formKey,
-                            onChanged: _onFormChanged,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                _buildBasicInfoSection(),
-                                const Divider(height: 32),
-                                _buildPriceBreakdown(),
-                                _buildPricingSection(),
-                                const Divider(height: 32),
-                                _buildAddonsSection(),
-                                const Divider(height: 32),
-                                _buildDiscountSection(),
-                                const Divider(height: 32),
-                                _buildAvailabilitySection(),
-                                // Add bottom padding to account for the bottom bar
-                                SizedBox(height: _hasUnsavedChanges ? 80 : 16),
-                              ],
-                            ),
                           ),
-                        ],
-                      ),
-                    ),
-            ),
-            bottomNavigationBar: Container(
-              padding: EdgeInsets.only(
-                left: 16,
-                right: 16,
-                bottom: MediaQuery.of(context).padding.bottom + 16,
-                top: 16,
-              ),
-              decoration: BoxDecoration(
-                color: Theme.of(context).scaffoldBackgroundColor,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 8,
-                    offset: const Offset(0, -2),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  if (_hasUnsavedChanges) ...[
-                    Expanded(
-                      child: Text(
-                        'You have unsaved changes',
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.primary,
+                        Form(
+                          key: _formKey,
+                          onChanged: _onFormChanged,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildBasicInfoSection(),
+                              const Divider(height: 32),
+                              _buildPriceBreakdown(),
+                              _buildPricingSection(),
+                              const Divider(height: 32),
+                              _buildAddonsSection(),
+                              const Divider(height: 32),
+                              _buildDiscountSection(),
+                              const Divider(height: 32),
+                              _buildAvailabilitySection(),
+                              // Add bottom padding to account for the bottom bar
+                              SizedBox(height: _hasUnsavedChanges ? 80 : 16),
+                            ],
+                          ),
                         ),
-                      ),
+                      ],
                     ),
-                    TextButton(
-                      onPressed: () {
-                        _formKey.currentState?.reset();
-                        setState(() => _hasUnsavedChanges = false);
-                      },
-                      child: const Text('Discard'),
-                    ),
-                    const SizedBox(width: 8),
-                  ],
+                  ),
+          ),
+          bottomNavigationBar: Container(
+            padding: EdgeInsets.only(
+              left: 16,
+              right: 16,
+              bottom: MediaQuery.of(context).padding.bottom + 16,
+              top: 16,
+            ),
+            decoration: BoxDecoration(
+              color: Theme.of(context).scaffoldBackgroundColor,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 8,
+                  offset: const Offset(0, -2),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                if (_hasUnsavedChanges) ...[
                   Expanded(
-                    flex: _hasUnsavedChanges ? 0 : 1,
-                    child: ElevatedButton(
-                      onPressed: _isSaving ? null : _saveChanges,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Theme.of(context).colorScheme.primary,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        minimumSize: const Size(double.infinity, 48),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (_isSaving)
-                            const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor:
-                                    AlwaysStoppedAnimation<Color>(Colors.white),
-                              ),
-                            )
-                          else
-                            const Icon(Icons.save),
-                          const SizedBox(width: 8),
-                          Text(_isSaving ? 'Saving...' : 'Save Changes'),
-                        ],
+                    child: Text(
+                      'You have unsaved changes',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
                       ),
                     ),
                   ),
+                  TextButton(
+                    onPressed: () {
+                      _formKey.currentState?.reset();
+                      setState(() => _hasUnsavedChanges = false);
+                    },
+                    child: const Text('Discard'),
+                  ),
+                  const SizedBox(width: 8),
                 ],
-              ),
+                Expanded(
+                  flex: _hasUnsavedChanges ? 0 : 1,
+                  child: ElevatedButton(
+                    onPressed: _isSaving ? null : _saveChanges,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Theme.of(context).colorScheme.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      minimumSize: const Size(double.infinity, 48),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (_isSaving)
+                          const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor:
+                                  AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                          )
+                        else
+                          const Icon(Icons.save),
+                        const SizedBox(width: 8),
+                        Text(_isSaving ? 'Saving...' : 'Save Changes'),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
-
-            // Remove the floating action button since we have a consistent bottom bar now
-            floatingActionButton: null,
           ),
+
+          // Remove the floating action button since we have a consistent bottom bar now
+          floatingActionButton: null,
         ),
       ),
     );

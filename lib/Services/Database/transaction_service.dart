@@ -1,12 +1,14 @@
+import 'package:kantin/Models/menu_cart_item.dart';
 import 'package:kantin/Models/transaction_model.dart';
 import 'package:kantin/Services/Database/refund_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:kantin/Models/Restaurant.dart';
-import 'package:kantin/utils/api_exception.dart';
+import 'package:kantin/utils/api_exception.dart'
+    hide TransactionError; // Hide TransactionError from api_exception
 import 'package:kantin/models/enums/transaction_enums.dart';
-import 'package:kantin/utils/logger.dart'; // Add this import
-// Use alias
-import 'package:kantin/Services/Database/studentService.dart';
+import 'package:kantin/utils/logger.dart';
+import 'package:kantin/Models/transaction_errors.dart'
+    as tx_errors; // Add alias
 
 class TransactionService {
   final _supabase = Supabase.instance.client;
@@ -17,107 +19,52 @@ class TransactionService {
     required int stallId,
     required double totalAmount,
     required OrderType orderType,
-    required List<CartItem> items,
+    required List<Map<String, dynamic>> details,
     String? deliveryAddress,
     String? notes,
   }) async {
     try {
-      _logger.info('Creating transaction...');
+      _logger.debug('Creating transaction with details: $details');
 
-      // Begin transaction creation
-      final transactionResponse = await _supabase
-          .from('transactions')
-          .insert({
-            'student_id': studentId,
-            'stall_id': stallId,
-            'total_amount': totalAmount,
-            'order_type': orderType.name,
-            'delivery_address': deliveryAddress,
-            'notes': notes,
-            'status': 'pending',
-            'payment_status': 'unpaid',
-          })
-          .select()
-          .single();
+      final response = await _supabase.rpc('create_transaction', params: {
+        'p_student_id': studentId,
+        'p_stall_id': stallId,
+        'p_total_amount': totalAmount,
+        'p_order_type': orderType.name.toLowerCase(),
+        'p_delivery_address': deliveryAddress,
+        'p_notes': notes,
+        'p_details': details.map((detail) {
+          // Properly format addon data
+          final addons = (detail['addons'] as List<Map<String, dynamic>>?)
+                  ?.map((addon) => {
+                        'addon_id': addon['addon_id'],
+                        'quantity': addon['quantity'],
+                        'unit_price': addon['unit_price'],
+                        'subtotal': addon['subtotal'],
+                        'addon_name': addon['addon_name'], // Add addon name
+                      })
+                  .toList() ??
+              [];
 
-      final transactionId = transactionResponse['id'];
-      _logger.info('Created transaction: $transactionId');
+          return {
+            'menu_id': detail['menu_id'],
+            'quantity': detail['quantity'],
+            'unit_price': detail['unit_price'],
+            'subtotal': detail['subtotal'],
+            'notes': detail['notes'],
+            'original_price': detail['original_price'],
+            'discounted_price': detail['discounted_price'],
+            'applied_discount_percentage':
+                detail['applied_discount_percentage'],
+            'addons': addons,
+          };
+        }).toList(),
+      });
 
-      // Create order items
-      for (var item in items) {
-        // Create main menu order item
-        await _supabase.from('order_items').insert({
-          'transaction_id': transactionId,
-          'menu_id': item.menu.id,
-          'user_id': await _getUserId(studentId),
-          'stall_id': stallId,
-          'quantity': item.quantity,
-          'status': 'pending',
-        });
-
-        // Create order items for addons
-        for (var addon in item.selectedAddons) {
-          await _supabase.from('order_items').insert({
-            'transaction_id': transactionId,
-            'menu_id': item.menu.id,
-            'addon_id': addon.id,
-            'user_id': await _getUserId(studentId),
-            'stall_id': stallId,
-            'quantity': item.quantity,
-            'status': 'pending',
-          });
-        }
-      }
-
-      // Create transaction details
-      for (var item in items) {
-        final detailResponse = await _supabase
-            .from('transaction_details')
-            .insert({
-              'transaction_id': transactionId,
-              'menu_id': item.menu.id,
-              'quantity': item.quantity,
-              'unit_price': item.menu.price,
-              'subtotal': item.menu.price * item.quantity,
-              'notes': item.note,
-            })
-            .select()
-            .single();
-
-        final detailId = detailResponse['id'];
-
-        // Create addon details if any
-        if (item.selectedAddons.isNotEmpty) {
-          for (var addon in item.selectedAddons) {
-            await _supabase.from('transaction_addon_details').insert({
-              'transaction_detail_id': detailId,
-              'addon_id': addon.id,
-              'quantity': item.quantity,
-              'unit_price': addon.price,
-              'subtotal': addon.price * item.quantity,
-            });
-          }
-        }
-      }
-
-      return transactionId;
-    } catch (e, stack) {
-      _logger.error('Failed to create transaction', e, stack);
-      throw Exception('Failed to create transaction: $e');
-    }
-  }
-
-  Future<int> _getUserId(int studentId) async {
-    try {
-      final response = await _supabase
-          .from('students')
-          .select('id_user')
-          .eq('id', studentId)
-          .single();
-      return response['id_user'];
+      return response['transaction_id'];
     } catch (e) {
-      _logger.error('Failed to get user ID', e);
-      throw Exception('Failed to get user ID: $e');
+      _logger.error('Create transaction error:', e);
+      throw tx_errors.TransactionError('Failed to create transaction: $e');
     }
   }
 
@@ -133,13 +80,11 @@ class TransactionService {
         'updated_at': DateTime.now().toIso8601String(),
       }).eq('id', transactionId);
 
-      // Update order items status
       await _supabase
           .from('order_items')
           .update({'status': 'processing'}).eq('transaction_id', transactionId);
     } catch (e) {
-      _logger.error('Failed to update payment status', e);
-      throw Exception('Failed to update payment status: $e');
+      throw tx_errors.TransactionError('Failed to update payment status : $e');
     }
   }
 
@@ -202,25 +147,7 @@ class TransactionService {
   }
 
   final RefundService _refundService = RefundService();
-  final StudentService _studentService = StudentService();
   static final bool _debug = false; // Set to false for release mode
-
-  // Add helper method to convert enum to database value
-  String _getStatusString(TransactionStatus status) {
-    return status.toString().split('.').last;
-  }
-
-  Future<Map<String, dynamic>> _handleDatabaseError(dynamic error) async {
-    final message = error.toString();
-    if (message.contains('not found')) {
-      throw ApiException('Resource not found. Please try again.');
-    } else if (message.contains('duplicate')) {
-      throw ApiException('This transaction already exists.');
-    } else if (message.contains('permission denied')) {
-      throw ApiException('You don\'t have permission to perform this action.');
-    }
-    throw ApiException('An unexpected error occurred: $message');
-  }
 
   Future<bool> canCreateNewOrder(int studentId) async {
     try {
@@ -230,7 +157,8 @@ class TransactionService {
           .eq('student_id', studentId)
           .not('status', 'in', ['completed', 'cancelled']).count();
 
-      return (activeOrders.count ?? 0) < 5;
+      final count = activeOrders.count;
+      return count < 5; // Simplified check
     } catch (e) {
       _logger.error('Error checking active orders count', e);
       throw Exception('Failed to check order limit: $e');
@@ -568,63 +496,32 @@ class TransactionService {
       int transactionId, List<CartItem> items) async {
     try {
       final detailsList = items.map((item) {
-        // First create the main transaction detail
-        final transactionDetail = {
+        final originalPrice = item.menu.price;
+        final effectivePrice = item.menu.effectivePrice;
+        final discountPercentage = item.menu.discountPercent;
+        final total = effectivePrice * item.quantity; // Calculate total here
+
+        return {
           'transaction_id': transactionId,
           'menu_id': item.menu.id,
           'quantity': item.quantity,
-          'unit_price': item.menu.price,
-          'subtotal': item.menu.price * item.quantity,
+          'unit_price': effectivePrice,
+          'subtotal': total, // Use calculated total
           'notes': item.note,
-        };
-
-        // If there are addons, create addon details for each addon
-        final addonDetails = item.selectedAddons
-            .where((addon) => addon.id != null)
-            .map((addon) => {
-                  'transaction_id': transactionId,
-                  'menu_id': item.menu.id,
-                  'addon_id':
-                      addon.id!, // Force non-null since we filtered nulls
-                  'quantity': item.quantity,
-                  'unit_price': addon.price,
-                  'subtotal': addon.price * item.quantity,
-                })
-            .toList();
-
-        return {
-          'detail': transactionDetail,
-          'addons': addonDetails,
+          'applied_discount_percentage': discountPercentage,
+          'original_price': originalPrice,
+          'discounted_price': effectivePrice
         };
       }).toList();
 
-      await _supabase.rpc('begin_transaction');
-
-      try {
-        // Insert all transaction details
-        for (final detail in detailsList) {
-          await _supabase.from('transaction_details').insert(detail['detail']!);
-
-          // Insert addon details if any
-          final addons = detail['addons'] as List;
-          if (addons.isNotEmpty) {
-            await _supabase.from('transaction_addon_details').insert(addons);
-          }
-        }
-
-        await _supabase.rpc('commit_transaction');
-      } catch (e) {
-        await _supabase.rpc('rollback_transaction');
-        rethrow;
-      }
+      await _supabase.from('transaction_details').insert(detailsList);
     } catch (e) {
       throw ApiException('Failed to create transaction details: $e');
     }
   }
 
-  // In transaction_service.dart
   Stream<List<Transaction>> getStallTransactions(int stallId) {
-    print('Fetching transactions for stall: $stallId'); // Debug print
+    _logger.debug('Fetching transactions for stall: $stallId');
 
     return _supabase
         .from('transactions')
@@ -632,12 +529,11 @@ class TransactionService {
         .eq('stall_id', stallId)
         .order('created_at', ascending: false)
         .asyncMap((response) async {
-          print('Raw Supabase response: $response'); // Debug print
+          _logger.debug('Raw Supabase response: $response');
 
           final List<Transaction> transactions = [];
 
           for (final json in response) {
-            // Fetch transaction details
             final details =
                 await _supabase.from('transaction_details').select('''
                   *,
@@ -648,8 +544,8 @@ class TransactionService {
                   )
                 ''').eq('transaction_id', json['id']);
 
-            print(
-                'Fetched details for transaction ${json['id']}: $details'); // Debug print
+            _logger.debug(
+                'Fetched details for transaction ${json['id']}: $details');
 
             transactions.add(Transaction.fromJson({
               ...json,
@@ -727,26 +623,26 @@ class TransactionService {
 
   Future<Map<String, dynamic>> getOrderDetailsById(int orderId) async {
     try {
-      _logger.info('Fetching order details for ID: $orderId');
+      _logger.info('Fetching detailed order info for ID: $orderId');
 
-      // Get transaction with items and addons
-      final response = await _supabase.from('transactions').select('''
-          *,
-          items:order_items (
+      final response = await _supabase.from('transaction_details').select('''
             id,
+            transaction_id,
+            menu_id,
             quantity,
-            status,
+            unit_price,
+            subtotal,
+            notes,
+            created_at,
+            applied_discount_percentage,
+            original_price,
+            discounted_price,
             menu:menu_id (
-              id,
+              id, 
               food_name,
+              photo,
               price,
-              photo
-            ),
-            addon:addon_id (
-              id,
-              addon_name,
-              price,
-              description
+              stall:stalls (*)
             ),
             addon_items:transaction_addon_details (
               id,
@@ -756,13 +652,56 @@ class TransactionService {
               addon:addon_id (
                 id,
                 addon_name,
-                price
+                price,
+                is_required,
+                stock_quantity,
+                Description
               )
             )
-          )
-        ''').eq('id', orderId).single();
-      _logger.debug('Order details response: $response');
-      return response;
+          ''').eq('transaction_id', orderId);
+
+      _logger.debug('Raw transaction details response: $response');
+
+      // Transform each item to ensure numeric fields are properly handled
+      final items = (response as List).map((item) {
+        // Get the main menu prices
+        final originalPrice = item['original_price']?.toString();
+        final discountedPrice = item['discounted_price']?.toString();
+        final discountPercentage =
+            item['applied_discount_percentage']?.toString();
+
+        // Calculate addons total
+        final addonItems = (item['addon_items'] as List?)?.map((addon) {
+              return {
+                ...addon,
+                'quantity': addon['quantity'] ?? 1,
+                'unit_price': (addon['unit_price'] as num?)?.toDouble() ?? 0.0,
+                'subtotal': (addon['subtotal'] as num?)?.toDouble() ?? 0.0,
+              };
+            }).toList() ??
+            [];
+
+        _logger.debug(
+            'Addon items for menu item ${item['menu']['food_name']}: $addonItems');
+
+        return {
+          ...item,
+          'original_price': originalPrice != null
+              ? double.parse(originalPrice)
+              : item['menu']['price'],
+          'discounted_price': discountedPrice != null
+              ? double.parse(discountedPrice)
+              : item['unit_price'],
+          'applied_discount_percentage': discountPercentage != null
+              ? double.parse(discountPercentage)
+              : 0.0,
+          'addon_items': addonItems,
+        };
+      }).toList();
+
+      _logger.debug('Transformed items: $items');
+
+      return {'id': orderId, 'items': items};
     } catch (e, stack) {
       _logger.error('Failed to fetch order details', e, stack);
       throw Exception('Failed to fetch order details: $e');
@@ -856,6 +795,84 @@ class TransactionService {
     } catch (e, stack) {
       _logger.error('Failed to fetch orders', e, stack);
       throw Exception('Failed to fetch orders: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>> fetchOrderTrackingDetails(
+      int transactionId) async {
+    try {
+      _logger.info(
+          'Fetching static order details for transaction: $transactionId');
+
+      // First fetch the main transaction details
+      final transactionDetails =
+          await _supabase.from('transaction_details').select('''
+            id,
+            transaction_id,
+            menu_id,
+            quantity,
+            unit_price,
+            original_price,
+            discounted_price,
+            subtotal,
+            notes,
+            menu:menu_id (
+              id,
+              food_name,
+              photo
+            )
+          ''').eq('transaction_id', transactionId);
+
+      // Fetch addon details for all transaction details
+      final transactionDetailIds =
+          (transactionDetails as List).map((detail) => detail['id']).toList();
+
+      final addonDetails =
+          await _supabase.from('transaction_addon_details').select('''
+            id,
+            transaction_detail_id,
+            addon_id,
+            quantity,
+            unit_price,
+            subtotal,
+            addon:addon_id (
+              id,
+              addon_name
+            )
+          ''').filter('transaction_detail_id', 'in', '(' + transactionDetailIds.join(',') + ')');
+
+      // Group addon details by transaction_detail_id
+      final Map<int, List<Map<String, dynamic>>> addonsByDetailId = {};
+      for (final addon in addonDetails) {
+        final detailId = addon['transaction_detail_id'] as int;
+        addonsByDetailId[detailId] = [
+          ...(addonsByDetailId[detailId] ?? []),
+          addon
+        ];
+      }
+
+      // Combine details with their addons
+      final enrichedDetails = transactionDetails.map((detail) {
+        return {
+          ...detail,
+          'addons': addonsByDetailId[detail['id']] ?? [],
+        };
+      }).toList();
+
+      _logger
+          .debug('Fetched ${enrichedDetails.length} items with static pricing');
+
+      return {
+        'success': true,
+        'items': enrichedDetails,
+      };
+    } catch (e, stack) {
+      _logger.error('Error fetching order tracking details', e, stack);
+      return {
+        'success': false,
+        'error': e.toString(),
+        'items': [],
+      };
     }
   }
 }

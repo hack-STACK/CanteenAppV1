@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:kantin/Models/menus_addon.dart';
-import 'package:kantin/theme/merchant_theme.dart';
 import 'package:reorderables/reorderables.dart';
 
 class AddonManager extends StatefulWidget {
@@ -40,8 +39,19 @@ class _AddonManagerState extends State<AddonManager> {
   }
 
   Widget _buildAddonTile(FoodAddon addon) {
-    return GlassContainer(
+    return Container(
       key: ValueKey(addon.id),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
       child: ListTile(
         title: Text(addon.addonName),
         subtitle: Text('Rp ${addon.price.toStringAsFixed(0)}'),

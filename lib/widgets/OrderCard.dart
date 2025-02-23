@@ -4,6 +4,7 @@ import 'package:kantin/Models/transaction_model.dart';
 import 'package:kantin/Models/student_models.dart';
 import 'package:kantin/Models/orderItem.dart';
 import 'package:kantin/models/enums/transaction_enums.dart';
+import 'dart:developer' as developer;
 
 class ModernOrderCard extends StatefulWidget {
   final Transaction order;
@@ -54,8 +55,15 @@ class _ModernOrderCardState extends State<ModernOrderCard>
     super.dispose();
   }
 
+  void _logDebug(String message) {
+    // Use both print and developer.log for maximum visibility
+    print('OrderCard: $message');
+    developer.log(message, name: 'OrderCard');
+  }
+
   @override
   Widget build(BuildContext context) {
+    print('DEBUG: OrderCard build called'); // Add this line
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
@@ -148,7 +156,7 @@ class _ModernOrderCardState extends State<ModernOrderCard>
                       size: 16, color: colorScheme.onSurfaceVariant),
                   const SizedBox(width: 4),
                   Text(
-                    _formatDateTime(widget.order.createdAt),
+                    _formatDateTime(widget.order.createdAt.toLocal()),
                     style: textTheme.bodyMedium?.copyWith(
                       color: colorScheme.onSurfaceVariant,
                     ),
@@ -233,22 +241,7 @@ class _ModernOrderCardState extends State<ModernOrderCard>
   Widget _buildFooter(ColorScheme colorScheme, TextTheme textTheme) {
     return Column(
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              'Total Amount',
-              style: textTheme.titleMedium,
-            ),
-            Text(
-              currencyFormatter.format(widget.order.totalAmount),
-              style: textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: colorScheme.primary,
-              ),
-            ),
-          ],
-        ),
+        _buildTotalWithSavings(colorScheme, textTheme),
         if (_canUpdateStatus(widget.order.status)) ...[
           const SizedBox(height: 16),
           SizedBox(
@@ -402,5 +395,207 @@ class _ModernOrderCardState extends State<ModernOrderCard>
           'Cancelled'
         ),
     };
+  }
+
+  Widget _buildOrderItemCard(OrderItem item) {
+    final itemOriginalPrice = item.menu?.originalPrice ?? 0;
+    final itemCurrentPrice = item.menu?.price ?? 0;
+    final itemQuantity = item.quantity ?? 1;
+    final itemSubtotal = item.subtotal ?? 0;
+
+    // Direct print statements
+    print('==============================================');
+    print('DEBUG: Building order item: ${item.menu?.foodName}');
+    print('DEBUG: Original price: ${item.menu?.originalPrice}');
+    print('DEBUG: Current price: ${item.menu?.price}');
+    print('DEBUG: Quantity: ${item.quantity}');
+
+    // Validate prices
+    final itemHasDiscount =
+        itemOriginalPrice > 0 && itemOriginalPrice > itemCurrentPrice;
+    final discountPercentage = itemHasDiscount
+        ? ((itemOriginalPrice - itemCurrentPrice) / itemOriginalPrice * 100)
+            .round()
+        : 0;
+
+    // Calculate savings safely
+    final itemTotalSavings = itemHasDiscount
+        ? (itemOriginalPrice - itemCurrentPrice) * itemQuantity
+        : 0.0;
+
+    debugPrint('Has Discount: $itemHasDiscount');
+    debugPrint('Discount Percentage: $discountPercentage%');
+    debugPrint('Total Savings: $itemTotalSavings');
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ...existing image container code...
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.menu?.foodName ?? 'Unknown Item',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 15,
+                  ),
+                ),
+                Row(
+                  children: [
+                    Text(
+                      '${item.quantity}x',
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    if (itemHasDiscount && itemOriginalPrice > 0) ...[
+                      Text(
+                        currencyFormatter.format(itemOriginalPrice),
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                          fontSize: 14,
+                          decoration: TextDecoration.lineThrough,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.red[50],
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          '-$discountPercentage%',
+                          style: TextStyle(
+                            color: Colors.red[700],
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(width: 4),
+                    Text(
+                      currencyFormatter.format(itemCurrentPrice),
+                      style: TextStyle(
+                        color: itemHasDiscount
+                            ? Colors.red[700]
+                            : Colors.grey[600],
+                        fontSize: 14,
+                        fontWeight: itemHasDiscount
+                            ? FontWeight.bold
+                            : FontWeight.normal,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                currencyFormatter.format(itemSubtotal),
+                style: const TextStyle(fontWeight: FontWeight.w500),
+              ),
+              if (itemHasDiscount && itemTotalSavings > 0)
+                Text(
+                  'Saved ${currencyFormatter.format(itemTotalSavings)}',
+                  style: TextStyle(
+                    color: Colors.red[700],
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTotalWithSavings(ColorScheme colorScheme, TextTheme textTheme) {
+    print('==============================================');
+    print('DEBUG: Calculating total savings');
+
+    double totalSavings = 0.0;
+
+    if (widget.orderItems != null) {
+      for (var item in widget.orderItems!) {
+        final itemOriginalPrice = item.menu?.originalPrice ?? 0;
+        final itemCurrentPrice = item.menu?.price ?? 0;
+        final itemQuantity = item.quantity ?? 1;
+
+        print('DEBUG: Item: ${item.menu?.foodName}');
+        print(
+            'DEBUG: Original: $itemOriginalPrice, Current: $itemCurrentPrice, Qty: $itemQuantity');
+
+        if (itemOriginalPrice > 0 && itemOriginalPrice > itemCurrentPrice) {
+          final itemSaving =
+              (itemOriginalPrice - itemCurrentPrice) * itemQuantity;
+          totalSavings += itemSaving;
+          print('DEBUG: Item saving: $itemSaving');
+        }
+      }
+    }
+
+    print('DEBUG: Final total savings: $totalSavings');
+    print('==============================================');
+
+    debugPrint('Final total savings: $totalSavings');
+
+    return Column(
+      children: [
+        if (totalSavings > 0)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Total Savings',
+                  style: TextStyle(
+                    color: Colors.red[700],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                Text(
+                  currencyFormatter.format(totalSavings),
+                  style: TextStyle(
+                    color: Colors.red[700],
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Total Amount',
+              style: textTheme.titleMedium,
+            ),
+            Text(
+              currencyFormatter.format(widget.order.totalAmount),
+              style: textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: colorScheme.primary,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
   }
 }

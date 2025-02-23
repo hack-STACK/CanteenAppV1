@@ -1,11 +1,15 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Widget;
+import 'package:flutter/material.dart' as material show Icon, Widget;
 import 'package:intl/intl.dart';
 import 'package:kantin/Services/Auth/auth_Service.dart';
 import 'package:kantin/Services/Database/transaction_service.dart';
-import 'package:kantin/Services/menu_service.dart';
 import 'package:kantin/models/enums/transaction_enums.dart';
+import 'package:kantin/services/menu_service.dart';
+import 'package:kantin/utils/order_id_formatter.dart';
+import 'package:kantin/utils/price_formatter.dart';
+import 'package:kantin/widgets/enhanced_order_card.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:kantin/widgets/order_details_sheet.dart';
 import 'package:timeline_tile/timeline_tile.dart';
@@ -16,10 +20,10 @@ import 'package:kantin/widgets/rate_menu_dialog.dart';
 import 'package:kantin/Services/Database/refund_service.dart';
 import 'package:kantin/Services/Database/UserService.dart';
 import 'package:kantin/Services/rating_service.dart';
-import 'package:kantin/widgets/rating_indicator.dart';
 import 'package:kantin/widgets/review_history_tab.dart';
 import 'package:lottie/lottie.dart';
 import 'package:animated_text_kit/animated_text_kit.dart';
+import 'package:kantin/utils/time_formatter.dart';
 
 // Add this extension outside the class at the top of the file
 extension StringExtension on String {
@@ -55,8 +59,8 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
   final _refreshKey = GlobalKey<RefreshIndicatorState>();
   StreamSubscription? _orderSubscription;
 
-  String _currentSortField = 'created_at';
-  bool _sortAscending = false;
+  String _currentSortField = 'created_at'; // Remove final
+  bool _sortAscending = false; // Remove final
 
   late AnimationController _refreshIconController;
   late AnimationController _slideController;
@@ -96,37 +100,22 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
   }
 
   void _setupOrderSubscription() {
-    _orderSubscription?.cancel();
-    _orderSubscription =
-        _transactionService.subscribeToOrders(widget.studentId).listen(
-      (orders) {
-        if (!mounted) return;
-
-        setState(() {
-          _activeOrders = orders.where((order) {
-            final status = order['status']?.toString().toLowerCase() ?? '';
-            return !['completed', 'cancelled'].contains(status);
-          }).toList();
-
-          _orderHistory = orders.where((order) {
-            final status = order['status']?.toString().toLowerCase() ?? '';
-            return ['completed', 'cancelled'].contains(status);
-          }).toList();
-
-          _isConnected = true;
-          _error = null;
-        });
-      },
-      onError: (error) {
-        _logger.error('Order subscription error', error);
-        if (mounted) {
-          setState(() {
-            _isConnected = false;
-            _error = error.toString();
+    try {
+      _orderSubscription = _supabase
+          .from('transactions')
+          .stream(primaryKey: ['id'])
+          .eq('student_id', widget.studentId)
+          .order('created_at')
+          .listen((data) {
+            if (mounted) {
+              _handleOrdersUpdate(
+                List<Map<String, dynamic>>.from(data),
+              );
+            }
           });
-        }
-      },
-    );
+    } catch (e) {
+      print('Error setting up order subscription: $e');
+    }
   }
 
   Future<void> _handleOrdersUpdate(List<Map<String, dynamic>> orders) async {
@@ -228,7 +217,6 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
     try {
       _logger.info('Loading orders for student ID: ${widget.studentId}');
 
-      // Updated query to use 'reviews' instead of 'ratings'
       final allOrders = await _supabase
           .from('transactions')
           .select('''
@@ -239,10 +227,12 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
               unit_price,
               subtotal,
               notes,
-              menu:menu (
+              original_price,
+              discounted_price,
+              applied_discount_percentage,
+              menu:menu_id (
                 id,
                 food_name,
-                price,
                 photo,
                 reviews!menu_id (*), 
                 stall:stalls (
@@ -258,14 +248,21 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
           .eq('student_id', widget.studentId)
           .order('created_at', ascending: false);
 
+      // Log the raw response for debugging
+      _logger.debug('Raw orders response: $allOrders');
+
+      // Apply virtual IDs to orders
+      final ordersWithVirtualIds =
+          (allOrders as List<Map<String, dynamic>>).withVirtualIds();
+
       if (mounted) {
         setState(() {
-          _activeOrders = allOrders
+          _activeOrders = ordersWithVirtualIds
               .where((order) => !['completed', 'cancelled']
                   .contains(order['status']?.toString().toLowerCase() ?? ''))
               .toList();
 
-          _orderHistory = allOrders
+          _orderHistory = ordersWithVirtualIds
               .where((order) => ['completed', 'cancelled']
                   .contains(order['status']?.toString().toLowerCase() ?? ''))
               .toList();
@@ -276,9 +273,6 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
     } catch (e, stack) {
       _logger.error('Error loading orders', e, stack);
       _handleError(e);
-      if (mounted) {
-        setState(() => _error = e.toString());
-      }
     } finally {
       _setLoading(false);
     }
@@ -370,7 +364,7 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
       SnackBar(
         content: Row(
           children: [
-            const Icon(Icons.error_outline, color: Colors.white),
+            const material.Icon(Icons.error_outline, color: Colors.white),
             const SizedBox(width: 8),
             Expanded(child: Text(message)),
           ],
@@ -404,10 +398,10 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
     final int? menuId = menuItem['id'];
     final int? stallId = menuItem['stall']?['id'];
     final int? transactionId = menuItem['transaction_id'];
+    final String? menuPhoto = menuItem['menu']?['photo']; // Get the photo URL
 
     if (menuId == null || stallId == null) {
-      _logger.error(
-          'Missing required data for rating. MenuId: $menuId, StallId: $stallId');
+      _logger.error('Missing required data for rating');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Cannot rate this item: Missing required information'),
@@ -425,8 +419,8 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
         menuId: menuId,
         stallId: stallId,
         transactionId: transactionId ?? 0,
+        menuPhoto: menuPhoto, // Pass the photo URL
         onRatingSubmitted: () {
-          // Refresh the order list to show updated ratings
           _loadOrders();
           Navigator.pop(context);
         },
@@ -436,8 +430,8 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
 
   void _showRefundDetails(int transactionId) async {
     try {
-      final refunds =
-          await _refundService.getRefundsByTransactionId(transactionId);
+      final refunds = await _refundService
+          .getRefundsByTransactionId(transactionId); // Convert string ID to int
       if (!mounted) return;
 
       showModalBottomSheet(
@@ -459,7 +453,7 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close),
+                    icon: const material.Icon(Icons.close),
                     onPressed: () => Navigator.pop(context),
                   ),
                 ],
@@ -484,7 +478,7 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
                           color: Colors.red,
                           alignment: Alignment.centerRight,
                           padding: const EdgeInsets.only(right: 16),
-                          child: const Icon(
+                          child: const material.Icon(
                             Icons.delete,
                             color: Colors.white,
                           ),
@@ -571,7 +565,7 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
     }
   }
 
-  Widget _buildRefundStatusChip(String status) {
+  material.Widget _buildRefundStatusChip(String status) {
     Color color;
     String label;
 
@@ -616,7 +610,7 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
   }
 
   @override
-  Widget build(BuildContext context) {
+  material.Widget build(BuildContext context) {
     if (_isLoading) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
@@ -629,7 +623,8 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.error_outline, size: 48, color: Colors.red),
+              const material.Icon(Icons.error_outline,
+                  size: 48, color: Colors.red),
               const SizedBox(height: 16),
               Text(_error!),
               const SizedBox(height: 16),
@@ -659,11 +654,11 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
           ),
           actions: [
             IconButton(
-              icon: const Icon(Icons.sort),
+              icon: const material.Icon(Icons.sort),
               onPressed: _showSortOptions,
             ),
             IconButton(
-              icon: const Icon(Icons.refresh),
+              icon: const material.Icon(Icons.refresh),
               onPressed: _refreshOrders,
             ),
           ],
@@ -708,7 +703,7 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close),
+                    icon: const material.Icon(Icons.close),
                     onPressed: () => Navigator.pop(context),
                   ),
                 ],
@@ -755,7 +750,7 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildSortOption(
+  material.Widget _buildSortOption(
     BuildContext context,
     StateSetter setState,
     String label,
@@ -765,11 +760,11 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
     final bool isSelected = _currentSortField == field;
 
     return ListTile(
-      leading:
-          Icon(icon, color: isSelected ? Theme.of(context).primaryColor : null),
+      leading: material.Icon(icon,
+          color: isSelected ? Theme.of(context).primaryColor : null),
       title: Text(label),
       trailing: isSelected
-          ? Icon(
+          ? material.Icon(
               _sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
               color: Theme.of(context).primaryColor,
             )
@@ -856,7 +851,7 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
     }
   }
 
-  Widget _buildErrorView() {
+  material.Widget _buildErrorView() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -895,7 +890,7 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
             icon: RotationTransition(
               turns:
                   Tween(begin: 0.0, end: 1.0).animate(_refreshIconController),
-              child: const Icon(Icons.refresh),
+              child: const material.Icon(Icons.refresh),
             ),
             label: const Text('Try Again'),
             style: ElevatedButton.styleFrom(
@@ -913,13 +908,13 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildActiveOrders() {
+  material.Widget _buildActiveOrders() {
     if (!_isConnected) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.cloud_off, size: 64, color: Colors.grey[400]),
+            material.Icon(Icons.cloud_off, size: 64, color: Colors.grey[400]),
             const SizedBox(height: 16),
             Text(
               'Connection lost\nTap to retry',
@@ -941,7 +936,7 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.receipt_long_outlined,
+            material.Icon(Icons.receipt_long_outlined,
                 size: 64, color: Colors.grey[400]),
             const SizedBox(height: 16),
             Text(
@@ -964,13 +959,13 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildOrderHistory() {
+  material.Widget _buildOrderHistory() {
     if (_orderHistory.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.history, size: 64, color: Colors.grey[400]),
+            material.Icon(Icons.history, size: 64, color: Colors.grey[400]),
             const SizedBox(height: 16),
             Text(
               'No order history',
@@ -986,121 +981,375 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
       child: ListView.builder(
         padding: const EdgeInsets.all(16),
         itemCount: _orderHistory.length,
-        itemBuilder: (context, index) =>
-            _buildOrderCard(_orderHistory[index], false),
+        itemBuilder: (context, index) {
+          final order = _orderHistory[index];
+          return FutureBuilder<Map<String, dynamic>>(
+            future: _transactionService.fetchOrderTrackingDetails(order['id']),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+
+              if (snapshot.hasError) {
+                return _buildErrorItem('Order #${order['id']}', 1);
+              }
+
+              final items = snapshot.data?['items'] ?? [];
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildOrderCard(order, false),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Text(
+                      'Order Items',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                  ...List<Map<String, dynamic>>.from(items)
+                      .map((item) => _buildOrderItem(item)),
+                  const SizedBox(height: 24),
+                  const Divider(thickness: 1),
+                ],
+              );
+            },
+          );
+        },
       ),
     );
   }
 
-  Widget _buildOrderCard(Map<String, dynamic> order, bool isActive) {
-    final DateTime orderDate = DateTime.parse(order['created_at']);
-    final String status = order['status'];
-    final List<dynamic> items = order['items'] ?? [];
-    final orderType = _getOrderType(order['order_type'] as String?);
+  material.Widget _buildOrderItem(Map<String, dynamic> item) {
+    // Debug logging - combine into single argument
+    _logger.debug('Order item data: ' +
+        {
+          'original_price': item['original_price'],
+          'discounted_price': item['discounted_price'],
+          'applied_discount_percentage': item['applied_discount_percentage'],
+          'quantity': item['quantity'],
+          'menu_data': item['menu']
+        }.toString());
 
-    return Hero(
-      tag: 'order_${order['id']}',
-      child: Material(
-        color: Colors.transparent,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 300),
-          margin: const EdgeInsets.only(bottom: 16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.grey.withOpacity(0.08),
-                spreadRadius: 1,
-                blurRadius: 10,
-                offset: const Offset(0, 2),
-              ),
-            ],
-            border: Border.all(
-              color: _getStatusColor(status).withOpacity(0.1),
-              width: 1,
-            ),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: Column(
-              children: [
-                _buildOrderHeader(order, status),
-                const Divider(height: 1),
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildOrderInfo(orderDate, orderType, order),
-                      const SizedBox(height: 16),
-                      _buildOrderTimeline(status),
-                      const SizedBox(height: 16),
-                      _buildItemsList(items, order),
-                      if (items.isNotEmpty) const Divider(height: 24),
-                      _buildOrderSummary(order),
-                      if (isActive) _buildActionButtons(order),
-                    ],
+    // Extract static values from transaction_details
+    final originalPrice = (item['original_price'] as num?)?.toDouble() ?? 0.0;
+    final discountedPrice =
+        (item['discounted_price'] as num?)?.toDouble() ?? originalPrice;
+    final quantity = item['quantity'] as int? ?? 1;
+    final discountPercentage =
+        (item['applied_discount_percentage'] as num?)?.toDouble() ?? 0.0;
+    final notes = item['notes'] as String?;
+    final menuItem = item['menu'] ?? {};
+    final menuName = menuItem['food_name'] ?? 'Unknown Item';
+    final menuPhoto = menuItem['photo'] as String?;
+
+    // Calculate totals using static values
+    final subtotal = discountedPrice * quantity;
+    final originalSubtotal = originalPrice * quantity;
+    final hasDiscount = discountPercentage > 0;
+    final savings = originalSubtotal - subtotal;
+
+    // Validate calculations
+    _logger.debug('Price calculations: ' +
+        {
+          'originalPrice': originalPrice,
+          'discountedPrice': discountedPrice,
+          'quantity': quantity,
+          'subtotal': subtotal,
+          'originalSubtotal': originalSubtotal,
+          'savings': savings,
+          'hasDiscount': hasDiscount
+        }.toString());
+
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (menuPhoto != null)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.network(
+                  menuPhoto,
+                  width: 60,
+                  height: 60,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    width: 60,
+                    height: 60,
+                    color: Colors.grey[200],
+                    child: const Icon(Icons.fastfood, color: Colors.grey),
                   ),
                 ),
+              ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    menuName,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                  if (notes != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      'Note: $notes',
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 12,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '${quantity}x',
+                          style: TextStyle(
+                            color: Colors.blue.shade700,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      if (hasDiscount) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.red.shade50,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.red.shade200),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.local_offer_outlined,
+                                  size: 14, color: Colors.red.shade700),
+                              const SizedBox(width: 4),
+                              Text(
+                                '-${discountPercentage.toStringAsFixed(1)}%',
+                                style: TextStyle(
+                                  color: Colors.red.shade700,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (hasDiscount)
+                  Text(
+                    PriceFormatter.format(originalSubtotal),
+                    style: TextStyle(
+                      decoration: TextDecoration.lineThrough,
+                      color: Colors.grey[600],
+                      fontSize: 13,
+                    ),
+                  ),
+                Text(
+                  PriceFormatter.format(subtotal),
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: hasDiscount ? Colors.red.shade700 : Colors.black87,
+                  ),
+                ),
+                if (savings > 0)
+                  Text(
+                    'Save ${PriceFormatter.format(savings)}',
+                    style: TextStyle(
+                      color: Colors.green.shade700,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
               ],
             ),
-          ),
+          ],
         ),
       ),
     );
   }
 
-  Color _getStatusColor(String status) {
-    return switch (status.toLowerCase()) {
-      'pending' => Colors.orange,
-      'confirmed' => Colors.blue,
-      'cooking' => Colors.amber,
-      'ready' => Colors.green,
-      'delivering' => Colors.green,
-      'completed' => Colors.teal,
-      'cancelled' => Colors.red,
-      _ => Colors.grey,
-    };
+  material.Widget _buildQuantityAndDiscountBadges(
+      int quantity, Map<String, dynamic> priceData) {
+    return Wrap(
+      spacing: 8,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: Colors.blue.shade50,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            '${quantity}x',
+            style: TextStyle(
+              color: Colors.blue.shade700,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+        if (priceData['hasDiscount'])
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.red.shade50,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              '-${priceData['discountPercentage'].round()}%',
+              style: TextStyle(
+                color: Colors.red.shade700,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+      ],
+    );
   }
 
-  Widget _buildOrderSummary(Map<String, dynamic> order) {
-    final subtotal = order['total_amount'] as num;
-    final deliveryFee = order['delivery_fee'] as num? ?? 0;
-    final discount = order['discount_amount'] as num? ?? 0;
-    final total = subtotal + deliveryFee - discount;
+  material.Widget _buildAddonsSection(List<dynamic> addons) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 8),
+        Text(
+          'Add-ons',
+          style: TextStyle(
+            fontWeight: FontWeight.w500,
+            color: Colors.grey[600],
+          ),
+        ),
+        ...addons.map((addon) {
+          final name = addon['addon']?['addon_name'] ?? 'Unknown Add-on';
+          final quantity = addon['quantity'] ?? 1;
+          final subtotal = (addon['subtotal'] as num?)?.toDouble() ?? 0.0;
 
-    return Card(
-      elevation: 0,
-      color: Colors.grey.shade50,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Colors.grey.shade200),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
+          return Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  '$name (${quantity}x)',
+                  style: const TextStyle(fontSize: 12),
+                ),
+                Text(
+                  PriceFormatter.format(subtotal),
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
+  material.Widget _buildPriceDisplay(Map<String, dynamic> priceData) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        if (priceData['hasDiscount'])
+          Text(
+            PriceFormatter.format(priceData['originalTotal']),
+            style: TextStyle(
+              decoration: TextDecoration.lineThrough,
+              color: Colors.grey[600],
+              fontSize: 13,
+            ),
+          ),
+        Text(
+          PriceFormatter.format(priceData['subtotal']),
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+            color:
+                priceData['hasDiscount'] ? Colors.red.shade700 : Colors.black87,
+          ),
+        ),
+        if (priceData['savings'] > 0)
+          Text(
+            'Save ${PriceFormatter.format(priceData['savings'])}',
+            style: TextStyle(
+              color: Colors.green.shade700,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+      ],
+    );
+  }
+
+  material.Widget _buildOrderCard(Map<String, dynamic> order, bool isActive) {
+    final DateTime orderDate = DateTime.parse(order['created_at']);
+    final String status = order['status'];
+    final List<dynamic> items = order['items'] ?? [];
+    final orderType = _getOrderType(order['order_type'] as String?);
+
+    // Remove SlideTransition and use a simpler animation
+    return AnimatedOpacity(
+      duration: const Duration(milliseconds: 300),
+      opacity: 1.0,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.grey.withOpacity(0.1),
+              spreadRadius: 1,
+              blurRadius: 10,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
         child: Column(
           children: [
-            _buildSummaryRow('Subtotal', subtotal),
-            if (deliveryFee > 0) ...[
-              const SizedBox(height: 4),
-              _buildSummaryRow('Delivery Fee', deliveryFee),
-            ],
-            if (discount > 0) ...[
-              const SizedBox(height: 4),
-              _buildSummaryRow(
-                'Discount',
-                -discount,
-                valueColor: Colors.green,
-              ),
-            ],
-            const Divider(height: 16),
-            _buildSummaryRow(
-              'Total',
-              total,
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
+            _buildOrderHeader(order, status),
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildOrderInfo(orderDate, orderType, order),
+                  const SizedBox(height: 16),
+                  _buildOrderTimeline(status),
+                  const SizedBox(height: 16),
+                  _buildItemsList(items, order),
+                  const Divider(height: 24),
+                  _buildOrderTotal(order),
+                  if (isActive) _buildActionButtons(order),
+                ],
               ),
             ),
           ],
@@ -1109,34 +1358,18 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildSummaryRow(
-    String label,
-    num amount, {
-    TextStyle? style,
-    Color? valueColor,
-  }) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(label, style: style),
-        Text(
-          NumberFormat.currency(
-            locale: 'id',
-            symbol: 'Rp ',
-            decimalDigits: 0,
-          ).format(amount),
-          style: style?.copyWith(color: valueColor) ??
-              TextStyle(color: valueColor),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildOrderHeader(Map<String, dynamic> order, String status) {
+  material.Widget _buildOrderHeader(Map<String, dynamic> order, String status) {
     // Get the stall info from the first item's menu
     final stall = order['items']?[0]?['menu']?['stall'] ?? {};
     final String stallName = stall['nama_stalls'] ?? 'Restaurant Name';
     final String? imageUrl = stall['image_url'];
+
+    // Use virtual_id instead of id for display
+    final String orderId = OrderIdFormatter.format(order['virtual_id'] ?? 0);
+
+    // Update the time formatting
+    final orderDate = DateTime.parse(order['created_at']);
+    TimeFormatter.logTimeConversion(orderDate, 'Order Header');
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1158,7 +1391,8 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
                       width: 50,
                       height: 50,
                       color: Colors.grey[200],
-                      child: const Icon(Icons.restaurant, color: Colors.grey),
+                      child: const material.Icon(Icons.restaurant,
+                          color: Colors.grey),
                     ),
                     loadingBuilder: (context, child, loadingProgress) {
                       if (loadingProgress == null) return child;
@@ -1176,7 +1410,8 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
                     width: 50,
                     height: 50,
                     color: Colors.grey[200],
-                    child: const Icon(Icons.restaurant, color: Colors.grey),
+                    child: const material.Icon(Icons.restaurant,
+                        color: Colors.grey),
                   ),
           ),
           const SizedBox(width: 12),
@@ -1194,11 +1429,15 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
                   overflow: TextOverflow.ellipsis,
                 ),
                 Text(
-                  'Order #${order['id']}',
+                  'Order $orderId', // Use formatted virtual ID
                   style: TextStyle(
                     color: Colors.grey[600],
                     fontSize: 12,
                   ),
+                ),
+                Text(
+                  TimeFormatter.formatDateTime(orderDate),
+                  style: TextStyle(color: Colors.grey[600]),
                 ),
               ],
             ),
@@ -1209,19 +1448,19 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildOrderInfo(
+  material.Widget _buildOrderInfo(
       DateTime orderDate, OrderType orderType, Map<String, dynamic> order) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Ordered on ${DateFormat('MMM d, y h:mm a').format(orderDate)}',
+          'Ordered on ${TimeFormatter.formatDateTime(orderDate.toLocal())}', // Updated to use TimeFormatter
           style: TextStyle(color: Colors.grey[600]),
         ),
         const SizedBox(height: 8),
         Row(
           children: [
-            Icon(
+            material.Icon(
               _getOrderTypeIcon(orderType),
               size: 16,
               color: Colors.grey[600],
@@ -1254,7 +1493,7 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildOrderTotal(Map<String, dynamic> order) {
+  material.Widget _buildOrderTotal(Map<String, dynamic> order) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -1270,7 +1509,7 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildActionButtons(Map<String, dynamic> order) {
+  material.Widget _buildActionButtons(Map<String, dynamic> order) {
     return Column(
       children: [
         const SizedBox(height: 16),
@@ -1285,7 +1524,7 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildStatusChip(String status) {
+  material.Widget _buildStatusChip(String status) {
     final currentStatus = TransactionStatus.values.firstWhere(
       (e) => e.name.toLowerCase() == status.toLowerCase(),
       orElse: () => TransactionStatus.pending,
@@ -1319,7 +1558,7 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 16, color: color),
+          material.Icon(icon, size: 16, color: color),
           const SizedBox(width: 4),
           Text(
             label,
@@ -1330,7 +1569,7 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildOrderTimeline(String status) {
+  material.Widget _buildOrderTimeline(String status) {
     final stages = [
       TransactionStatus.pending,
       TransactionStatus.confirmed,
@@ -1345,6 +1584,10 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
     );
 
     final currentIndex = stages.indexOf(currentStatus);
+    // Remove reference to undefined order variable
+    final statusTime = DateTime.now(); // Use current time as fallback
+
+    TimeFormatter.logTimeConversion(statusTime, 'Status Timeline');
 
     return SizedBox(
       height: 80,
@@ -1393,7 +1636,8 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildItemsList(List<dynamic> items, Map<String, dynamic> order) {
+  material.Widget _buildItemsList(
+      List<dynamic> items, Map<String, dynamic> order) {
     if (items.isEmpty) {
       _logger.warn('No items found for order ${order['id']}');
       return const Text('No items in this order');
@@ -1444,7 +1688,7 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
               );
             },
           );
-        }).toList(),
+        }),
       ],
     );
   }
@@ -1509,7 +1753,7 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
   }
 
 // Widget for loading state
-  Widget _buildLoadingItem(String menuName, int quantity) {
+  material.Widget _buildLoadingItem(String menuName, int quantity) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
@@ -1536,7 +1780,7 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
   }
 
 // Widget for error state
-  Widget _buildErrorItem(String menuName, int quantity) {
+  material.Widget _buildErrorItem(String menuName, int quantity) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
@@ -1547,14 +1791,14 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
               style: const TextStyle(fontSize: 14),
             ),
           ),
-          Icon(Icons.error_outline, color: Colors.red[700], size: 16),
+          material.Icon(Icons.error_outline, color: Colors.red[700], size: 16),
         ],
       ),
     );
   }
 
 // Main item card widget
-  Widget _buildItemCard({
+  material.Widget _buildItemCard({
     required String menuName,
     required int quantity,
     required Map<String, dynamic> ratingData,
@@ -1562,122 +1806,21 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
     required Map<String, dynamic> order,
     required Map<String, dynamic> item,
   }) {
-    final rating = ratingData['average'] ?? 0.0;
-    final ratingCount = ratingData['count'] ?? 0;
-    final hasDiscount = priceData['hasDiscount'] as bool;
-    final savings = priceData['savings'] as double;
-
-    return Card(
-      elevation: 1,
-      margin: const EdgeInsets.only(bottom: 8),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Colors.grey.shade200),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '${quantity}x $menuName',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  if (ratingCount > 0)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Row(
-                        children: [
-                          RatingIndicator(
-                            rating: rating,
-                            ratingCount: ratingCount,
-                            size: 14,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            '($ratingCount)',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[600],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  if (hasDiscount)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.local_offer,
-                            size: 14,
-                            color: Colors.green[700],
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Save: ${NumberFormat.currency(
-                              locale: 'id',
-                              symbol: 'Rp ',
-                              decimalDigits: 0,
-                            ).format(savings)}',
-                            style: TextStyle(
-                              color: Colors.green[700],
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                if (hasDiscount)
-                  Text(
-                    NumberFormat.currency(
-                      locale: 'id',
-                      symbol: 'Rp ',
-                      decimalDigits: 0,
-                    ).format(priceData['originalPrice']),
-                    style: TextStyle(
-                      decoration: TextDecoration.lineThrough,
-                      color: Colors.grey[600],
-                      fontSize: 12,
-                    ),
-                  ),
-                Text(
-                  NumberFormat.currency(
-                    locale: 'id',
-                    symbol: 'Rp ',
-                    decimalDigits: 0,
-                  ).format(priceData['discountedPrice']),
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: hasDiscount ? Colors.red[700] : null,
-                  ),
-                ),
-                if (_isOrderCompleted(order))
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: _buildRatingButton(item, order),
-                  ),
-              ],
-            ),
-          ],
-        ),
-      ),
+    return EnhancedOrderCard(
+      item: item,
+      order: order,
+      priceData: priceData,
+      ratingData: ratingData,
+      isCompleted: _isOrderCompleted(order),
+      onRatePressed: () {
+        final menuData = {
+          'id': item['menu']?['id'],
+          'menu_name': menuName,
+          'stall': item['menu']?['stall'],
+          'transaction_id': order['id'],
+        };
+        _showRatingDialog(menuData);
+      },
     );
   }
 
@@ -1768,7 +1911,7 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
     }
   }
 
-  Widget buildOrderDetailsSheet(Map<String, dynamic> order) {
+  material.Widget buildOrderDetailsSheet(Map<String, dynamic> order) {
     final orderType = _getOrderType(order['order_type'] as String?);
 
     return SingleChildScrollView(
@@ -1779,7 +1922,7 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Row(
               children: [
-                Icon(getOrderTypeIcon(orderType),
+                material.Icon(getOrderTypeIcon(orderType),
                     color: Theme.of(context).primaryColor),
                 const SizedBox(width: 8),
                 Column(
@@ -1827,7 +1970,7 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
     );
   }
 
-  Widget buildRefundsTab() {
+  material.Widget buildRefundsTab() {
     return FutureBuilder<int?>(
       future: _getCurrentStudentId(),
       builder: (context, studentSnapshot) {
@@ -1862,7 +2005,7 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.error_outline,
+                    const material.Icon(Icons.error_outline,
                         size: 48, color: Colors.red),
                     const SizedBox(height: 16),
                     Text('Error: ${snapshot.error}'),
@@ -1882,7 +2025,7 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.receipt_long_outlined,
+                    material.Icon(Icons.receipt_long_outlined,
                         size: 64, color: Colors.grey[400]),
                     const SizedBox(height: 16),
                     Text(
@@ -1907,7 +2050,8 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
                       color: Colors.red,
                       alignment: Alignment.centerRight,
                       padding: const EdgeInsets.only(right: 16),
-                      child: const Icon(Icons.delete, color: Colors.white),
+                      child: const material.Icon(Icons.delete,
+                          color: Colors.white),
                     ),
                     confirmDismiss: (direction) async {
                       return await showDialog(
@@ -1999,7 +2143,7 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
     return order['status']?.toLowerCase() == 'completed';
   }
 
-  Widget _buildRatingButton(
+  material.Widget _buildRatingButton(
       Map<String, dynamic> item, Map<String, dynamic> order) {
     final int menuId = item['menu']?['id'] ?? -1;
     if (menuId == -1) return const SizedBox.shrink();
@@ -2014,7 +2158,7 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
 
         final hasRated = hasRatedSnapshot.data ?? false;
         return IconButton(
-          icon: Icon(
+          icon: material.Icon(
             hasRated ? Icons.star : Icons.star_border,
             color: hasRated ? Colors.amber : null,
           ),
@@ -2042,4 +2186,181 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
       },
     );
   }
+
+  // Add this method to handle order taps
+  void _handleOrderTap(Map<String, dynamic> order) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => OrderDetailsSheet(
+          order: order,
+          onRefresh: () {
+            if (mounted) {
+              setState(() {});
+            }
+          },
+        ),
+      ),
+    );
+  }
+
+  material.Widget _buildDeliveryEstimate(Map<String, dynamic> order) {
+    final estimatedTime = order['estimated_delivery_time'] != null
+        ? DateTime.parse(order['estimated_delivery_time'])
+        : null;
+
+    TimeFormatter.logTimeConversion(estimatedTime, 'Delivery Estimate');
+
+    return Text(
+      TimeFormatter.formatDeliveryEstimate(estimatedTime),
+      style: TextStyle(
+        fontWeight: FontWeight.bold,
+        color: Theme.of(context).primaryColor,
+      ),
+    );
+  }
+
+  // material.Widget _buildOrderItem(Map<String, dynamic> item) {
+  //   // Extract values from transaction_details
+  //   final originalPrice = (item['original_price'] as num?)?.toDouble() ?? 0.0;
+  //   final discountedPrice =
+  //       (item['discounted_price'] as num?)?.toDouble() ?? originalPrice;
+  //   final quantity = item['quantity'] as int? ?? 1;
+  //   final discountPercentage =
+  //       (item['applied_discount_percentage'] as num?)?.toDouble() ?? 0.0;
+  //   final notes = item['notes'] as String?;
+  //   final menuItem = item['menu'] ?? {};
+  //   final menuName = menuItem['food_name'] ?? 'Unknown Item';
+  //   final menuPhoto = menuItem['photo'] as String?;
+
+  //   final hasDiscount = discountPercentage > 0;
+  //   final savings = (originalPrice - discountedPrice) * quantity;
+  //   final subtotal = discountedPrice * quantity;
+
+  //   return Card(
+  //     margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+  //     child: Padding(
+  //       padding: const EdgeInsets.all(12),
+  //       child: Row(
+  //         crossAxisAlignment: CrossAxisAlignment.start,
+  //         children: [
+  //           if (menuPhoto != null)
+  //             ClipRRect(
+  //               borderRadius: BorderRadius.circular(8),
+  //               child: Image.network(
+  //                 menuPhoto,
+  //                 width: 60,
+  //                 height: 60,
+  //                 fit: BoxFit.cover,
+  //                 errorBuilder: (_, __, ___) => Container(
+  //                   width: 60,
+  //                   height: 60,
+  //                   color: Colors.grey[200],
+  //                   child: const Icon(Icons.fastfood, color: Colors.grey),
+  //                 ),
+  //               ),
+  //             ),
+  //           const SizedBox(width: 12),
+  //           Expanded(
+  //             child: Column(
+  //               crossAxisAlignment: CrossAxisAlignment.start,
+  //               children: [
+  //                 Text(
+  //                   menuName,
+  //                   style: const TextStyle(
+  //                     fontWeight: FontWeight.bold,
+  //                     fontSize: 16,
+  //                   ),
+  //                 ),
+  //                 if (notes != null) ...[
+  //                   const SizedBox(height: 4),
+  //                   Text(
+  //                     'Note: $notes',
+  //                     style: TextStyle(
+  //                       color: Colors.grey[600],
+  //                       fontSize: 12,
+  //                       fontStyle: FontStyle.italic,
+  //                     ),
+  //                   ),
+  //                 ],
+  //                 const SizedBox(height: 8),
+  //                 Row(
+  //                   children: [
+  //                     Container(
+  //                       padding: const EdgeInsets.symmetric(
+  //                         horizontal: 8,
+  //                         vertical: 4,
+  //                       ),
+  //                       decoration: BoxDecoration(
+  //                         color: Colors.blue.shade50,
+  //                         borderRadius: BorderRadius.circular(12),
+  //                       ),
+  //                       child: Text(
+  //                         '${quantity}x',
+  //                         style: TextStyle(
+  //                           color: Colors.blue.shade700,
+  //                           fontWeight: FontWeight.bold,
+  //                         ),
+  //                       ),
+  //                     ),
+  //                     if (hasDiscount) ...[
+  //                       const SizedBox(width: 8),
+  //                       Container(
+  //                         padding: const EdgeInsets.symmetric(
+  //                           horizontal: 8,
+  //                           vertical: 4,
+  //                         ),
+  //                         decoration: BoxDecoration(
+  //                           color: Colors.red.shade50,
+  //                           borderRadius: BorderRadius.circular(12),
+  //                         ),
+  //                         child: Text(
+  //                           '-${discountPercentage.round()}%',
+  //                           style: TextStyle(
+  //                             color: Colors.red.shade700,
+  //                             fontWeight: FontWeight.bold,
+  //                           ),
+  //                         ),
+  //                       ),
+  //                     ],
+  //                   ],
+  //                 ),
+  //               ],
+  //             ),
+  //           ),
+  //           Column(
+  //             crossAxisAlignment: CrossAxisAlignment.end,
+  //             children: [
+  //               if (hasDiscount)
+  //                 Text(
+  //                   PriceFormatter.format(originalPrice * quantity),
+  //                   style: TextStyle(
+  //                     decoration: TextDecoration.lineThrough,
+  //                     color: Colors.grey[600],
+  //                     fontSize: 13,
+  //                   ),
+  //                 ),
+  //               Text(
+  //                 PriceFormatter.format(subtotal),
+  //                 style: TextStyle(
+  //                   fontWeight: FontWeight.bold,
+  //                   fontSize: 16,
+  //                   color: hasDiscount ? Colors.red.shade700 : Colors.black87,
+  //                 ),
+  //               ),
+  //               if (savings > 0)
+  //                 Text(
+  //                   'Save ${PriceFormatter.format(savings)}',
+  //                   style: TextStyle(
+  //                     color: Colors.green.shade700,
+  //                     fontSize: 12,
+  //                     fontWeight: FontWeight.w500,
+  //                   ),
+  //                 ),
+  //             ],
+  //           ),
+  //         ],
+  //       ),
+  //     ),
+  //   );
+  // }
 }

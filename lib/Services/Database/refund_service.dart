@@ -140,8 +140,7 @@ class RefundService {
           .select()
           .eq('status', 'cancelled')
           .eq('payment_status', 'paid')
-          .not('refund_processed', 'neq',
-              null) // Fixed: use not + neq to check for NULL
+          .or('refund_processed.is.null,refund_processed.eq.false')
           .order('created_at');
 
       if ((response as List).isEmpty) {

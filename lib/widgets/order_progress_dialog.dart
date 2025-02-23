@@ -54,7 +54,8 @@ class OrderProgressDialog extends StatelessWidget {
                             ),
                             Text(
                               DateFormat('MMM d, y h:mm a').format(
-                                  DateTime.parse(progress['timestamp'])),
+                                  DateTime.parse(progress['timestamp'])
+                                      .toLocal()),
                               style: Theme.of(context).textTheme.bodySmall,
                             ),
                             if (progress['notes'] != null)

@@ -7,13 +7,11 @@ class Logger {
   Logger([this.tag = '', this.showDebug = !kReleaseMode]);
 
   void debug(String message) {
-    if (showDebug) {
-      _log('DEBUG', message);
-    }
+    if (!kReleaseMode) debugPrint('DEBUG: $message');
   }
 
   void info(String message) {
-    _log('INFO', message);
+    if (!kReleaseMode) debugPrint('INFO: $message');
   }
 
   void warn(String message) {
@@ -21,12 +19,10 @@ class Logger {
   }
 
   void error(String message, [dynamic error, StackTrace? stackTrace]) {
-    _log('ERROR', message);
-    if (error != null) {
-      _log('ERROR', 'Error details: $error');
-    }
-    if (stackTrace != null) {
-      _log('ERROR', 'Stack trace:\n$stackTrace');
+    if (!kReleaseMode) {
+      debugPrint('ERROR: $message');
+      if (error != null) debugPrint('Error details: $error');
+      if (stackTrace != null) debugPrint('Stack trace: $stackTrace');
     }
   }
 

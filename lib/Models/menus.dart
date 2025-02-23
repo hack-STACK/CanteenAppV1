@@ -1,4 +1,6 @@
+import 'package:kantin/Models/discount.dart';
 import 'package:kantin/Models/menus_addon.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class Menu {
   static const validTypes = {'food', 'drink'};
@@ -24,8 +26,19 @@ class Menu {
   final bool isSpicy;
   final List<String> tags;
   final int? preparationTime;
-  final double? originalPrice;
-  final double? discountedPrice; // Add this property
+  double? originalPrice; // Remove final
+  double? discountedPrice; // Remove final
+
+  double? _discountedPrice;
+  double? _discountPercentage;
+  bool _hasCheckedDiscount = false;
+  List<Discount>? _discounts;
+
+  // Cache for discount calculations
+  bool _discountChecked = false;
+  double? _cachedEffectivePrice;
+  bool? _cachedHasDiscount;
+  double? _cachedDiscountPercent;
 
   Menu({
     required this.id,
@@ -56,16 +69,81 @@ class Menu {
         addons = addons ?? []; // Initialize addons list
 
   factory Menu.fromMap(Map<String, dynamic> map) {
-    final type = (map['type'] as String?)?.toLowerCase() ?? 'food';
-    if (type != 'food' && type != 'drink') {
-      throw FormatException(
-          'Invalid menu type: $type. Must be "food" or "drink"');
+    print('\n=== Creating Menu from Map ===');
+    print('Raw map data: $map');
+
+    final basePrice = (map['price'] as num).toDouble();
+    double? discountPrice;
+    double? discountPercentage;
+
+    try {
+      // Process menu_discounts with null safety
+      if (map['menu_discounts'] != null && map['menu_discounts'] is List) {
+        final discounts = map['menu_discounts'] as List;
+
+        for (final discount in discounts) {
+          if (discount == null) continue;
+
+          // Safely check if discount is active
+          final isActive = discount['is_active'] == true;
+          if (!isActive) continue;
+
+          // First try to get effective_price directly
+          if (discount['effective_price'] != null) {
+            final effectivePrice =
+                (discount['effective_price'] as num?)?.toDouble();
+            if (effectivePrice != null && effectivePrice > 0) {
+              discountPrice = effectivePrice;
+              // Calculate percentage from effective price
+              discountPercentage =
+                  ((basePrice - effectivePrice) / basePrice * 100)
+                      .roundToDouble();
+              break;
+            }
+          }
+
+          // Try to get discount_percentage if no effective price
+          if (discount['discount_percentage'] != null) {
+            final percentage =
+                (discount['discount_percentage'] as num?)?.toDouble();
+            if (percentage != null && percentage > 0) {
+              discountPercentage = percentage;
+              discountPrice = basePrice * (1 - (percentage / 100));
+              break;
+            }
+          }
+
+          // Try to get from nested discount object
+          final discountObj = discount['discount'];
+          if (discountObj != null && discountObj is Map<String, dynamic>) {
+            final percentage =
+                (discountObj['discount_percentage'] as num?)?.toDouble();
+            if (percentage != null && percentage > 0) {
+              discountPercentage = percentage;
+              discountPrice = basePrice * (1 - (percentage / 100));
+              break;
+            }
+          }
+        }
+      }
+
+      print('Discount calculation results:');
+      print('Original price: $basePrice');
+      print('Discount price: $discountPrice');
+      print('Discount percentage: $discountPercentage%');
+    } catch (e) {
+      print('Error processing discount: $e');
+      print('Discount data: ${map['menu_discounts']}');
+      discountPrice = null;
+      discountPercentage = null;
     }
+
+    // Create menu with calculated discount
     return Menu(
       id: map['id'] as int,
       foodName: map['food_name'] as String,
-      price: (map['price'] as num).toDouble(),
-      type: type,
+      price: basePrice,
+      type: (map['type'] as String?)?.toLowerCase() ?? 'food',
       photo: map['photo'] as String?,
       description: map['description'] as String?,
       stallId: map['stall_id'] as int,
@@ -80,7 +158,8 @@ class Menu {
       isVegetarian: map['is_vegetarian'] ?? false,
       isSpicy: map['is_spicy'] ?? false,
       tags: List<String>.from(map['tags'] ?? []),
-      discountedPrice: map['discounted_price']?.toDouble(), // Add this line
+      discountedPrice: discountPrice,
+      originalPrice: basePrice,
     );
   }
 
@@ -141,31 +220,78 @@ class Menu {
 
   // Update fromJson factory constructor with better null handling
   factory Menu.fromJson(Map<String, dynamic> json) {
-    // Ensure stallId is properly extracted and validated
-    final stallId = json['stall_id'] ?? json['stallId'];
-    if (stallId == null || stallId == 0) {
-      throw Exception('Invalid or missing stall ID in menu data');
-    }
-
     try {
-      final stallData = json['stall'] as Map<String, dynamic>?;
+      print('\n========= Menu JSON Debug =========');
+
+      final basePrice = (json['price'] as num?)?.toDouble() ?? 0.0;
+      print('Base Price: $basePrice');
+
+      // Get discount information
+      final discounts = json['menu_discounts'] as List<dynamic>?;
+      double? discountedPrice;
+
+      if (discounts != null && discounts.isNotEmpty) {
+        print('Found ${discounts.length} discounts');
+
+        final activeDiscount = discounts.firstWhere(
+          (d) {
+            final isActive = d['is_active'] == true;
+            final hasDiscount = d['discounts'] != null;
+            final isDiscountActive = d['discounts']?['is_active'] == true;
+
+            print('Discount Debug:');
+            print('Is Active: $isActive');
+            print('Has Discount: $hasDiscount');
+            print('Is Discount Active: $isDiscountActive');
+
+            return isActive && hasDiscount && isDiscountActive;
+          },
+          orElse: () => null,
+        );
+
+        if (activeDiscount != null) {
+          final discountPercentage =
+              (activeDiscount['discounts']['discount_percentage'] as num)
+                  .toDouble();
+          discountedPrice = basePrice * (1 - (discountPercentage / 100));
+
+          print('Applied Discount:');
+          print('Percentage: $discountPercentage%');
+          print('Original Price: $basePrice');
+          print('Discounted Price: $discountedPrice');
+        }
+      }
+
+      // Handle different possible stall ID field names
+      final stallId = json['stall_id'] ??
+          json['stallId'] ??
+          (json['stall'] as Map<String, dynamic>?)?['id'] ??
+          0;
+
+      // If no valid stall ID is found, use a default value instead of throwing an error
+      if (stallId == 0) {
+        print(
+            'Warning: Using default stall ID for menu: ${json['food_name'] ?? 'Unknown'}');
+      }
+
       final type = (json['type'] as String?)?.toLowerCase() ?? 'food';
       if (type != 'food' && type != 'drink') {
         throw FormatException(
             'Invalid menu type: $type. Must be "food" or "drink"');
       }
-      return Menu(
-        id: json['id'] as int,
-        foodName: json['food_name'] as String? ?? 'Unknown Item',
-        price: (json['price'] as num?)?.toDouble() ?? 0.0,
+
+      final menu = Menu(
+        id: json['id'] ?? 0,
+        stallId: stallId, // Use the resolved stallId
+        foodName: json['food_name'] ?? json['foodName'] ?? 'Unknown Item',
+        price: basePrice,
         type: type,
-        photo: json['photo'] as String?,
-        description: json['description'] as String?,
-        stallId: stallId,
-        isAvailable: json['is_available'] as bool? ?? true,
-        category: json['category'] as String?,
-        rating: (json['rating'] as num?)?.toDouble() ?? defaultRating,
-        totalRatings: json['total_ratings'] as int? ?? defaultTotalRatings,
+        photo: json['photo'],
+        description: json['description'] ?? '',
+        isAvailable: json['is_available'] ?? json['isAvailable'] ?? true,
+        category: json['category'] ?? '',
+        rating: (json['rating'] ?? 0).toDouble(),
+        totalRatings: json['total_ratings'] ?? json['totalRatings'] ?? 0,
         addons: (json['addons'] as List<dynamic>?)
                 ?.map((addon) => FoodAddon.fromJson(addon))
                 .toList() ??
@@ -177,13 +303,20 @@ class Menu {
         isSpicy: json['is_spicy'] ?? false,
         tags: List<String>.from(json['tags'] ?? []),
         preparationTime: json['preparation_time'] as int?,
-        originalPrice: (json['original_price'] as num?)?.toDouble(),
-        discountedPrice: json['discounted_price']?.toDouble(), // Add this line
+        originalPrice: basePrice,
+        discountedPrice: discountedPrice,
       );
-    } catch (e) {
-      print('Error creating Menu from JSON: $e');
-      print('JSON data: $json');
-      // Return a default menu item in case of error
+
+      print('Final Menu State:');
+      print('Has Discount: ${menu.hasDiscount}');
+      print('Effective Price: ${menu.effectivePrice}');
+      print('Discount Amount: ${menu.discountAmount}');
+      print('===============================\n');
+
+      return menu;
+    } catch (e, stack) {
+      print('Error in Menu.fromJson: $e\n$stack');
+      // Return a valid menu item instead of throwing
       return Menu(
         id: 0,
         foodName: 'Error Loading Item',
@@ -245,6 +378,146 @@ class Menu {
 
   String get formattedRating => rating.toStringAsFixed(1);
   bool get hasRating => rating > 0 && totalRatings > 0;
+
+  // Update effectivePrice getter to use caching
+  double get effectivePrice {
+    if (!_discountChecked) {
+      _calculateDiscountValues();
+    }
+    return _cachedEffectivePrice ?? price;
+  }
+
+  // Update hasDiscount getter to use caching
+  bool get hasDiscount {
+    if (!_discountChecked) {
+      _calculateDiscountValues();
+    }
+    return _cachedHasDiscount ?? false;
+  }
+
+  // Update discountPercent getter to use caching
+  double get discountPercent {
+    if (!_discountChecked) {
+      _calculateDiscountValues();
+    }
+    return _cachedDiscountPercent ?? 0.0;
+  }
+
+  // Private method to calculate all discount-related values at once
+  void _calculateDiscountValues() {
+    try {
+      final hasValidDiscount = _discountedPrice != null &&
+          _discountedPrice! > 0 &&
+          _discountedPrice! < price &&
+          _discountPercentage != null &&
+          _discountPercentage! > 0;
+
+      _cachedHasDiscount = hasValidDiscount;
+      _cachedEffectivePrice = hasValidDiscount ? _discountedPrice! : price;
+      _cachedDiscountPercent = hasValidDiscount ? _discountPercentage! : 0.0;
+
+      print('\n=== Discount Calculation ===');
+      print('Original price: $price');
+      print('Discounted price: $_discountedPrice');
+      print('Discount percentage: $_discountPercentage');
+      print('Has discount: $_cachedHasDiscount');
+      print('Effective price: $_cachedEffectivePrice');
+      print('Cache discount percent: $_cachedDiscountPercent%');
+      print('==========================\n');
+    } catch (e) {
+      print('Error in discount calculation: $e');
+      _cachedHasDiscount = false;
+      _cachedEffectivePrice = price;
+      _cachedDiscountPercent = 0.0;
+    }
+
+    _discountChecked = true;
+  }
+
+  // Update discountAmount getter to use cached values
+  double get discountAmount {
+    if (!_discountChecked) {
+      _calculateDiscountValues();
+    }
+    return hasDiscount ? price - effectivePrice : 0.0;
+  }
+
+  // Update fetchDiscount method
+  Future<void> fetchDiscount() async {
+    try {
+      final supabase = Supabase.instance.client;
+      final now = DateTime.now().toUtc().toIso8601String();
+
+      print('Fetching discounts for menu ${id} at $now');
+
+      final response = await supabase
+          .from('menu_discounts')
+          .select('''
+            *,
+            discounts:id_discount (
+              id,
+              discount_name,
+              discount_percentage,
+              start_date,
+              end_date,
+              is_active,
+              type
+            )
+          ''')
+          .eq('id_menu', id)
+          .eq('is_active', true)
+          .eq('discounts.is_active', true)
+          .lte('discounts.start_date', now)
+          .gte('discounts.end_date', now)
+          .order('discount_percentage', ascending: false)
+          .limit(1);
+
+      print('Raw discount response: $response');
+
+      if (response != null && (response as List).isNotEmpty) {
+        final discountData = response.first;
+        final discountInfo = discountData['discounts'];
+
+        if (discountInfo != null && discountInfo['is_active'] == true) {
+          // Get discount percentage from the discount record
+          final percentage =
+              (discountInfo['discount_percentage'] as num).toDouble();
+
+          // Calculate discounted price
+          _discountedPrice = price * (1 - (percentage / 100));
+          _discountPercentage = percentage;
+
+          print('Found active discount:');
+          print('Discount Info: $discountInfo');
+          print('Percentage: $_discountPercentage%');
+          print('Original Price: $price');
+          print('Calculated Discounted Price: $_discountedPrice');
+
+          // Don't override with effective_price from menu_discounts
+          discountedPrice = _discountedPrice;
+          originalPrice = price;
+        }
+      }
+
+      _hasCheckedDiscount = true;
+      _discountChecked = false;
+      _calculateDiscountValues();
+    } catch (e, stack) {
+      print('Error fetching discount: $e');
+      print('Stack trace: $stack');
+    }
+  }
+
+  // Clean up other redundant getters
+  double get discountPercentage => discountPercent;
+
+  List<Discount> get discounts {
+    if (_discounts == null) {
+      // If discounts haven't been fetched yet, return empty list
+      return [];
+    }
+    return _discounts!;
+  }
 
   @override
   bool operator ==(Object other) =>

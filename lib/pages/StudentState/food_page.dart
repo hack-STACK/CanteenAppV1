@@ -28,7 +28,11 @@ class _FoodPageState extends State<FoodPage> {
         currentlySelectedAddons.add(addOn);
       }
     }
-    context.read<Restaurant>().addToCart(menu, addons: currentlySelectedAddons);
+    context.read<Restaurant>().addToCart(
+          menu,
+          quantity: 1, // Add required quantity parameter
+          addons: currentlySelectedAddons,
+        );
   }
 
   @override
@@ -44,7 +48,8 @@ class _FoodPageState extends State<FoodPage> {
             Image.network(
               widget.menu.photo ?? '',
               width: screenSize.width,
-              height: screenSize.height * 0.3, // Adjust height based on screen size
+              height:
+                  screenSize.height * 0.3, // Adjust height based on screen size
               fit: BoxFit.cover, // Cover the area
             ),
             Padding(
@@ -77,7 +82,7 @@ class _FoodPageState extends State<FoodPage> {
                   ),
                   const SizedBox(height: 10),
                   Divider(color: Theme.of(context).colorScheme.secondary),
-                  
+
                   // Conditionally display the Add-ons section
                   if (widget.menu.addons.isNotEmpty) ...[
                     Text(

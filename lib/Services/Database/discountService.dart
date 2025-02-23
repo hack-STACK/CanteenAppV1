@@ -342,4 +342,108 @@ class DiscountService {
       throw Exception('Failed to detach discount: $e');
     }
   }
+
+  Future<double> getEffectivePrice(int menuId, double basePrice) async {
+    try {
+      print('\n=== Calculating Effective Price ===');
+      print('Menu ID: $menuId');
+      print('Base Price: $basePrice');
+
+      final now = DateTime.now().toIso8601String();
+
+      // Get active discount for the menu
+      final response = await _client
+          .from('menu_discounts')
+          .select('''
+            *,
+            discount:discounts (
+              discount_percentage,
+              is_active,
+              start_date,
+              end_date
+            )
+          ''')
+          .eq('id_menu', menuId)
+          .eq('is_active', true)
+          .eq('discount.is_active', true)
+          .lte('discount.start_date', now)
+          .gte('discount.end_date', now)
+          .maybeSingle();
+
+      if (response == null) {
+        print('No active discount found');
+        return basePrice;
+      }
+
+      print('Found discount: $response');
+
+      // First try to use effective_price if available
+      if (response['effective_price'] != null) {
+        final effectivePrice = (response['effective_price'] as num).toDouble();
+        print('Using pre-calculated effective price: $effectivePrice');
+        return effectivePrice;
+      }
+
+      // Then try discount_percentage from menu_discounts
+      if (response['discount_percentage'] != null) {
+        final percentage = (response['discount_percentage'] as num).toDouble();
+        final discountedPrice = basePrice * (1 - (percentage / 100));
+        print('Calculated from menu_discounts percentage: $discountedPrice');
+        return discountedPrice;
+      }
+
+      // Finally try discount_percentage from discounts table
+      if (response['discount']?['discount_percentage'] != null) {
+        final percentage =
+            (response['discount']['discount_percentage'] as num).toDouble();
+        final discountedPrice = basePrice * (1 - (percentage / 100));
+        print('Calculated from discounts percentage: $discountedPrice');
+        return discountedPrice;
+      }
+
+      print('No valid discount percentage found, using base price');
+      return basePrice;
+    } catch (e) {
+      print('Error calculating effective price: $e');
+      return basePrice; // Return original price on error
+    }
+  }
+
+  Future<double?> getDiscountPercentage(int menuId) async {
+    try {
+      final now = DateTime.now().toIso8601String();
+
+      final response = await _client
+          .from('menu_discounts')
+          .select('''
+            discount_percentage,
+            discount:discounts (
+              discount_percentage
+            )
+          ''')
+          .eq('id_menu', menuId)
+          .eq('is_active', true)
+          .eq('discount.is_active', true)
+          .lte('discount.start_date', now)
+          .gte('discount.end_date', now)
+          .maybeSingle();
+
+      if (response == null) return null;
+
+      // Try menu_discounts percentage first
+      if (response['discount_percentage'] != null) {
+        return (response['discount_percentage'] as num).toDouble();
+      }
+
+      // Then try discounts table percentage
+      if (response['discount']?['discount_percentage'] != null) {
+        return (response['discount']['discount_percentage'] as num).toDouble();
+      }
+
+      return null;
+    } catch (e) {
+      print('Error getting discount percentage: $e');
+      return null;
+    }
+  }
 }

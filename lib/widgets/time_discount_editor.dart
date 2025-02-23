@@ -29,8 +29,10 @@ class _TimeDiscountEditorState extends State<TimeDiscountEditor> {
     _nameController = TextEditingController(text: discount?.name ?? '');
     _discountController = TextEditingController(
         text: discount?.discountPercentage.toString() ?? '');
-    _startTime = TimeOfDay.fromDateTime(discount?.startTime ?? DateTime.now());
-    _endTime = TimeOfDay.fromDateTime(discount?.endTime ?? DateTime.now());
+    _startTime = TimeOfDay.fromDateTime(
+        discount?.startTime.toLocal() ?? DateTime.now().toLocal());
+    _endTime = TimeOfDay.fromDateTime(
+        discount?.endTime.toLocal() ?? DateTime.now().toLocal());
     _isActive = discount?.isActive ?? true;
   }
 

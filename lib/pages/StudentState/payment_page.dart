@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kReleaseMode; // Add this import
 import 'package:flutter_credit_card/flutter_credit_card.dart';
+import 'package:kantin/Models/menu_cart_item.dart';
 import 'package:kantin/Models/payment_errors.dart' as payment_errors;
+import 'package:kantin/Services/Database/studentService.dart';
+import 'package:kantin/Services/Database/transaction_details_service.dart';
 import 'package:kantin/pages/StudentState/StudentPage.dart';
 // Hide ambiguous classes
 import 'package:kantin/utils/logger.dart';
@@ -14,6 +17,10 @@ import 'dart:async';
 import 'package:kantin/utils/error_handler.dart' hide TransactionError;
 import 'package:kantin/widgets/loading_overlay.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:kantin/utils/image_helper.dart';
+import 'package:kantin/models/enums/payment_method_extension.dart';
+import 'package:kantin/models/enums/order_type_extension.dart';
+import 'package:kantin/widgets/badges/discount_badge.dart';
 
 class PaymentPage extends StatefulWidget {
   final int StudentId; // Make this non-nullable
@@ -88,6 +95,10 @@ class _PaymentPageState extends State<PaymentPage>
   // Add controller at class level
   late TextEditingController _addressController;
 
+  final StudentService _studentService = StudentService();
+
+  final TransactionDetailsService _detailsService = TransactionDetailsService();
+
   @override
   void initState() {
     super.initState();
@@ -109,6 +120,7 @@ class _PaymentPageState extends State<PaymentPage>
 
     // Load initial data
     _loadStudentData();
+    _loadStudentAddress();
   }
 
   @override
@@ -124,20 +136,6 @@ class _PaymentPageState extends State<PaymentPage>
     _addressController.dispose();
 
     super.dispose();
-  }
-
-  // Update payment method string conversion
-  String _getPaymentMethodString(PaymentMethod method) {
-    switch (method) {
-      case PaymentMethod.cash:
-        return 'cash';
-      case PaymentMethod.e_wallet:
-        return 'e_wallet';
-      case PaymentMethod.bank_transfer:
-        return 'bank_transfer';
-      case PaymentMethod.credit_card:
-        return 'credit_card';
-    }
   }
 
   // Update the _getStallId method
@@ -186,7 +184,14 @@ class _PaymentPageState extends State<PaymentPage>
       }
       _moveToNextStep();
     } else if (_currentStep == 1) {
-      // Order type selection
+      // Order type selection and validation
+      final restaurant = Provider.of<Restaurant>(context, listen: false);
+      if (_selectedOrderType == OrderType.delivery &&
+          (restaurant.deliveryAddress.isEmpty ||
+              restaurant.deliveryAddress.trim().isEmpty)) {
+        _showError('Please provide a delivery address');
+        return;
+      }
       _moveToNextStep();
     } else if (_currentStep == 2) {
       // Payment method selection
@@ -196,7 +201,6 @@ class _PaymentPageState extends State<PaymentPage>
         await _processPayment();
       }
     } else if (_currentStep == 3) {
-      // Process payment
       await _processPayment();
     }
   }
@@ -367,13 +371,19 @@ class _PaymentPageState extends State<PaymentPage>
 
       _validateTransactionData(restaurant);
 
-      _logger.debug(
-        'Processing transaction for student: ${widget.StudentId}, stall: $stallId',
-      );
+      final transactionDetails =
+          await _prepareTransactionDetails(restaurant.cart);
 
-      final transactionId = await _createTransactionWithRetry(
-        restaurant,
-        stallId,
+      final transactionId = await _transactionService.createTransaction(
+        studentId: widget.StudentId,
+        stallId: stallId,
+        totalAmount: _calculateFinalTotal(restaurant),
+        orderType: _selectedOrderType,
+        deliveryAddress: _selectedOrderType == OrderType.delivery
+            ? restaurant.deliveryAddress
+            : null,
+        notes: noteController.text,
+        details: transactionDetails,
       );
 
       await _updatePaymentStatus(transactionId);
@@ -382,16 +392,9 @@ class _PaymentPageState extends State<PaymentPage>
       _transactionId = transactionId.toString();
 
       return true;
-    } on payment_errors.PaymentError catch (e) {
-      _logger.error('Payment error occurred', e);
-      _handlePaymentError(e);
-      return false;
-    } catch (e, stackTrace) {
-      _logger.error('Unexpected error in transaction', e, stackTrace);
-      throw payment_errors.TransactionError(
-        message: 'An unexpected error occurred. Please try again.',
-        originalError: e,
-      );
+    } catch (e) {
+      _logger.error('Transaction error:', e);
+      rethrow;
     }
   }
 
@@ -410,11 +413,14 @@ class _PaymentPageState extends State<PaymentPage>
       throw payment_errors.PaymentValidationError(message: 'Cart is empty');
     }
 
-    if (_selectedOrderType == OrderType.delivery &&
-        restaurant.deliveryAddress.trim().isEmpty) {
-      throw payment_errors.PaymentValidationError(
-        message: 'Delivery address is required for delivery orders',
-      );
+    if (_selectedOrderType == OrderType.delivery) {
+      try {
+        restaurant.validateDeliveryAddress();
+      } catch (e) {
+        throw payment_errors.PaymentValidationError(
+          message: e.toString(),
+        );
+      }
     }
 
     double totalAmount = restaurant.calculateSubtotal();
@@ -450,16 +456,20 @@ class _PaymentPageState extends State<PaymentPage>
         setState(() => _transactionLog =
             'Creating transaction (Attempt ${attempts + 1})...');
 
+        // Prepare transaction details with proper pricing
+        final transactionDetails =
+            await _prepareTransactionDetails(restaurant.cart);
+
         transactionId = await _transactionService.createTransaction(
           studentId: widget.StudentId,
           stallId: stallId,
-          totalAmount: restaurant.calculateSubtotal(),
-          orderType: _selectedOrderType,
+          totalAmount: _calculateFinalTotal(restaurant),
+          orderType: _selectedOrderType, // This is correct, keep as enum
           deliveryAddress: _selectedOrderType == OrderType.delivery
               ? restaurant.deliveryAddress
               : null,
           notes: noteController.text,
-          items: _mapCartItems(restaurant.cart),
+          details: transactionDetails,
         );
 
         _logger.info('Transaction created successfully: $transactionId');
@@ -693,6 +703,22 @@ class _PaymentPageState extends State<PaymentPage>
 
   // Add this method for payment confirmation
   Future<bool> _showPaymentConfirmationDialog(Restaurant restaurant) async {
+    double subtotal = 0;
+    double totalDiscount = 0;
+
+    for (var item in restaurant.cart) {
+      double originalPrice = item.menu.price * item.quantity;
+      double effectivePrice = item.discountedPrice ?? originalPrice;
+
+      subtotal += originalPrice;
+      if (effectivePrice < originalPrice) {
+        totalDiscount += (originalPrice - effectivePrice);
+      }
+    }
+
+    final deliveryFee = _selectedOrderType == OrderType.delivery ? 2000.0 : 0.0;
+    final total = subtotal - totalDiscount + deliveryFee;
+
     return await showDialog<bool>(
           context: context,
           barrierDismissible: false,
@@ -703,16 +729,16 @@ class _PaymentPageState extends State<PaymentPage>
               children: [
                 const Text('Are you sure you want to proceed with payment?'),
                 const SizedBox(height: 16),
-                Text(
-                  'Total: Rp ${restaurant.calculateSubtotal().toStringAsFixed(0)}',
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                _buildPriceRow('Subtotal', subtotal),
+                if (totalDiscount > 0)
+                  _buildPriceRow('Discounts', -totalDiscount,
+                      textColor: Colors.green),
+                if (_selectedOrderType == OrderType.delivery)
+                  _buildPriceRow('Delivery Fee', deliveryFee),
+                const Divider(height: 8),
+                _buildPriceRow('Total', total, isTotal: true),
                 const SizedBox(height: 8),
-                Text(
-                    'Payment Method: ${_getPaymentTitle(_selectedPaymentMethod)}'),
+                Text('Payment Method: ${_selectedPaymentMethod.label}'),
                 if (_selectedOrderType == OrderType.delivery) ...[
                   const SizedBox(height: 8),
                   Text('Delivery to: ${restaurant.deliveryAddress}'),
@@ -737,304 +763,390 @@ class _PaymentPageState extends State<PaymentPage>
   // Ensure proper null checks in build method
   @override
   Widget build(BuildContext context) {
-    // Add null check for context
-    if (_isPaymentProcessing) {
-      return _buildProcessingScreen();
-    }
+    // Optimize theme access
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
 
-    return ScaffoldMessenger(
-      key: _scaffoldKey,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Checkout'),
-          elevation: 0,
+    return Theme(
+      data: theme.copyWith(
+        // Custom theme for payment page
+        cardTheme: CardTheme(
+          elevation: 8,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shadowColor: Colors.black26,
         ),
+        inputDecorationTheme: InputDecorationTheme(
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+          filled: true,
+          fillColor: colorScheme.surface,
+        ),
+      ),
+      child: Scaffold(
+        appBar: _buildAppBar(),
         body: _isLoadingStudentData
-            ? const Center(child: CircularProgressIndicator())
-            : _buildBody(),
+            ? const LoadingOverlay(
+                isLoading: true,
+                child: Center(child: CircularProgressIndicator()),
+              )
+            : SafeArea(
+                child: Column(
+                  children: [
+                    _buildStepIndicator().animate().slideY(
+                          begin: -1,
+                          end: 0,
+                          curve: Curves.easeOutBack,
+                          duration: const Duration(milliseconds: 600),
+                        ),
+                    Expanded(
+                      child: PageView(
+                        controller: _pageController,
+                        physics: const NeverScrollableScrollPhysics(),
+                        onPageChanged: (index) {
+                          setState(() => _currentStep = index);
+                        },
+                        children: [
+                          _buildOrderSummaryPage(),
+                          _buildOrderTypePage(),
+                          _buildPaymentMethodPage(),
+                          if (_selectedPaymentMethod ==
+                              PaymentMethod.credit_card)
+                            _buildPaymentDetailsPage(),
+                        ].map((page) => _buildPageTransition(page)).toList(),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
         bottomNavigationBar: _buildBottomBar(),
       ),
     );
   }
 
-  Widget _buildBody() {
+  Widget _buildPageTransition(Widget page) {
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+        child: page.animate().fadeIn(
+              duration: const Duration(milliseconds: 400),
+            ),
+      ),
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar() {
+    return AppBar(
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      centerTitle: true,
+      title: Column(
+        children: [
+          Text(
+            'Checkout',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onBackground,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          Text(
+            _steps[_currentStep],
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.primary,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+      leading: IconButton(
+        icon: Icon(
+          Icons.arrow_back_ios,
+          color: Theme.of(context).colorScheme.onBackground,
+        ),
+        onPressed: () {
+          if (_currentStep > 0) {
+            _previousStep();
+          } else {
+            Navigator.of(context).pop();
+          }
+        },
+      ),
+    );
+  }
+
+  Widget _buildStepIndicator() {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            offset: const Offset(0, 2),
+            blurRadius: 8,
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          for (int i = 0; i < _steps.length; i++) ...[
+            if (i > 0)
+              Expanded(
+                child: Container(
+                  height: 2,
+                  color: _currentStep >= i
+                      ? Theme.of(context).primaryColor
+                      : Colors.grey[300],
+                ).animate().fadeIn(),
+              ),
+            _buildStepDot(i),
+          ],
+        ],
+      ),
+    ).animate().slideY(
+          begin: -1,
+          end: 0,
+          duration: const Duration(milliseconds: 500),
+          curve: Curves.easeOut,
+        );
+  }
+
+  Widget _buildStepDot(int step) {
+    final isCompleted = _currentStep > step;
+    final isActive = _currentStep >= step;
+
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        _buildStepIndicator(),
-        Expanded(
-          child: PageView(
-            controller: _pageController,
-            physics: const NeverScrollableScrollPhysics(),
-            onPageChanged: (index) {
-              setState(() => _currentStep = index);
-            },
-            children: [
-              _buildOrderSummaryPage(),
-              _buildOrderTypePage(),
-              _buildPaymentMethodPage(),
-              if (_selectedPaymentMethod == PaymentMethod.credit_card)
-                _buildPaymentDetailsPage(),
-            ],
+        Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: isActive ? Theme.of(context).primaryColor : Colors.grey[300],
+            border: Border.all(
+              color:
+                  isActive ? Theme.of(context).primaryColor : Colors.grey[400]!,
+              width: 2,
+            ),
+          ),
+          child: Center(
+            child: isCompleted
+                ? Icon(
+                    Icons.check,
+                    size: 16,
+                    color: Theme.of(context).colorScheme.onPrimary,
+                  )
+                : Text(
+                    '${step + 1}',
+                    style: TextStyle(
+                      color: isActive
+                          ? Theme.of(context).colorScheme.onPrimary
+                          : Colors.grey[600],
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+          ),
+        ).animate().scale(),
+        const SizedBox(height: 4),
+        Text(
+          _steps[step],
+          style: TextStyle(
+            fontSize: 12,
+            color: isActive ? Theme.of(context).primaryColor : Colors.grey[600],
+            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
           ),
         ),
       ],
     );
   }
 
-  Widget _buildStepIndicator() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      child: Row(
-        children: [
-          _buildStepIcon(0, 'Order'),
-          _buildStepLine(),
-          _buildStepIcon(1, 'Type'),
-          _buildStepLine(),
-          _buildStepIcon(2, 'Payment'),
-          _buildStepLine(),
-          _buildStepIcon(3, 'Confirm'),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStepIcon(int step, String label) {
-    final isActive = _currentStep >= step;
-    return Expanded(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          CircleAvatar(
-            radius: 16,
-            backgroundColor:
-                isActive ? Theme.of(context).primaryColor : Colors.grey[300],
-            child: Text(
-              '${step + 1}',
-              style: TextStyle(
-                color: isActive ? Colors.white : Colors.grey[600],
-              ),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: TextStyle(
-              color:
-                  isActive ? Theme.of(context).primaryColor : Colors.grey[600],
-              fontSize: 12,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStepLine() {
-    return Expanded(
-      child: Container(
-        height: 2,
-        color: Colors.grey[300],
-        margin: const EdgeInsets.symmetric(horizontal: 8),
-      ),
-    );
-  }
-
   Widget _buildOrderSummaryPage() {
     return Consumer<Restaurant>(
-      builder: (context, restaurant, _) => ListView(
-        padding: const EdgeInsets.all(16),
+      builder: (context, restaurant, _) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildSectionTitle('Delivery To'),
-          _buildDeliveryCard(restaurant),
+          _buildSectionHeader('Order Summary', Icons.receipt_long),
           const SizedBox(height: 16),
-          _buildSectionTitle('Order Summary'),
-          ...restaurant.cart.map((item) => _buildOrderItem(item)),
+          ...restaurant.cart.map((item) => _buildEnhancedOrderItem(item)),
+          const SizedBox(height: 24),
+          _buildSectionHeader('Delivery Details', Icons.location_on),
           const SizedBox(height: 16),
-          _buildPriceSummary(restaurant),
+          _buildEnhancedDeliveryCard(restaurant),
+          const SizedBox(height: 24),
+          _buildEnhancedPriceSummary(restaurant),
         ],
       ),
     );
   }
 
   Widget _buildOrderTypePage() {
-    return ListView(
+    final theme = Theme.of(context);
+
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
-      children: [
-        _buildSectionTitle('Select Order Type'),
-        const SizedBox(height: 16),
-        Column(
-          children: OrderType.values.map((type) {
-            return Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSectionHeader('Select Order Type', Icons.local_shipping),
+          const SizedBox(height: 16),
+          ...OrderType.values.map((type) {
+            final isSelected = _selectedOrderType == type;
+            return Container(
               margin: const EdgeInsets.only(bottom: 12),
-              child: ListTile(
-                leading: _getOrderTypeIcon(type),
-                title: Text(_getOrderTypeTitle(type)),
-                subtitle: Text(_getOrderTypeDescription(type)),
-                trailing: _selectedOrderType == type
-                    ? Icon(Icons.check_circle,
-                        color: Theme.of(context).primaryColor)
-                    : null,
-                selected: _selectedOrderType == type,
-                onTap: () {
-                  setState(() => _selectedOrderType = type);
-                  _moveToNextStep();
-                },
-              ),
-            );
-          }).toList(),
-        ),
-      ],
-    );
-  }
-
-  Widget _getOrderTypeIcon(OrderType type) {
-    IconData icon;
-    Color color;
-    switch (type) {
-      case OrderType.delivery:
-        icon = Icons.delivery_dining;
-        color = Colors.blue;
-        break;
-      case OrderType.pickup:
-        icon = Icons.store;
-        color = Colors.green;
-        break;
-      case OrderType.dine_in:
-        icon = Icons.restaurant;
-        color = Colors.orange;
-        break;
-    }
-    return CircleAvatar(
-      backgroundColor: color.withOpacity(0.1),
-      child: Icon(icon, color: color),
-    );
-  }
-
-  String _getOrderTypeTitle(OrderType type) {
-    switch (type) {
-      case OrderType.delivery:
-        return 'Delivery';
-      case OrderType.pickup:
-        return 'Self Pickup';
-      case OrderType.dine_in:
-        return 'Dine In';
-    }
-  }
-
-  String _getOrderTypeDescription(OrderType type) {
-    switch (type) {
-      case OrderType.delivery:
-        return 'We\'ll deliver to your location';
-      case OrderType.pickup:
-        return 'Pick up your order at the counter';
-      case OrderType.dine_in:
-        return 'Eat at the canteen';
-    }
-  }
-
-  Widget _buildPaymentMethodPage() {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _buildSectionTitle('Select Payment Method'),
-        const SizedBox(height: 16),
-        Column(
-          children: PaymentMethod.values.map((method) {
-            return Card(
-              margin: const EdgeInsets.only(bottom: 12),
-              child: ListTile(
-                leading: _getPaymentIcon(method),
-                title: Text(_getPaymentTitle(method)),
-                subtitle: Text(_getPaymentDescription(method)),
-                trailing: _selectedPaymentMethod == method
-                    ? Icon(Icons.check_circle,
-                        color: Theme.of(context).primaryColor)
-                    : null,
-                selected: _selectedPaymentMethod == method,
-                onTap: () {
-                  setState(() => _selectedPaymentMethod = method);
-                  // Only move to next step if credit card is not selected
-                  // For credit card, user needs to fill in details
-                  if (method != PaymentMethod.credit_card) {
+              child: Material(
+                color: isSelected
+                    ? theme.colorScheme.primaryContainer
+                    : theme.colorScheme.surface,
+                borderRadius: BorderRadius.circular(16),
+                elevation: isSelected ? 2 : 1,
+                child: InkWell(
+                  onTap: () {
+                    setState(() => _selectedOrderType = type);
                     _moveToNextStep();
-                  }
-                },
+                  },
+                  borderRadius: BorderRadius.circular(16),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: type.color.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(
+                            type.icon,
+                            color: type.color,
+                            size: 24,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                type.title,
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: isSelected
+                                      ? theme.colorScheme.primary
+                                      : theme.colorScheme.onSurface,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                type.description,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (isSelected)
+                          Icon(
+                            Icons.check_circle,
+                            color: theme.colorScheme.primary,
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
             );
           }).toList(),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildPaymentMethodCard(PaymentMethod method) {
-    final isSelected = _selectedPaymentMethod == method;
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: ListTile(
-        leading: _getPaymentIcon(method),
-        title: Text(_getPaymentTitle(method)),
-        subtitle: Text(_getPaymentDescription(method)),
-        trailing: isSelected
-            ? Icon(Icons.check_circle, color: Theme.of(context).primaryColor)
-            : null,
-        selected: isSelected,
-        onTap: () => setState(() => _selectedPaymentMethod = method),
+        ],
       ),
     );
   }
 
-  Widget _getPaymentIcon(PaymentMethod method) {
-    IconData icon;
-    Color color;
-    switch (method) {
-      case PaymentMethod.cash:
-        icon = Icons.money;
-        color = Colors.green;
-        break;
-      case PaymentMethod.e_wallet:
-        icon = Icons.account_balance_wallet;
-        color = Colors.blue;
-        break;
-      case PaymentMethod.bank_transfer:
-        icon = Icons.account_balance;
-        color = Colors.purple;
-        break;
-      case PaymentMethod.credit_card:
-        icon = Icons.credit_card;
-        color = Colors.red;
-        break;
-    }
-    return CircleAvatar(
-      backgroundColor: color.withOpacity(0.1),
-      child: Icon(icon, color: color),
+  Widget _buildPaymentMethodPage() {
+    final theme = Theme.of(context);
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSectionHeader('Select Payment Method', Icons.payment),
+          const SizedBox(height: 16),
+          ...PaymentMethod.values.map((method) {
+            final isSelected = _selectedPaymentMethod == method;
+            return Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              child: Material(
+                color: isSelected
+                    ? theme.colorScheme.primaryContainer
+                    : theme.colorScheme.surface,
+                borderRadius: BorderRadius.circular(16),
+                elevation: isSelected ? 2 : 1,
+                child: InkWell(
+                  onTap: () {
+                    setState(() => _selectedPaymentMethod = method);
+                    if (method != PaymentMethod.credit_card) {
+                      _moveToNextStep();
+                    }
+                  },
+                  borderRadius: BorderRadius.circular(16),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: method.color.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(
+                            method.icon,
+                            color: method.color,
+                            size: 24,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                method.label,
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: isSelected
+                                      ? theme.colorScheme.primary
+                                      : theme.colorScheme.onSurface,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                method.description,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (isSelected)
+                          Icon(
+                            Icons.check_circle,
+                            color: theme.colorScheme.primary,
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ],
+      ),
     );
-  }
-
-  String _getPaymentTitle(PaymentMethod method) {
-    switch (method) {
-      case PaymentMethod.cash:
-        return 'Cash Payment';
-      case PaymentMethod.e_wallet:
-        return 'E-Wallet';
-      case PaymentMethod.bank_transfer:
-        return 'Bank Transfer';
-      case PaymentMethod.credit_card:
-        return 'Credit Card';
-    }
-  }
-
-  String _getPaymentDescription(PaymentMethod method) {
-    switch (method) {
-      case PaymentMethod.cash:
-        return 'Pay with cash on delivery';
-      case PaymentMethod.e_wallet:
-        return 'Pay using digital wallet';
-      case PaymentMethod.bank_transfer:
-        return 'Pay via bank transfer';
-      case PaymentMethod.credit_card:
-        return 'Pay with credit card';
-    }
   }
 
   Widget _buildProcessingState() {
@@ -1061,45 +1173,115 @@ class _PaymentPageState extends State<PaymentPage>
   }
 
   Widget _buildBottomBar() {
-    if (_isProcessing) return const SizedBox.shrink();
-
     return SafeArea(
-      child: Padding(
+      child: Container(
         padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              offset: const Offset(0, -4),
+              blurRadius: 16,
+            ),
+          ],
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Consumer<Restaurant>(
-              builder: (context, restaurant, _) => Text(
-                'Total: Rp ${restaurant.calculateSubtotal().toStringAsFixed(0)}',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+              builder: (context, restaurant, _) {
+                // Calculate the correct total including all components
+                double subtotal = 0.0;
+                double totalDiscount = 0.0;
+
+                // Calculate per item
+                for (var item in restaurant.cart) {
+                  final originalTotal = item.originalPrice * item.quantity;
+                  final discountedTotal = item.discountedPrice * item.quantity;
+
+                  // Add addon costs
+                  final addonTotal = item.selectedAddons.fold(
+                      0.0, (sum, addon) => sum + (addon.price * item.quantity));
+
+                  subtotal += discountedTotal +
+                      addonTotal; // Include addons in subtotal
+                  totalDiscount += originalTotal - discountedTotal;
+                }
+
+                // Add delivery fee if applicable
+                final deliveryFee =
+                    _selectedOrderType == OrderType.delivery ? 2000.0 : 0.0;
+                final finalTotal = subtotal + deliveryFee;
+
+                print('''
+=== Bottom Bar Calculation Debug ===
+Subtotal: $subtotal
+Total Discount: $totalDiscount
+Delivery Fee: $deliveryFee
+Final Total: $finalTotal
+===============================
+''');
+
+                return Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Total',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurface,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    Text(
+                      'Rp ${finalTotal.toStringAsFixed(0)}',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
-            const SizedBox(height: 16),
             Row(
               children: [
                 if (_currentStep > 0)
                   Expanded(
                     flex: 1,
-                    child: OutlinedButton(
+                    child: OutlinedButton.icon(
                       onPressed: _previousStep,
-                      child: const Text('Back'),
+                      icon: const Icon(Icons.arrow_back),
+                      label: const Text('Back'),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
                     ),
                   ),
                 if (_currentStep > 0) const SizedBox(width: 16),
                 Expanded(
                   flex: 2,
-                  child: ElevatedButton(
-                    onPressed:
-                        _nextStep, // Changed from _processPayment to _nextStep
+                  child: ElevatedButton.icon(
+                    onPressed: _nextStep,
+                    icon: Icon(_currentStep == 3
+                        ? Icons.payment
+                        : Icons.arrow_forward),
+                    label: Text(_currentStep == 3 ? 'Pay Now' : 'Next'),
                     style: ElevatedButton.styleFrom(
-                      minimumSize: const Size.fromHeight(50),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
-                    child: Text(_currentStep == 3 ? 'Pay Now' : 'Next'),
-                  ),
+                  )
+                      .animate(target: _isProcessing ? 0 : 1)
+                      .scaleXY(begin: 1, end: 1.05)
+                      .shimmer(duration: const Duration(seconds: 2)),
                 ),
               ],
             ),
@@ -1275,70 +1457,261 @@ class _PaymentPageState extends State<PaymentPage>
   }
 
   Widget _buildOrderItem(CartItem item) {
+    final hasDiscount = item.discountedPrice < item.originalPrice;
+
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (item.menu.photo != null)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Image.network(
-                  item.menu.photo!,
-                  width: 60,
-                  height: 60,
-                  fit: BoxFit.cover,
+      elevation: 2,
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: ExpansionTile(
+        tilePadding: const EdgeInsets.all(16),
+        childrenPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        leading: Hero(
+          tag: 'food_${item.menu.id}',
+          child: Container(
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+              image: DecorationImage(
+                image: NetworkImage(item.menu.photo ?? ''),
+                fit: BoxFit.cover,
+                onError: (_, __) => Icon(
+                  Icons.restaurant,
+                  color: Colors.grey[400],
+                  size: 30,
                 ),
               ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item.menu.foodName,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+        ),
+        title: Text(
+          item.menu.foodName,
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+          ),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                _buildQuantityBadge(item.quantity),
+                if (hasDiscount) ...[
+                  const SizedBox(width: 8),
+                  _buildDiscountBadge(item),
+                ],
+              ],
+            ),
+          ],
+        ),
+        trailing: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            if (hasDiscount)
+              Text(
+                'Rp ${item.originalPrice.toStringAsFixed(0)}',
+                style: TextStyle(
+                  decoration: TextDecoration.lineThrough,
+                  color: Colors.grey[500],
+                  fontSize: 12,
+                ),
+              ),
+            Text(
+              'Rp ${item.discountedPrice.toStringAsFixed(0)}',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: hasDiscount
+                    ? Theme.of(context).colorScheme.error
+                    : Theme.of(context).colorScheme.primary,
+                fontSize: 16,
+              ),
+            ),
+          ],
+        ),
+        children: [
+          if (item.selectedAddons.isNotEmpty) _buildAddonsSection(item),
+        ],
+      ),
+    ).animate().fadeIn().slideX();
+  }
+
+  Widget _buildQuantityBadge(int quantity) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.shopping_basket_outlined,
+            size: 14,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            '$quantity',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.primary,
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDiscountBadge(CartItem item) {
+    final discount =
+        ((item.originalPrice - item.discountedPrice) / item.originalPrice * 100)
+            .round();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.error.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.error.withOpacity(0.2),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.local_offer_outlined,
+            size: 14,
+            color: Theme.of(context).colorScheme.error,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            '$discount% OFF',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.error,
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAddonsSection(CartItem item) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Divider(height: 24),
+        Row(
+          children: [
+            Icon(
+              Icons.restaurant_menu,
+              size: 16,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Add-ons',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        ...item.selectedAddons.map((addon) {
+          final addonTotal = addon.price * item.quantity;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(6),
                   ),
-                  if (item.selectedAddons.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        'Add-ons: ${item.selectedAddons.map((a) => a.addonName).join(", ")}',
+                  child: Icon(
+                    Icons.add_circle_outline,
+                    size: 14,
+                    color: Colors.grey[600],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        addon.addonName,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      Text(
+                        'Rp ${addon.price.toStringAsFixed(0)} × ${item.quantity}',
                         style: TextStyle(
                           fontSize: 12,
                           color: Colors.grey[600],
                         ),
                       ),
-                    ),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        '${item.quantity}x',
-                        style: TextStyle(color: Colors.grey[600]),
-                      ),
-                      Text(
-                        'Rp ${item.totalPrice.toStringAsFixed(0)}',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
                     ],
                   ),
-                ],
-              ),
+                ),
+                Text(
+                  'Rp ${addonTotal.toStringAsFixed(0)}',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          );
+        }).toList(),
+      ],
     );
   }
 
-  // Add null safety to price calculations
   Widget _buildPriceSummary(Restaurant restaurant) {
-    final subtotal = restaurant.calculateSubtotal();
+    double subtotal = 0;
+    double totalDiscount = 0;
+
+    // Calculate subtotal and discounts
+    for (var item in restaurant.cart) {
+      double originalPrice = item.menu.price * item.quantity;
+      double effectivePrice = item.discountedPrice ?? originalPrice;
+
+      subtotal += originalPrice;
+      if (effectivePrice < originalPrice) {
+        totalDiscount += (originalPrice - effectivePrice);
+      }
+    }
+
     final deliveryFee = _selectedOrderType == OrderType.delivery ? 2000.0 : 0.0;
-    final total = subtotal + deliveryFee;
+    final total = subtotal - totalDiscount + deliveryFee;
 
     return Card(
       child: Padding(
@@ -1346,6 +1719,9 @@ class _PaymentPageState extends State<PaymentPage>
         child: Column(
           children: [
             _buildPriceRow('Subtotal', subtotal),
+            if (totalDiscount > 0)
+              _buildPriceRow('Discounts', -totalDiscount,
+                  textColor: Colors.green),
             if (_selectedOrderType == OrderType.delivery)
               _buildPriceRow('Delivery Fee', deliveryFee),
             const Divider(height: 16),
@@ -1356,7 +1732,8 @@ class _PaymentPageState extends State<PaymentPage>
     );
   }
 
-  Widget _buildPriceRow(String label, double amount, {bool isTotal = false}) {
+  Widget _buildPriceRow(String label, double amount,
+      {bool isTotal = false, Color? textColor}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -1366,12 +1743,14 @@ class _PaymentPageState extends State<PaymentPage>
             label,
             style: TextStyle(
               fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
+              color: textColor,
             ),
           ),
           Text(
             'Rp ${amount.toStringAsFixed(0)}',
             style: TextStyle(
               fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
+              color: textColor,
             ),
           ),
         ],
@@ -1489,5 +1868,553 @@ class _PaymentPageState extends State<PaymentPage>
         _isLoadingStudentData = false;
       });
     }
+  }
+
+  Future<void> _loadStudentAddress() async {
+    try {
+      final student = await _studentService.getStudentById(widget.StudentId);
+      if (student != null && mounted) {
+        final restaurant = Provider.of<Restaurant>(context, listen: false);
+        if (restaurant.deliveryAddress.isEmpty) {
+          restaurant.updateDeliveryAddress(student.studentAddress);
+        }
+      }
+    } catch (e) {
+      _logger.error('Error loading student address', e);
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _prepareTransactionDetails(
+      List<CartItem> cart) async {
+    return _detailsService.prepareTransactionDetails(
+      cart,
+      enableDebug: !kReleaseMode,
+    );
+  }
+
+  double _calculateFinalTotal(Restaurant restaurant) {
+    double total = 0.0;
+    double totalSavings = 0.0;
+
+    print('\n=== Final Total Calculation ===');
+
+    for (var item in restaurant.cart) {
+      // Calculate main item totals
+      final originalTotal = item.originalPrice * item.quantity;
+      final discountedTotal = item.discountedPrice * item.quantity;
+      final itemSavings = originalTotal - discountedTotal;
+
+      // Calculate addon total
+      final addonTotal = item.selectedAddons.fold(
+        0.0,
+        (sum, addon) => sum + ((addon.price ?? 0.0) * item.quantity),
+      );
+
+      print('Item: ${item.menu.foodName}');
+      print('Original Total: $originalTotal');
+      print('Discounted Total: $discountedTotal');
+      print('Savings: $itemSavings');
+      print('Addon Total: $addonTotal');
+
+      total += discountedTotal + addonTotal;
+      totalSavings += itemSavings;
+    }
+
+    final deliveryFee = _selectedOrderType == OrderType.delivery ? 2000.0 : 0.0;
+    final finalTotal = total + deliveryFee;
+
+    print('Subtotal: $total');
+    print('Total Savings: $totalSavings');
+    print('Delivery Fee: $deliveryFee');
+    print('Final Total: $finalTotal');
+    print('============================\n');
+
+    return finalTotal;
+  }
+
+  Widget _buildEnhancedOrderItem(CartItem item) {
+    // Avoid unnecessary rebuilds by using const where possible
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        color: Theme.of(context).colorScheme.surface,
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black45,
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: ExpansionTile(
+          title: Row(
+            children: [
+              Stack(
+                children: [
+                  _buildFoodImage(item),
+                  if (item.hasDiscount)
+                    Positioned(
+                      top: 8,
+                      left: 8,
+                      child: DiscountBadge(
+                        discountPercentage: item.discountPercentage.toDouble(),
+                        compact: true,
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.menu.foodName,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    _buildPriceDisplay(item),
+                    const SizedBox(height: 4),
+                    _buildQuantityIndicator(item),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          children: [
+            if (item.selectedAddons.isNotEmpty)
+              _buildEnhancedAddonsSection(item),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFoodImage(CartItem item) {
+    return Container(
+      width: 80,
+      height: 80,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: ImageHelper.loadImage(
+          item.menu.photo,
+          width: 80,
+          height: 80,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEnhancedPriceSummary(Restaurant restaurant) {
+    // Calculate correct totals
+    double subtotal = 0.0;
+    double totalDiscount = 0.0;
+
+    print('\n=== Summary Calculation Debug ===');
+
+    for (var item in restaurant.cart) {
+      // Calculate per item
+      final originalTotal = item.originalPrice * item.quantity;
+      final discountedTotal = item.discountedPrice * item.quantity;
+
+      // Add addon costs to discounted total
+      final addonTotal = item.selectedAddons
+          .fold(0.0, (sum, addon) => sum + (addon.price * item.quantity));
+
+      subtotal += discountedTotal + addonTotal; // Include addons in subtotal
+      totalDiscount += originalTotal - discountedTotal;
+
+      print('Item: ${item.menu.foodName}');
+      print('Original Total: $originalTotal');
+      print('Discounted Total: $discountedTotal');
+      print('Addon Total: $addonTotal');
+      print('Item Savings: ${originalTotal - discountedTotal}');
+    }
+
+    final deliveryFee = _selectedOrderType == OrderType.delivery ? 2000.0 : 0.0;
+    final finalTotal = subtotal + deliveryFee;
+
+    print('Summary:');
+    print('Subtotal (with addons): $subtotal');
+    print('Total Discount: $totalDiscount');
+    print('Delivery Fee: $deliveryFee');
+    print('Final Total: $finalTotal');
+    print('===========================\n');
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          _buildSummaryRow('Subtotal', subtotal),
+          if (totalDiscount > 0)
+            _buildSummaryRow(
+              'Discount',
+              -totalDiscount,
+              textColor: Colors.green,
+            ),
+          if (_selectedOrderType == OrderType.delivery)
+            _buildSummaryRow('Delivery Fee', deliveryFee),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: DashedDivider(),
+          ),
+          _buildSummaryRow(
+            'Total',
+            finalTotal,
+            isTotal: true,
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Add new widgets...
+  Widget _buildSectionHeader(String title, IconData icon) {
+    return Row(
+      children: [
+        Icon(
+          icon,
+          color: Theme.of(context).colorScheme.primary,
+          size: 24,
+        ),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEnhancedDeliveryCard(Restaurant restaurant) {
+    if (_selectedOrderType != OrderType.delivery) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.location_on, color: Theme.of(context).primaryColor),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  restaurant.deliveryAddress.isEmpty
+                      ? 'Add delivery address'
+                      : restaurant.deliveryAddress,
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: restaurant.deliveryAddress.isEmpty
+                        ? Colors.grey
+                        : Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: () => _showAddressPickerModal(restaurant),
+                icon: const Icon(Icons.edit),
+                label: const Text('Change'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPriceDisplay(CartItem item) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (item.hasDiscount) ...[
+          Row(
+            children: [
+              DiscountBadge(
+                discountPercentage: item.discountPercentage.toDouble(),
+                compact: true,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Rp ${item.originalPrice.toStringAsFixed(0)}',
+                style: TextStyle(
+                  decoration: TextDecoration.lineThrough,
+                  color: Colors.grey[500],
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ],
+        Text(
+          'Rp ${item.discountedPrice.toStringAsFixed(0)}',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: item.hasDiscount
+                ? Theme.of(context).colorScheme.error
+                : Theme.of(context).colorScheme.primary,
+            fontSize: 16,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildQuantityIndicator(CartItem item) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.shopping_cart_outlined,
+            size: 14,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            '${item.quantity}x',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.primary,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryRow(String label, double amount,
+      {bool isTotal = false, Color? textColor}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
+              fontSize: isTotal ? 18 : 16,
+              color: textColor ?? Theme.of(context).colorScheme.onSurface,
+            ),
+          ),
+          Text(
+            'Rp ${amount.toStringAsFixed(0)}',
+            style: TextStyle(
+              fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
+              fontSize: isTotal ? 18 : 16,
+              color: textColor ?? Theme.of(context).colorScheme.onSurface,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEnhancedAddonsSection(CartItem item) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface.withOpacity(0.5),
+        borderRadius: const BorderRadius.vertical(
+          bottom: Radius.circular(16),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.restaurant_menu,
+                size: 16,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Add-ons',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ...item.selectedAddons.map((addon) {
+            final addonTotal = addon.price * item.quantity;
+            return Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: Theme.of(context).colorScheme.outline.withOpacity(0.1),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .primary
+                          .withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Icon(
+                      Icons.add_circle_outline,
+                      size: 14,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          addon.addonName,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        Text(
+                          'Rp ${addon.price.toStringAsFixed(0)} × ${item.quantity}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Text(
+                    'Rp ${addonTotal.toStringAsFixed(0)}',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+          if (item.note?.isNotEmpty == true) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Theme.of(context)
+                    .colorScheme
+                    .surfaceVariant
+                    .withOpacity(0.5),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.note,
+                    size: 16,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      item.note!,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// Add new DashedDivider widget
+class DashedDivider extends StatelessWidget {
+  const DashedDivider({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.constrainWidth();
+        const dashWidth = 5.0;
+        const dashSpace = 3.0;
+        final dashCount = (width / (dashWidth + dashSpace)).floor();
+
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: List.generate(
+            dashCount,
+            (index) => Container(
+              width: dashWidth,
+              height: 1,
+              color: Colors.grey[300],
+            ),
+          ),
+        );
+      },
+    );
   }
 }

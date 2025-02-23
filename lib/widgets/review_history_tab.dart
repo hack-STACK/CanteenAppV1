@@ -109,7 +109,7 @@ class _ReviewHistoryTabState extends State<ReviewHistoryTab> {
               review['menu']?['stall']?['nama_stalls'] ?? 'Unknown Stall';
           final rating = (review['rating'] as num).toDouble();
           final comment = review['comment'] ?? '';
-          final date = DateTime.parse(review['created_at']);
+          final date = DateTime.parse(review['created_at']).toLocal();
 
           return GestureDetector(
             onTap: () => _showFullReview(review),
@@ -204,7 +204,7 @@ class _ReviewHistoryTabState extends State<ReviewHistoryTab> {
         review['menu']?['stall']?['nama_stalls'] ?? 'Unknown Stall';
     final rating = (review['rating'] as num).toDouble();
     final comment = review['comment'] ?? '';
-    final date = DateTime.parse(review['created_at']);
+    final date = DateTime.parse(review['created_at']).toLocal();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

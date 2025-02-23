@@ -10,6 +10,9 @@ import 'package:intl/intl.dart';
 import 'package:kantin/widgets/OrderCard.dart'; // Add this import
 import 'package:kantin/widgets/shimmer_loading.dart'; // Add this new import
 import 'package:kantin/widgets/merchant_order_details.dart'; // Add this import
+import 'package:shimmer/shimmer.dart';
+import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
+import 'package:kantin/services/menu_service.dart'; // Add this import
 
 class OrdersScreen extends StatefulWidget {
   final int stanId;
@@ -148,10 +151,10 @@ class _OrdersScreenState extends State<OrdersScreen>
             ),
           ],
           body: StreamBuilder<List<Transaction>>(
-            stream: _orderService.getStallOrders(widget.stanId),
+            stream: _getFilteredOrderStream(),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
+                return _buildLoadingState();
               }
 
               if (snapshot.hasError) {
@@ -749,6 +752,111 @@ class _OrdersScreenState extends State<OrdersScreen>
       ),
     );
   }
+
+  Widget _buildLoadingState() {
+    return AnimationLimiter(
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: 5,
+        itemBuilder: (context, index) {
+          return AnimationConfiguration.staggeredList(
+            position: index,
+            duration: const Duration(milliseconds: 375),
+            child: SlideAnimation(
+              verticalOffset: 50.0,
+              child: FadeInAnimation(
+                child: Shimmer.fromColors(
+                  baseColor: Colors.grey[300]!,
+                  highlightColor: Colors.grey[100]!,
+                  child: Card(
+                    elevation: 2,
+                    margin: const EdgeInsets.only(bottom: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Container(
+                      height: 160,
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Container(
+                                      width: double.infinity,
+                                      height: 20,
+                                      color: Colors.white,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Container(
+                                      width: 140,
+                                      height: 16,
+                                      color: Colors.white,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          Container(
+                            width: double.infinity,
+                            height: 40,
+                            color: Colors.white,
+                          ),
+                          const SizedBox(height: 16),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Container(
+                                width: 100,
+                                height: 20,
+                                color: Colors.white,
+                              ),
+                              Container(
+                                width: 80,
+                                height: 20,
+                                color: Colors.white,
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Stream<List<Transaction>> _getFilteredOrderStream() {
+    return _orderService.getStallOrders(widget.stanId).map((orders) {
+      // Apply active filters
+      var filtered = orders;
+
+      // Sort by date descending by default
+      filtered.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+      return filtered;
+    });
+  }
 }
 
 class OrderPage extends StatefulWidget {
@@ -1269,78 +1377,260 @@ class _OrderCardState extends State<OrderCard> {
   }
 
   Widget _buildOrderItemCard(OrderItem item) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 60,
-            height: 60,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(8),
-              image: item.menu?.photo != null
-                  ? DecorationImage(
-                      image: NetworkImage(item.menu!.photo!),
-                      fit: BoxFit.cover,
-                    )
-                  : null,
-              color: Colors.grey[200],
-            ),
-            child: item.menu?.photo == null
-                ? Icon(Icons.restaurant, color: Colors.grey[400])
-                : null,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
+    return Card(
+      elevation: 0,
+      color: Colors.grey[50],
+      margin: EdgeInsets.only(bottom: 8),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.grey[200]!),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  item.menu?.foodName ?? 'Unknown Item',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w500,
-                    fontSize: 15,
+                // Image section
+                _buildItemImage(item),
+                SizedBox(width: 12),
+                // Content section
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Title
+                      Text(
+                        item.menu?.foodName ?? 'Unknown Item',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      // Price section
+                      _buildPriceSection(item),
+                    ],
                   ),
                 ),
-                Text(
-                  '${item.quantity}x ${currencyFormatter.format(item.menu?.price ?? 0)}',
-                  style: TextStyle(
-                    color: Colors.grey[600],
-                    fontSize: 14,
-                  ),
-                ),
-                if (item.addons?.isNotEmpty ?? false) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    item.addons!
-                        .map((addon) =>
-                            '+ ${addon.addonName} (${addon.quantity}x)')
-                        .join(', '),
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                      fontSize: 12,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                ],
-                if (item.notes?.isNotEmpty ?? false) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    'Note: ${item.notes}',
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                      fontSize: 12,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                ],
               ],
             ),
+            // Addons section
+            if (item.addons?.isNotEmpty ?? false)
+              _buildAddonsSection(item.addons!),
+            // Notes section
+            if (item.notes?.isNotEmpty ?? false)
+              _buildNotesSection(item.notes!),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildItemImage(OrderItem item) {
+    return Stack(
+      children: [
+        Container(
+          width: 65,
+          height: 65,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            image: item.menu?.photo != null
+                ? DecorationImage(
+                    image: NetworkImage(item.menu!.photo!),
+                    fit: BoxFit.cover,
+                  )
+                : null,
+            color: Colors.grey[200],
           ),
-          Text(
-            currencyFormatter.format(item.subtotal),
-            style: const TextStyle(fontWeight: FontWeight.w500),
+          child: item.menu?.photo == null
+              ? Icon(Icons.restaurant, color: Colors.grey[400])
+              : null,
+        ),
+        Positioned(
+          top: -4,
+          right: -4,
+          child: Container(
+            padding: EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: Theme.of(context).primaryColor,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black12,
+                  blurRadius: 4,
+                  offset: Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Text(
+              '${item.quantity}x',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPriceSection(OrderItem item) {
+    return FutureBuilder<double>(
+      future: MenuService().getDiscountedPrice(
+        item.menu?.id ?? 0,
+        item.menu?.price ?? 0,
+      ),
+      builder: (context, snapshot) {
+        final originalPrice = item.menu?.price ?? 0;
+        final discountedPrice = snapshot.data;
+        final hasDiscount =
+            discountedPrice != null && discountedPrice < originalPrice;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Price row
+            if (hasDiscount) ...[
+              Row(
+                children: [
+                  _buildDiscountBadge(originalPrice, discountedPrice),
+                  SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      currencyFormatter.format(originalPrice),
+                      style: TextStyle(
+                        decoration: TextDecoration.lineThrough,
+                        color: Colors.grey[500],
+                        fontSize: 12,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: 2),
+            ],
+            // Current price
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Flexible(
+                  child: Text(
+                    currencyFormatter.format(discountedPrice ?? originalPrice),
+                    style: TextStyle(
+                      color: hasDiscount
+                          ? Theme.of(context).primaryColor
+                          : Colors.grey[800],
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                SizedBox(width: 8),
+                Text(
+                  currencyFormatter.format(
+                      (discountedPrice ?? originalPrice) * item.quantity),
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: Theme.of(context).primaryColor,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildDiscountBadge(double originalPrice, double discountedPrice) {
+    final discount =
+        ((originalPrice - discountedPrice) / originalPrice * 100).round();
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.red[50],
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: Colors.red[100]!),
+      ),
+      child: Text(
+        '-$discount%',
+        style: TextStyle(
+          color: Colors.red[700],
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAddonsSection(List<dynamic> addons) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Divider(height: 16, color: Colors.grey[200]),
+          ...addons.map((addon) => Padding(
+                padding: EdgeInsets.only(top: 4),
+                child: Row(
+                  children: [
+                    Icon(Icons.add_circle_outline,
+                        size: 14, color: Colors.grey[400]),
+                    SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        '${addon.quantity}x ${addon.addonName}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ),
+                    Text(
+                      currencyFormatter.format(addon.subtotal),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[700],
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              )),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNotesSection(String notes) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Column(
+        children: [
+          Divider(height: 16, color: Colors.grey[200]),
+          Row(
+            children: [
+              Icon(Icons.note, size: 14, color: Colors.grey[400]),
+              SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  notes,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -1348,50 +1638,98 @@ class _OrderCardState extends State<OrderCard> {
   }
 
   Widget _buildFooter() {
-    return Column(
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return FutureBuilder<double>(
+      future: _calculateTotalWithDiscounts(),
+      builder: (context, snapshot) {
+        final discountedTotal = snapshot.data ?? widget.order.totalAmount;
+        final hasDiscount = discountedTotal < widget.order.totalAmount;
+
+        return Column(
           children: [
-            const Text(
-              'Total Amount',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Total Amount',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    if (hasDiscount)
+                      Text(
+                        currencyFormatter.format(widget.order.totalAmount),
+                        style: TextStyle(
+                          decoration: TextDecoration.lineThrough,
+                          color: Colors.grey[600],
+                          fontSize: 14,
+                        ),
+                      ),
+                    Text(
+                      currencyFormatter.format(discountedTotal),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color:
+                            hasDiscount ? Theme.of(context).primaryColor : null,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
-            Text(
-              currencyFormatter.format(widget.order.totalAmount),
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-              ),
-            ),
-          ],
-        ),
-        if (_canUpdateStatus(widget.order.status)) ...[
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () => widget.onStatusUpdate(
-                _getNextStatus(widget.order.status, widget.order.orderType),
-              ),
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
+            if (_canUpdateStatus(widget.order.status)) ...[
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => widget.onStatusUpdate(
+                    _getNextStatus(widget.order.status, widget.order.orderType),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: Text(_getActionButtonText(
+                    widget.order.status,
+                    widget.order.orderType,
+                  )),
                 ),
               ),
-              child: Text(_getActionButtonText(
-                widget.order.status,
-                widget.order.orderType,
-              )),
-            ),
-          ),
-        ],
-      ],
+            ],
+          ],
+        );
+      },
     );
+  }
+
+  Future<double> _calculateTotalWithDiscounts() async {
+    double total = 0;
+
+    for (final item in _orderItems) {
+      if (item.menu == null) continue;
+
+      final discountedPrice = await MenuService().getDiscountedPrice(
+        item.menu!.id,
+        item.menu!.price,
+      );
+
+      total += (discountedPrice * item.quantity);
+
+      // Add addon costs
+      if (item.addons != null) {
+        for (final addon in item.addons!) {
+          total += addon.subtotal;
+        }
+      }
+    }
+
+    return total;
   }
 
   Widget _buildStatusChip() {

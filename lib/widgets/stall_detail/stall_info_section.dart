@@ -88,7 +88,8 @@ class StallInfoSection extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           ...schedule.entries.map((entry) {
-            bool isToday = DateTime.now().weekday.toString() == entry.key;
+            bool isToday =
+                DateTime.now().toLocal().weekday.toString() == entry.key;
             return Padding(
               padding: const EdgeInsets.symmetric(vertical: 4),
               child: Row(

@@ -54,9 +54,29 @@ class FoodService {
 
   /// **🟢 Read: Get menu item by ID**
   Future<Menu?> getMenuById(int id) async {
-    final response =
-        await _client.from('menu').select().eq('id', id).maybeSingle();
-    return response != null ? Menu.fromJson(response) : null;
+    try {
+      final response = await _client.from('menu').select('''
+        *,
+        menu_discounts!inner (
+          discount_percentage,
+          is_active,
+          discounts (
+            id,
+            discount_name,
+            start_date,
+            end_date
+          )
+        )
+      ''').eq('id', id).single();
+
+      print('DEBUG Raw Menu Response:');
+      print(response);
+
+      return Menu.fromJson(response);
+    } catch (e) {
+      print('Error getting menu by ID: $e');
+      rethrow;
+    }
   }
 
   /// **🟢 Read: Get menu items by stall ID**
@@ -64,15 +84,41 @@ class FoodService {
     try {
       final response = await _client
           .from('menu')
-          .select()
+          .select('''
+          *,
+          menu_discounts!left (
+            id,
+            is_active,
+            discounts!left (
+              id,
+              discount_name,
+              discount_percentage,
+              start_date,
+              end_date,
+              is_active
+            )
+          )
+        ''')
           .eq('stall_id', stanId)
-          .order('id', ascending: false);
+          .eq('menu_discounts.discounts.is_active', true)
+          .gte('menu_discounts.discounts.end_date',
+              DateTime.now().toIso8601String());
 
-      print('Menu Response: $response');
+      print('DEBUG Raw Response:');
+      print(response);
 
       return (response as List).map((map) {
-        print('Processing menu map: $map');
-        return Menu.fromMap(map);
+        // Add discount info to menu
+        if (map['menu_discounts'] != null &&
+            (map['menu_discounts'] as List).isNotEmpty) {
+          var discount = map['menu_discounts'][0]['discounts'];
+          if (discount != null) {
+            map['original_price'] = map['price'];
+            map['discounted_price'] =
+                map['price'] * (1 - (discount['discount_percentage'] / 100));
+          }
+        }
+        return Menu.fromJson(map);
       }).toList();
     } catch (e, stackTrace) {
       print('Error fetching menus: $e\n$stackTrace');

@@ -383,7 +383,7 @@ class _HomepageState extends State<StudentPage>
                       MaterialPageRoute(
                         builder: (context) => StallDetailPage(
                           stall: stall,
-                          StudentId: _currentStudent?.id ??
+                          studentId: _currentStudent?.id ??
                               0, // Add the StudentId parameter
                         ),
                       ),
@@ -585,7 +585,7 @@ class _HomepageState extends State<StudentPage>
       MaterialPageRoute(
         builder: (context) => StallDetailPage(
           stall: stall,
-          StudentId: _currentStudent?.id ?? 0,
+          studentId: _currentStudent?.id ?? 0,
         ),
       ),
     ).then((_) => _loadStalls()); // Refresh after returning

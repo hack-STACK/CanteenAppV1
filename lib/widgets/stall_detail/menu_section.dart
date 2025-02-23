@@ -8,7 +8,6 @@ import 'package:shimmer/shimmer.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 import 'package:kantin/models/menu_filter_state.dart';
-import 'package:kantin/enums/sort_options.dart';
 
 // Move enum to top level, outside any class
 enum SortOption {

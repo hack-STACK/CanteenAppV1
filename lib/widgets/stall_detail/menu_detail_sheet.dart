@@ -13,7 +13,7 @@ class MenuDetailSheet extends StatefulWidget {
   final double savingsAmount;
 
   const MenuDetailSheet({
-    Key? key,
+    super.key,
     required this.menu,
     required this.addons,
     required this.onAddToCart,
@@ -21,7 +21,7 @@ class MenuDetailSheet extends StatefulWidget {
     required this.discountPercentage,
     required this.hasSavings,
     required this.savingsAmount,
-  }) : super(key: key);
+  });
 
   @override
   State<MenuDetailSheet> createState() => _MenuDetailSheetState();

@@ -1,0 +1,64 @@
+import 'package:flutter/material.dart';
+import 'package:kantin/Services/Database/transaction_service.dart';
+import 'package:kantin/Models/transaction_model.dart';
+
+class OrderPage extends StatefulWidget {
+  final int studentId;
+
+  const OrderPage({Key? key, required this.studentId}) : super(key: key);
+
+  @override
+  _OrderPageState createState() => _OrderPageState();
+}
+
+class _OrderPageState extends State<OrderPage> {
+  late Future<List<Map<String, dynamic>>> _ordersFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _ordersFuture = TransactionService().getAllOrders(widget.studentId);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('My Orders'),
+      ),
+      body: FutureBuilder<List<Map<String, dynamic>>>(
+        future: _ordersFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return Center(child: CircularProgressIndicator());
+          } else if (snapshot.hasError) {
+            return Center(child: Text('Error: ${snapshot.error}'));
+          } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+            return Center(child: Text('No orders found.'));
+          }
+
+          final orders = snapshot.data!;
+
+          return ListView.builder(
+            itemCount: orders.length,
+            itemBuilder: (context, index) {
+              final order = orders[index];
+              return ListTile(
+                title: Text('Order ID: ${order['id']}'),
+                subtitle: Text('Total Amount: ${order['total_amount']}'),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => OrderDetailSheet(orderId: order['id']),
+                    ),
+                  );
+                },
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}

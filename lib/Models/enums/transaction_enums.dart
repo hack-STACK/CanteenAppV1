@@ -81,10 +81,21 @@ enum OrderType {
   // Add this to ensure the value matches the database exactly
   String toJson() => name;
 
+  // Add this for database value conversion
+  String toDatabaseValue() => name;
+
   // Add this to parse from database value
   static OrderType fromJson(String json) {
     return OrderType.values.firstWhere(
       (e) => e.name == json,
+      orElse: () => OrderType.delivery,
+    );
+  }
+
+  // Add this to parse from database value
+  static OrderType fromDatabaseValue(String value) {
+    return OrderType.values.firstWhere(
+      (e) => e.name == value,
       orElse: () => OrderType.delivery,
     );
   }

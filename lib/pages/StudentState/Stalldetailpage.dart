@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'; // Add this import
 import 'package:intl/intl.dart';
 import 'package:kantin/Models/Stan_model.dart';
+import 'package:kantin/Models/menu_cart_item.dart';
 import 'package:kantin/Models/menus.dart';
 import 'package:kantin/Services/Database/foodService.dart';
 import 'package:kantin/Models/menus_addon.dart'; // Add this import
@@ -16,15 +18,16 @@ import 'package:kantin/Models/stall_detail_models.dart'; // Add this import and 
 import 'package:kantin/widgets/stall_detail/review_section.dart'; // Add this import
 import 'package:kantin/models/menu_filter_state.dart';
 import 'package:kantin/services/menu_service.dart';
-import 'package:kantin/models/menu_discount.dart';
-import 'package:kantin/models/discount.dart';
 
 class StallDetailPage extends StatefulWidget {
   final Stan stall;
-  final int StudentId;
+  final int studentId; // Changed from StudentId
 
   const StallDetailPage(
-      {super.key, required this.stall, required this.StudentId});
+      {super.key,
+      required this.stall,
+      required this.studentId // Changed from StudentId
+      });
 
   @override
   State<StallDetailPage> createState() => _StallDetailPageState();
@@ -316,23 +319,38 @@ class _StallDetailPageState extends State<StallDetailPage>
     );
   }
 
-  // Update the add to cart method to use Provider
-  void _addToCart(Menu menu,
-      {List<FoodAddon> addons = const [], String? note, double? price}) {
-    // Get the Restaurant provider
-    final restaurant = Provider.of<Restaurant>(context, listen: false);
+  // Update the _addToCart method signature
+  void _addToCart(
+    Menu menu, {
+    int quantity = 1, // Add quantity parameter with default value
+    List<FoodAddon> addons = const [],
+    String? note,
+    double? price,
+  }) async {
+    print('\n=== Adding to Cart ===');
+    print('Menu: ${menu.foodName}');
+    print('Original Price: ${menu.price}');
 
-    // Add item to cart using the provider with named parameters
+    // Force fetch latest discount
+    await menu.fetchDiscount();
+
+    // Wait a moment for the discount to be applied
+    await Future.delayed(const Duration(milliseconds: 100));
+
+    print('After fetching discount:');
+    print('Has Discount: ${menu.hasDiscount}');
+    print(
+        'Discounted Price: ${menu.hasDiscount ? menu.effectivePrice : "No discount"}');
+    print('Discount Percentage: ${menu.discountPercent}%');
+
+    final restaurant = Provider.of<Restaurant>(context, listen: false);
     restaurant.addToCart(
       menu,
-      quantity: 1,
-      selectedAddons: addons,
+      quantity: quantity, // Pass quantity parameter
+      addons: addons,
       note: note,
-      addons: _menuAddons[menu.id] ?? [], // Add the addons parameter
-      price: price, // Use price parameter instead of appliedPrice
     );
 
-    // Show a custom snack bar with undo option
     _showCartSnackBar(menu, restaurant, addons);
   }
 
@@ -792,7 +810,10 @@ class _StallDetailPageState extends State<StallDetailPage>
                       width: double.infinity,
                       child: ElevatedButton.icon(
                         onPressed: menu.isAvailable
-                            ? () => _addToCart(menu) // Updated call
+                            ? () => _addToCart(
+                                  menu,
+                                  quantity: 1, // Add quantity parameter
+                                )
                             : null,
                         icon: const Icon(Icons.add_shopping_cart, size: 18),
                         label: const Text('Add to Cart'),
@@ -873,23 +894,20 @@ class _StallDetailPageState extends State<StallDetailPage>
   }
 
   void _showMenuDetail(Menu menu) async {
+    // Fetch discount at the start
+    await menu.fetchDiscount();
+
     final addons = _menuAddons[menu.id] ?? [];
     final TextEditingController noteController = TextEditingController();
-    List<FoodAddon> selectedAddons = [];
+    // Initialize selectedAddons list
+    final List<FoodAddon> selectedAddons = [];
+    // Get active discounts from menu (handle null case)
+    final activeDiscounts = menu.discounts ?? [];
 
-    // Ensure menu.price is not null, default to 0.0 if it is
-    final double originalPrice = menu.price ?? 0.0;
-
-    // Get active discounts for this menu
-    final List<Discount> activeDiscounts =
-        await _menuService.getActiveMenuDiscounts(menu.id);
-
-    // Calculate the discounted price
-    final double discountedPrice =
-        await _menuService.getDiscountedPrice(menu.id, originalPrice);
-
-    // Calculate discount details with null safety
-    final hasDiscount = discountedPrice < originalPrice;
+    // Calculate discount details with proper null safety
+    final originalPrice = menu.price;
+    final discountedPrice = menu.hasDiscount ? menu.effectivePrice : menu.price;
+    final hasDiscount = menu.hasDiscount && discountedPrice < originalPrice;
     final discountPercentage = hasDiscount
         ? ((originalPrice - discountedPrice) / originalPrice * 100).round()
         : 0;
@@ -897,7 +915,7 @@ class _StallDetailPageState extends State<StallDetailPage>
 
     // Calculate total price including addons
     double calculateTotalPrice(List<FoodAddon> selectedAddons) {
-      return discountedPrice + // Use discountedPrice instead of original price
+      return discountedPrice +
           selectedAddons.fold(0.0, (sum, addon) => sum + (addon.price ?? 0.0));
     }
 
@@ -1130,7 +1148,7 @@ class _StallDetailPageState extends State<StallDetailPage>
                                       const SizedBox(width: 8),
                                       Expanded(
                                         child: Text(
-                                          '${discount.discountName} (${discount.discountPercentage}% off)',
+                                          '${discount.discountName} (${discount.discountPercentage.toStringAsFixed(0)}% off)',
                                           style: const TextStyle(
                                             fontSize: 14,
                                             color: Colors.black87,
@@ -1259,10 +1277,9 @@ class _StallDetailPageState extends State<StallDetailPage>
                               ? () {
                                   _addToCart(
                                     menu,
+                                    quantity: 1, // Explicitly pass quantity
                                     addons: selectedAddons,
                                     note: noteController.text.trim(),
-                                    price:
-                                        discountedPrice, // Pass the discounted price
                                   );
                                   Navigator.pop(context);
                                 }
@@ -1332,9 +1349,71 @@ class _StallDetailPageState extends State<StallDetailPage>
       context,
       MaterialPageRoute(
           builder: (context) => FoodCartPage(
-                StudentId: widget.StudentId,
+                StudentId: widget.studentId,
               )),
     );
+  }
+
+  // Add new time formatting helper methods
+  String _formatLocalTime(TimeOfDay? time) {
+    if (time == null) return 'N/A';
+
+    try {
+      // Get current date for combining with TimeOfDay
+      final now = DateTime.now();
+      final dateTime = DateTime(
+        now.year,
+        now.month,
+        now.day,
+        time.hour,
+        time.minute,
+      );
+
+      // Convert to local time
+      final localDateTime = dateTime.toLocal();
+
+      if (kDebugMode) {
+        print('Original time: ${time.format(context)}');
+        print('Local time: ${DateFormat('hh:mm a').format(localDateTime)}');
+      }
+
+      return DateFormat('hh:mm a').format(localDateTime);
+    } catch (e) {
+      debugPrint('Error formatting time: $e');
+      return 'Time not available';
+    }
+  }
+
+  String _formatScheduleTime(String? timeString) {
+    if (timeString == null || timeString.isEmpty) return 'Closed';
+
+    try {
+      final times = timeString.split(' - ');
+      if (times.length != 2) return timeString;
+
+      final openTime = _parseTimeString(times[0]);
+      final closeTime = _parseTimeString(times[1]);
+
+      return '${_formatLocalTime(openTime)} - ${_formatLocalTime(closeTime)}';
+    } catch (e) {
+      debugPrint('Error parsing schedule time: $e');
+      return timeString;
+    }
+  }
+
+  TimeOfDay? _parseTimeString(String timeStr) {
+    try {
+      final parts = timeStr.split(':');
+      if (parts.length != 2) return null;
+
+      return TimeOfDay(
+        hour: int.parse(parts[0]),
+        minute: int.parse(parts[1]),
+      );
+    } catch (e) {
+      debugPrint('Error parsing time string: $e');
+      return null;
+    }
   }
 
   @override
@@ -1379,17 +1458,15 @@ class _StallDetailPageState extends State<StallDetailPage>
                 ];
               },
               body: MenuSection(
-                key: ValueKey(
-                    'menu_section_${widget.stall.id}'), // Add unique key
+                key: ValueKey('menu_section_${widget.stall.id}'),
                 selectedCategory: _selectedCategory,
                 categories: categories,
                 menus: _menus,
                 onCategorySelected: (category) {
                   setState(() => _selectedCategory = category);
                 },
-                onMenuTap: (menu) =>
-                    _showMenuDetail(menu), // Fixed function call
-                onAddToCart: _addToCart,
+                onMenuTap: _showMenuDetail,
+                onAddToCart: _addToCart, // Now the signatures match
                 loadingState: _loadingState,
                 errorMessage: _errorMessage,
                 menuAddons: _menuAddons,
@@ -1431,33 +1508,82 @@ class _StallDetailPageState extends State<StallDetailPage>
     ];
   }
 
+  // Update _buildMetrics to use new time formatting
   List<StallMetric> _buildMetrics() {
+    if (kDebugMode) {
+      print(
+          'Building metrics with stall opening time: ${widget.stall.openTime}');
+    }
+
     return [
-      StallMetric(
-        icon: Icons.star,
-        value: widget.stall.rating?.toStringAsFixed(1) ?? 'N/A',
-        label: '${widget.stall.reviewCount} Reviews',
-        color: Colors.amber,
-      ),
+      // ...existing metrics...
       StallMetric(
         icon: Icons.access_time,
-        value: _formatTime(widget.stall.openTime),
+        value: _formatLocalTime(widget.stall.openTime),
         label: 'Opens',
         color: Colors.blue,
       ),
-      StallMetric(
-        icon: Icons.location_on,
-        value: '${widget.stall.distance?.toStringAsFixed(0) ?? "?"} m',
-        label: 'Distance',
-        color: Colors.green,
-      ),
-      StallMetric(
-        icon: Icons.menu_book,
-        value: '${_menus.length}',
-        label: 'Items',
-        color: Colors.purple,
-      ),
+      // ...remaining metrics...
     ];
+  }
+
+  // Update schedule display
+  Widget _buildScheduleSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: _scheduleByDay.entries.map((entry) {
+        final isToday = DateFormat('EEEE').format(DateTime.now()) == entry.key;
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 100,
+                child: Text(
+                  entry.key,
+                  style: TextStyle(
+                    fontWeight: isToday ? FontWeight.bold : FontWeight.normal,
+                    color: isToday ? Theme.of(context).primaryColor : null,
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Text(
+                  _formatScheduleTime(entry.value),
+                  style: TextStyle(
+                    fontWeight: isToday ? FontWeight.bold : FontWeight.normal,
+                    color: entry.value == 'Closed'
+                        ? Colors.red
+                        : isToday
+                            ? Theme.of(context).primaryColor
+                            : null,
+                  ),
+                ),
+              ),
+              if (isToday)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).primaryColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    'Today',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).primaryColor,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
   }
 
   Widget _buildLoadingOverlay() {
@@ -1493,9 +1619,56 @@ class _StallDetailPageState extends State<StallDetailPage>
           return const SizedBox.shrink();
         }
 
-        final cartTotal = restaurant.calculateSubtotal();
-        final totalItems =
-            cartItems.fold(0, (sum, item) => sum + item.quantity);
+        // Calculate totals with discounts
+        double cartSubtotal = 0.0;
+        double totalSavings = 0.0;
+        int totalItems = 0;
+
+        // Debug prints to track calculations
+        print('\n=== Cart Calculation Debug ===');
+
+        for (var item in cartItems) {
+          // Ensure we're using the correct prices
+          final originalItemPrice = item.menu.price;
+          final effectiveItemPrice = item.menu.effectivePrice;
+
+          // Calculate per-item amounts
+          final originalTotal = originalItemPrice * item.quantity;
+          final effectiveTotal = effectiveItemPrice * item.quantity;
+
+          // Add addon costs
+          final addonsCost = item.selectedAddons
+              .fold(0.0, (sum, addon) => sum + (addon.price * item.quantity));
+
+          // Update running totals
+          cartSubtotal += effectiveTotal + addonsCost;
+
+          // Only calculate savings if there's actually a discount
+          if (item.menu.hasDiscount) {
+            final itemSavings = originalTotal - effectiveTotal;
+            totalSavings += itemSavings;
+
+            // Debug print for this item
+            print('Item: ${item.menu.foodName}');
+            print('Original Price: $originalItemPrice');
+            print('Effective Price: $effectiveItemPrice');
+            print('Quantity: ${item.quantity}');
+            print('Savings: $itemSavings');
+          }
+
+          totalItems += item.quantity;
+        }
+
+        // Find all active discount percentages and their total savings
+        final activeDiscounts =
+            totalSavings > 0 ? 'Save ${_formatPrice(totalSavings)}' : '';
+
+        print('Final Calculations:');
+        print('Total Items: $totalItems');
+        print('Subtotal: $cartSubtotal');
+        print('Total Savings: $totalSavings');
+        print('Active Discounts: $activeDiscounts');
+        print('=========================\n');
 
         return SafeArea(
           child: Padding(
@@ -1508,93 +1681,130 @@ class _StallDetailPageState extends State<StallDetailPage>
                 onTap: _showCart,
                 borderRadius: BorderRadius.circular(16),
                 child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 12), // Reduced padding
                   child: Row(
                     children: [
-                      Stack(
-                        children: [
-                          const Icon(
-                            Icons.shopping_cart_outlined,
-                            color: Colors.white,
-                            size: 28,
-                          ),
-                          if (totalItems > 0)
-                            Positioned(
-                              right: 0,
-                              top: 0,
-                              child: Container(
-                                padding: const EdgeInsets.all(4),
-                                decoration: BoxDecoration(
-                                  color: Colors.red,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                constraints: const BoxConstraints(
-                                  minWidth: 16,
-                                  minHeight: 16,
-                                ),
-                                child: Text(
-                                  '$totalItems',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
+                      // Cart Icon with Badge
+                      SizedBox(
+                        width: 32, // Fixed width for icon section
+                        child: Stack(
+                          children: [
+                            const Icon(Icons.shopping_cart_outlined,
+                                color: Colors.white, size: 24),
+                            if (totalItems > 0)
+                              Positioned(
+                                right: 0,
+                                top: 0,
+                                child: Container(
+                                  padding: const EdgeInsets.all(2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red,
+                                    borderRadius: BorderRadius.circular(8),
                                   ),
-                                  textAlign: TextAlign.center,
+                                  constraints: const BoxConstraints(
+                                    minWidth: 14,
+                                    minHeight: 14,
+                                  ),
+                                  child: Text(
+                                    '$totalItems',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
                                 ),
                               ),
-                            ),
-                        ],
+                          ],
+                        ),
                       ),
-                      const SizedBox(width: 16),
+                      const SizedBox(width: 12),
+                      // Middle section with prices
                       Expanded(
                         child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
                               '${cartItems.length} ${cartItems.length == 1 ? 'item' : 'items'} in cart',
                               style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 14,
-                              ),
+                                  color: Colors.white, fontSize: 12),
                             ),
                             const SizedBox(height: 2),
-                            Text(
-                              _formatPrice(cartTotal),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                              ),
+                            Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    _formatPrice(cartSubtotal),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                if (totalSavings > 0) ...[
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 4,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.green[400],
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(Icons.savings,
+                                            color: Colors.white, size: 10),
+                                        const SizedBox(width: 2),
+                                        Text(
+                                          'Save ${_formatPrice(totalSavings)}',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ],
                             ),
                           ],
                         ),
                       ),
+                      // View Cart button
                       Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
+                          horizontal: 8,
+                          vertical: 6,
                         ),
                         decoration: BoxDecoration(
                           color: Colors.white.withOpacity(0.2),
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: Row(
+                        child: const Row(
                           mainAxisSize: MainAxisSize.min,
-                          children: const [
+                          children: [
                             Text(
-                              'View Cart',
+                              'View',
                               style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600,
+                                fontSize: 12,
                               ),
                             ),
-                            SizedBox(width: 4),
+                            SizedBox(width: 2),
                             Icon(
                               Icons.arrow_forward_ios,
                               color: Colors.white,
-                              size: 14,
+                              size: 12,
                             ),
                           ],
                         ),
@@ -1612,11 +1822,19 @@ class _StallDetailPageState extends State<StallDetailPage>
 
   String _formatTime(TimeOfDay? time) {
     if (time == null) return 'N/A';
-    final hour = time.hour.toString().padLeft(2, '0');
-    final minute = time.minute.toString().padLeft(2, '0');
-    final period = time.hour >= 12 ? 'PM' : 'AM';
-    final adjustedHour = time.hour > 12 ? time.hour - 12 : time.hour;
-    return '$adjustedHour:$minute $period';
+
+    // Dapatkan waktu sekarang untuk mendapatkan tanggal lokal
+    final now = DateTime.now();
+
+    // Buat DateTime dengan jam dan menit yang diberikan
+    final dateTime =
+        DateTime(now.year, now.month, now.day, time.hour, time.minute);
+
+    // Konversi ke waktu lokal
+    final localTime = dateTime.toLocal();
+
+    // Format waktu lokal dalam format 12 jam (AM/PM)
+    return DateFormat('hh:mm a').format(localTime);
   }
 
   String _formatPrice(double price) {

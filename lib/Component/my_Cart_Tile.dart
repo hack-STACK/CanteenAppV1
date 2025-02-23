@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:kantin/Component/my_Quantitty_Selector.dart';
 import 'package:kantin/Models/Restaurant.dart' as restaurant_model;
+import 'package:kantin/Models/menu_cart_item.dart' as restaurant_model;
 import 'package:provider/provider.dart';
+import 'package:kantin/widgets/badges/discount_badge.dart';
 
 class MyCartTile extends StatelessWidget {
   const MyCartTile({super.key, required this.cartItem});
@@ -30,22 +32,36 @@ class MyCartTile extends StatelessWidget {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child: Image.network(
-                      cartItem.menu.photo ?? '',
-                      height: 100,
-                      width: 100,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return Container(
+                  Stack(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: Image.network(
+                          cartItem.menu.photo ?? '',
                           height: 100,
                           width: 100,
-                          color: Colors.grey[300],
-                          child: const Icon(Icons.error),
-                        );
-                      },
-                    ),
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              height: 100,
+                              width: 100,
+                              color: Colors.grey[300],
+                              child: const Icon(Icons.error),
+                            );
+                          },
+                        ),
+                      ),
+                      if (cartItem.hasDiscount)
+                        Positioned(
+                          top: 8,
+                          left: 8,
+                          child: DiscountBadge(
+                            discountPercentage:
+                                cartItem.discountPercentage.toDouble(),
+                            compact: true,
+                          ),
+                        ),
+                    ],
                   ),
                   const SizedBox(width: 15),
                   Expanded(
@@ -60,26 +76,52 @@ class MyCartTile extends StatelessWidget {
                             color: Theme.of(context).colorScheme.onSurface,
                           ),
                         ),
-                        Text(
-                          'Rp ${cartItem.menu.price.toStringAsFixed(0)}',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 18,
-                            color: Theme.of(context).colorScheme.primary,
+                        if (cartItem.menu.hasDiscount) ...[
+                          Text(
+                            'Rp ${cartItem.menu.price.toStringAsFixed(0)}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                              decoration: TextDecoration.lineThrough,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurface
+                                  .withOpacity(0.5),
+                            ),
                           ),
-                        ),
+                          Text(
+                            'Rp ${cartItem.discountedPrice.toStringAsFixed(0) ?? cartItem.menu.price.toStringAsFixed(0)}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 18,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                          ),
+                        ] else
+                          Text(
+                            'Rp ${cartItem.menu.price.toStringAsFixed(0)}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 18,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                          ),
                       ],
                     ),
                   ),
                   MyQuantittySelector(
                     quantity: cartItem.quantity,
-                    menu: cartItem.menu, // Pass the correct type
+                    menu: cartItem.menu,
                     onRemove: () {
                       restaurant.removeFromCart(cartItem);
                     },
                     onAdd: () {
-                      restaurant.addToCart(cartItem.menu,
-                          addons: cartItem.selectedAddons);
+                      restaurant.addToCart(
+                        cartItem.menu,
+                        quantity: 1,
+                        addons: cartItem.selectedAddons,
+                        note: cartItem.note,
+                      );
                     },
                   ),
                 ],

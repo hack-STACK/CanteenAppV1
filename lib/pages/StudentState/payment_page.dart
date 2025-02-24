@@ -399,7 +399,7 @@ class _PaymentPageState extends State<PaymentPage>
             'student_id': widget.StudentId,
             'stall_id': _getStallId(restaurant),
             'status': TransactionStatus.pending.name,
-            'payment_status': PaymentStatus.unpaid.name,
+            'payment_status': PaymentStatus.paid.name,
             'payment_method': _selectedPaymentMethod.name
                 .toLowerCase(), // Ensure lowercase for DB enum
             'total_amount': totalAmount,

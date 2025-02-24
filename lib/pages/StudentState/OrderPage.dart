@@ -70,9 +70,14 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    
+    // Initialize loading state
+    setState(() => _isLoading = true);
+    
+    // Setup subscription
     _setupOrderSubscription();
-    _loadOrders();
-
+    
+    // Rest of your initState code...
     _authService.authStateChanges.listen((user) {
       if (user == null && mounted) {
         Navigator.of(context).pushReplacementNamed('/login');
@@ -102,20 +107,50 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
 
   void _setupOrderSubscription() {
     try {
-      _orderSubscription = _supabase
-          .from('transactions')
-          .stream(primaryKey: ['id'])
-          .eq('student_id', widget.studentId)
-          .order('created_at')
-          .listen((data) {
-            if (mounted) {
-              _handleOrdersUpdate(
-                List<Map<String, dynamic>>.from(data),
-              );
-            }
-          });
+      _orderSubscription?.cancel(); // Cancel existing subscription if any
+      
+      _orderSubscription = _transactionService
+          .subscribeToOrders(widget.studentId)
+          .listen(
+            (orders) {
+              if (mounted) {
+                setState(() {
+                  _activeOrders = orders
+                      .where((order) => !['completed', 'cancelled']
+                          .contains(order['status']?.toString().toLowerCase() ?? ''))
+                      .toList();
+
+                  _orderHistory = orders
+                      .where((order) => ['completed', 'cancelled']
+                          .contains(order['status']?.toString().toLowerCase() ?? ''))
+                      .toList();
+
+                  _isLoading = false;
+                  _error = null;
+                  _isConnected = true;
+                });
+              }
+            },
+            onError: (error) {
+              _logger.error('Order subscription error:', error);
+              if (mounted) {
+                setState(() {
+                  _error = error.toString();
+                  _isConnected = false;
+                  _isLoading = false;
+                });
+              }
+            },
+          );
     } catch (e) {
-      print('Error setting up order subscription: $e');
+      _logger.error('Error setting up order subscription:', e);
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _isConnected = false;
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -335,30 +370,22 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
   }
 
   Future<void> _refreshOrders() async {
-    if (!mounted) return;
-
+    setState(() => _isLoading = true);
+    
+    // Cancel and re-setup subscription
+    _orderSubscription?.cancel();
+    _setupOrderSubscription();
+    
     try {
-      setState(() => _isLoading = true);
-
-      _logger.info('Refreshing orders for student ID: ${widget.studentId}');
-
-      final activeOrders =
-          await _transactionService.getActiveOrders(widget.studentId);
-      final orderHistory =
-          await _transactionService.getOrderHistory(widget.studentId);
-
-      if (!mounted) return;
-
-      setState(() {
-        _activeOrders = activeOrders;
-        _orderHistory = orderHistory;
-        _error = null;
-      });
+      // Optional: Fetch initial data
+      await _loadOrders();
     } catch (e) {
-      _logger.error('Error refreshing orders', e);
+      _logger.error('Error refreshing orders:', e);
       if (mounted) {
-        setState(() => _error = e.toString());
-        _showErrorSnackbar(e.toString());
+        setState(() {
+          _error = e.toString();
+          _isConnected = false;
+        });
       }
     } finally {
       if (mounted) {
@@ -1118,9 +1145,9 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
                       ),
                     ),
                   ),
-                  ...items.map((item) => _buildOrderItem(item)),
-                  const SizedBox(height: 24),
-                  const Divider(thickness: 1),
+                  // ...items.map((item) => _buildOrderItem(item)),
+                  // const SizedBox(height: 24),
+                  // const Divider(thickness: 1),
                 ],
               );
             },
@@ -1130,17 +1157,8 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
     );
   }
 
-  material.Widget _buildOrderItem(Map<String, dynamic> item) {
-    // Debug logging - combine into single argument
-    _logger.debug('Order item data: ${{
-      'original_price': item['original_price'],
-      'discounted_price': item['discounted_price'],
-      'applied_discount_percentage': item['applied_discount_percentage'],
-      'quantity': item['quantity'],
-      'menu_data': item['menu']
-    }}');
-
-    // Extract static values from transaction_details
+  Widget _buildOrderItem(Map<String, dynamic> item) {
+    // Extract values from transaction_details
     final originalPrice = (item['original_price'] as num?)?.toDouble() ?? 0.0;
     final discountedPrice =
         (item['discounted_price'] as num?)?.toDouble() ?? originalPrice;
@@ -1152,149 +1170,183 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
     final menuName = menuItem['food_name'] ?? 'Unknown Item';
     final menuPhoto = menuItem['photo'] as String?;
 
-    // Calculate totals using static values
-    final subtotal = discountedPrice * quantity;
-    final originalSubtotal = originalPrice * quantity;
     final hasDiscount = discountPercentage > 0;
-    final savings = originalSubtotal - subtotal;
+    final savings = (originalPrice - discountedPrice) * quantity;
+    final subtotal = discountedPrice * quantity;
 
-    // Validate calculations
-    _logger.debug('Price calculations: ${{
-      'originalPrice': originalPrice,
-      'discountedPrice': discountedPrice,
-      'quantity': quantity,
-      'subtotal': subtotal,
-      'originalSubtotal': originalSubtotal,
-      'savings': savings,
-      'hasDiscount': hasDiscount
-    }}');
+    // Add addon handling
+    final addonName = item['addon_name'];
+    final addonPrice = (item['addon_price'] as num?)?.toDouble();
+    final addonQuantity = item['addon_quantity'] as int? ?? 1;
+    final addonSubtotal = item['addon_subtotal'] as num?;
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
       child: Padding(
         padding: const EdgeInsets.all(12),
-        child: Row(
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (menuPhoto != null)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Image.network(
-                  menuPhoto,
-                  width: 60,
-                  height: 60,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(
-                    width: 60,
-                    height: 60,
-                    color: Colors.grey[200],
-                    child: const Icon(Icons.fastfood, color: Colors.grey),
-                  ),
-                ),
-              ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    menuName,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                  ),
-                  if (notes != null) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      'Note: $notes',
-                      style: TextStyle(
-                        color: Colors.grey[600],
-                        fontSize: 12,
-                        fontStyle: FontStyle.italic,
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (menuPhoto != null)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.network(
+                      menuPhoto,
+                      width: 60,
+                      height: 60,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        width: 60,
+                        height: 60,
+                        color: Colors.grey[200],
+                        child: const Icon(Icons.fastfood, color: Colors.grey),
                       ),
                     ),
-                  ],
-                  const SizedBox(height: 8),
-                  Row(
+                  ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.shade50,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          '${quantity}x',
-                          style: TextStyle(
-                            color: Colors.blue.shade700,
-                            fontWeight: FontWeight.bold,
-                          ),
+                      Text(
+                        menuName,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
                         ),
                       ),
-                      if (hasDiscount) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.red.shade50,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.red.shade200),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.local_offer_outlined,
-                                  size: 14, color: Colors.red.shade700),
-                              const SizedBox(width: 4),
-                              Text(
-                                '-${discountPercentage.toStringAsFixed(1)}%',
-                                style: TextStyle(
-                                  color: Colors.red.shade700,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
+                      if (notes != null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          'Note: $notes',
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 12,
+                            fontStyle: FontStyle.italic,
                           ),
                         ),
                       ],
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.shade50,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              '${quantity}x',
+                              style: TextStyle(
+                                color: Colors.blue.shade700,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          if (hasDiscount) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.red.shade50,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                '-${discountPercentage.round()}%',
+                                style: TextStyle(
+                                  color: Colors.red.shade700,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
                     ],
                   ),
-                ],
-              ),
-            ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                if (hasDiscount)
-                  Text(
-                    PriceFormatter.format(originalSubtotal),
-                    style: TextStyle(
-                      decoration: TextDecoration.lineThrough,
-                      color: Colors.grey[600],
-                      fontSize: 13,
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    if (hasDiscount)
+                      Text(
+                        PriceFormatter.format(originalPrice * quantity),
+                        style: TextStyle(
+                          decoration: TextDecoration.lineThrough,
+                          color: Colors.grey[600],
+                          fontSize: 13,
+                        ),
+                      ),
+                    Text(
+                      PriceFormatter.format(subtotal),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color:
+                            hasDiscount ? Colors.red.shade700 : Colors.black87,
+                      ),
                     ),
-                  ),
+                    if (savings > 0)
+                      Text(
+                        'Save ${PriceFormatter.format(savings)}',
+                        style: TextStyle(
+                          color: Colors.green.shade700,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+            // Add addons section if exists
+            if (addonName != null && addonPrice != null) ...[
+              const Divider(height: 16),
+              Padding(
+                padding: const EdgeInsets.only(left: 72),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      '+ $addonName (${addonQuantity}x)',
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 12,
+                      ),
+                    ),
+                    Text(
+                      PriceFormatter.format((addonSubtotal ?? (addonPrice * addonQuantity)).toDouble()),
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            // Show total with addons
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
                 Text(
-                  PriceFormatter.format(subtotal),
-                  style: TextStyle(
+                  'Total: ${PriceFormatter.format(subtotal + (addonSubtotal?.toDouble() ?? 0.0))}',
+                  style: const TextStyle(
                     fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                    color: hasDiscount ? Colors.red.shade700 : Colors.black87,
+                    fontSize: 14,
                   ),
                 ),
-                if (savings > 0)
-                  Text(
-                    'Save ${PriceFormatter.format(savings)}',
-                    style: TextStyle(
-                      color: Colors.green.shade700,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
               ],
             ),
           ],

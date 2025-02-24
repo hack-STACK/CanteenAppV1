@@ -1,6 +1,7 @@
 class OrderIdFormatter {
-  static String format(int virtualId, {int padLength = 4}) {
-    return '#${virtualId.toString().padLeft(padLength, '0')}';
+  static String format(int id) {
+    // Ensure the ID is padded with zeros to at least 4 digits
+    return '#${id.toString().padLeft(4, '0')}';
   }
 }
 

@@ -75,6 +75,20 @@ class OrderItem {
         subtotal: ((addon['price'] as num?)?.toDouble() ?? 0.0) * quantity,
       ));
     }
+    
+    // Process addon data from transaction_details
+    if (json['addon_name'] != null && json['addon_price'] != null) {
+      addonDetails.add(OrderAddonDetail(
+        id: json['id'].toString(),
+        addonId: 0, // Default value since we don't have the actual addon_id
+        addonName: json['addon_name'].toString(),
+        price: (json['addon_price'] as num).toDouble(),
+        quantity: json['addon_quantity'] ?? 1,
+        unitPrice: (json['addon_price'] as num).toDouble(),
+        subtotal: (json['addon_subtotal'] as num?)?.toDouble() ?? 
+                 ((json['addon_price'] as num).toDouble() * (json['addon_quantity'] ?? 1)),
+      ));
+    }
 
     return OrderItem(
       id: json['id'].toString(),
@@ -106,6 +120,14 @@ class OrderItem {
   double get savings => hasDiscount ? originalSubtotal - subtotal : 0;
 
   double get discountPercentage => menu?.discountPercent ?? 0;
+
+  double get totalWithAddons {
+    double baseTotal = subtotal;
+    if (addons != null) {
+      baseTotal += addons!.fold(0.0, (sum, addon) => sum + (addon.subtotal));
+    }
+    return baseTotal;
+  }
 }
 
 class OrderAddonDetail {

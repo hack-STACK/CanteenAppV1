@@ -115,21 +115,21 @@ class TransactionService {
         .stream(primaryKey: ['id'])
         .eq('student_id', studentId)
         .order('created_at', ascending: false)
-        .asyncMap((orders) async {
+        .map((orders) {
+          if (orders.isEmpty) return [];
           _logger.debug('Received ${orders.length} orders from stream');
+          return OrderListExtension(orders).withVirtualIds();
+        })
+        .asyncMap((orders) async {
+          if (orders.isEmpty) return [];
 
-          if (orders.isEmpty) {
-            _logger.debug('No orders found for studentId: $studentId');
-            return [];
-          }
+          final List<Map<String, dynamic>> ordersWithDetails = [];
+          
+          for (var order in orders) {
+            try {
+              final localCreatedAt = DateTime.parse(order['created_at']).toLocal();
 
-          final List<Map<String, dynamic>> ordersWithDetails =
-              await Future.wait(
-            orders.map((order) async {
-              final localCreatedAt =
-                  DateTime.parse(order['created_at']).toLocal();
-
-              // Modified query to include add-on details
+              // Safely handle the details query
               final List<dynamic> details = await _supabase
                   .from('transaction_details')
                   .select('''
@@ -152,43 +152,36 @@ class TransactionService {
                   .eq('transaction_id', order['id'])
                   .order('created_at', ascending: true);
 
-              // Transform details to include add-ons in a more structured way
-              final transformedDetails = details.map((detail) {
-                // Include add-on information if it exists
-                final Map<String, dynamic> addon = detail['addon_name'] != null
-                    ? {
-                        'addon_name': detail['addon_name'],
-                        'addon_price': detail['addon_price'] ?? 0.0,
-                        'addon_quantity': detail['addon_quantity'] ?? 0,
-                        'addon_subtotal': detail['addon_subtotal'] ?? 0.0,
-                      }
-                    : {};
+              // Only add orders with valid details
+              if (details.isNotEmpty) {
+                ordersWithDetails.add({
+                  ...order,
+                  'created_at': localCreatedAt.toIso8601String(),
+                  'created_at_timestamp': localCreatedAt.millisecondsSinceEpoch,
+                  'items': details.map((detail) {
+                    // Handle null values and type conversions safely
+                    return {
+                      ...detail,
+                      'addon_quantity': detail['addon_quantity'] ?? 0,
+                      'addon_price': (detail['addon_price'] as num?)?.toDouble() ?? 0.0,
+                      'addon_subtotal': (detail['addon_subtotal'] as num?)?.toDouble() ?? 0.0,
+                      'unit_price': (detail['unit_price'] as num?)?.toDouble() ?? 0.0,
+                      'subtotal': (detail['subtotal'] as num?)?.toDouble() ?? 0.0,
+                      'original_price': (detail['original_price'] as num?)?.toDouble() ?? 0.0,
+                      'discounted_price': (detail['discounted_price'] as num?)?.toDouble() ?? 0.0,
+                      'applied_discount_percentage': (detail['applied_discount_percentage'] as num?)?.toDouble() ?? 0.0,
+                    };
+                  }).toList(),
+                });
+              }
+            } catch (e) {
+              _logger.error('Error processing order ${order['id']}: $e');
+              // Skip failed orders instead of breaking the entire stream
+              continue;
+            }
+          }
 
-                return {
-                  ...detail,
-                  'addons': addon.isNotEmpty
-                      ? [addon]
-                      : [], // Include as array for consistency
-                };
-              }).toList();
-
-              _logger.debug(
-                  'Transformed details with addons: $transformedDetails');
-
-              return {
-                ...order,
-                'created_at': localCreatedAt.toIso8601String(),
-                'created_at_timestamp': localCreatedAt.millisecondsSinceEpoch,
-                'items': transformedDetails,
-              };
-            }),
-          );
-
-          // Sort by local timestamp descending (latest first)
-          ordersWithDetails.sort((a, b) => (b['created_at_timestamp'] as int)
-              .compareTo(a['created_at_timestamp'] as int));
-
-          return ordersWithDetails.withVirtualIds();
+          return ordersWithDetails.isEmpty ? [] : ordersWithDetails.withVirtualIds();
         });
   }
 
@@ -854,6 +847,10 @@ class TransactionService {
             original_price,
             discounted_price,
             applied_discount_percentage,
+            addon_name,
+            addon_price,
+            addon_quantity,
+            addon_subtotal,
             created_at,
             transaction:transaction_id(
               payment_method,
@@ -875,11 +872,31 @@ class TransactionService {
             )
           ''').eq('transaction_id', transactionId);
 
-      _logger.debug('Fetched ${response.length} items with static pricing');
+      // Process the response to include addons in a more structured way
+      final processedItems = response.map((item) {
+        // Only create addon object if addon data exists
+        Map<String, dynamic>? addon;
+        if (item['addon_name'] != null && item['addon_price'] != null) {
+          addon = {
+            'name': item['addon_name'],
+            'price': item['addon_price'],
+            'quantity': item['addon_quantity'] ?? 1,
+            'subtotal': item['addon_subtotal'] ??
+                (item['addon_price'] * (item['addon_quantity'] ?? 1)),
+          };
+        }
+
+        return {
+          ...item,
+          'addons': addon != null ? [addon] : [], // Include addon as array if exists
+        };
+      }).toList();
+
+      _logger.debug('Processed items with addons: $processedItems');
 
       return {
         'success': true,
-        'items': response,
+        'items': processedItems,
       };
     } catch (e, stack) {
       _logger.error('Error fetching order tracking details', e, stack);

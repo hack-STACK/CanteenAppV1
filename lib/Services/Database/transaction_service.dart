@@ -577,9 +577,9 @@ class TransactionService {
                 await _supabase.from('transaction_details').select('''
                   *,
                   menu (*),
-                  transaction_addon_details (
+                  transaction:transaction_id (
                     *,
-                    addon:food_addons (*)
+                    student:student_id (*)
                   )
                 ''').eq('transaction_id', json['id']);
 
@@ -605,14 +605,15 @@ class TransactionService {
         *,
         transaction_details (
           *,
-          menu (
+          menu:menu_id (
             id,
             food_name,
             price,
             photo,
             stall:stall_id (*)
           )
-        )
+        ),
+        student:student_id (*)
       ''')
         .eq('stall_id', stallId)
         .eq('status', TransactionStatus.pending.name)
@@ -812,12 +813,9 @@ class TransactionService {
             *,
             items:transaction_details (
               *,
-              menu:menu_id(*),
-              addons:transaction_addon_details(
-                *,
-                addon:addon_id(*)
-              )
-            )
+              menu:menu_id(*)
+            ),
+            student:student_id(*)
           ''')
           .eq('student_id', studentId)
           .order('created_at', ascending: false);
@@ -852,9 +850,16 @@ class TransactionService {
             addon_quantity,
             addon_subtotal,
             created_at,
-            transaction:transaction_id(
+            transaction:transaction_id (
               payment_method,
-              payment_status
+              payment_status,
+              student:student_id (
+                id,
+                studentName:nama_siswa,
+                address:alamat,
+                phone:telp,
+                photo:foto
+              )
             ),
             menu:menu_id (
               id,
@@ -872,9 +877,9 @@ class TransactionService {
             )
           ''').eq('transaction_id', transactionId);
 
-      // Process the response to include addons in a more structured way
+      // Process the response to ensure addon data is handled correctly
       final processedItems = response.map((item) {
-        // Only create addon object if addon data exists
+        // Only create addon object if addon data exists in the main record
         Map<String, dynamic>? addon;
         if (item['addon_name'] != null && item['addon_price'] != null) {
           addon = {
@@ -882,7 +887,7 @@ class TransactionService {
             'price': item['addon_price'],
             'quantity': item['addon_quantity'] ?? 1,
             'subtotal': item['addon_subtotal'] ??
-                (item['addon_price'] * (item['addon_quantity'] ?? 1)),
+                ((item['addon_price'] as num?) ?? 0) * ((item['addon_quantity'] as num?) ?? 1),
           };
         }
 

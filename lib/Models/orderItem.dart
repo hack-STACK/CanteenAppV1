@@ -11,6 +11,8 @@ class OrderItem {
   final Menu? menu;
   final int quantity;
   final double unitPrice; // Add this
+  final double originalUnitPrice;  // Added field to store original price
+  final double discountPercentage; // Added field for discount percentage
   final double subtotal;
   final String? notes;
   final String status;
@@ -27,6 +29,8 @@ class OrderItem {
     this.menu,
     required this.quantity,
     required this.unitPrice, // Add this
+    this.originalUnitPrice = 0.0,  // Default to 0.0
+    this.discountPercentage = 0.0, // Default to 0.0
     required this.subtotal,
     this.notes,
     this.status = 'pending',
@@ -47,16 +51,45 @@ class OrderItem {
     }
 
     final quantity = json['quantity'] ?? 1;
-    final unitPrice = menuItem?.discountedPrice ?? menuItem?.price ?? 0.0;
-    final originalPrice = menuItem?.originalPrice ?? unitPrice;
+    double originalPrice = 0.0;
+    double discountedPrice = 0.0;
+    double discountPercentage = 0.0;
+    
+    // Handle different price scenarios
+    if (json['original_price'] != null) {
+      originalPrice = (json['original_price'] as num).toDouble();
+    } else if (menuItem?.originalPrice != null) {
+      originalPrice = menuItem!.originalPrice!;
+    } else if (menuItem?.price != null) {
+      originalPrice = menuItem!.price;
+    }
+    
+    if (json['discounted_price'] != null) {
+      discountedPrice = (json['discounted_price'] as num).toDouble();
+    } else if (menuItem?.discountedPrice != null) {
+      discountedPrice = menuItem!.discountedPrice!;
+    } else if (json['unit_price'] != null) {
+      discountedPrice = (json['unit_price'] as num).toDouble();
+    } else if (menuItem?.price != null) {
+      discountedPrice = menuItem!.price;
+    }
+    
+    if (json['applied_discount_percentage'] != null) {
+      discountPercentage = (json['applied_discount_percentage'] as num).toDouble();
+    } else if (menuItem?.discountPercent != null) {
+      discountPercentage = menuItem!.discountPercent;
+    } else if (originalPrice > 0 && discountedPrice > 0 && originalPrice > discountedPrice) {
+      discountPercentage = ((originalPrice - discountedPrice) / originalPrice) * 100;
+    }
+    
+    // If we couldn't determine the original price, use the discounted price
+    if (originalPrice <= 0) {
+      originalPrice = discountedPrice;
+    }
 
-    print('DEBUG OrderItem Calculations:');
-    print('Unit Price: $unitPrice');
-    print('Original Price: $originalPrice');
-    print('Quantity: $quantity');
-
+    // Calculate subtotal using discounted price
     final subtotal =
-        (json['subtotal'] as num?)?.toDouble() ?? (unitPrice * quantity);
+        (json['subtotal'] as num?)?.toDouble() ?? (discountedPrice * quantity);
 
     print('Calculated Subtotal: $subtotal');
 
@@ -100,26 +133,25 @@ class OrderItem {
       stallId: json['stall_id'],
       menu: menuItem,
       quantity: quantity,
-      unitPrice: unitPrice,
+      unitPrice: discountedPrice,
+      originalUnitPrice: originalPrice,
+      discountPercentage: discountPercentage,
       subtotal: subtotal,
       notes: json['notes'],
       status: json['status'] ?? 'pending',
-      addons: addonDetails,
-      createdAt: DateTime.parse(json['created_at']),
+      addons: addonDetails.isNotEmpty ? addonDetails : null,
+      createdAt: json['created_at'] != null 
+          ? DateTime.parse(json['created_at']) 
+          : DateTime.now(),
     );
   }
 
   // Update calculation methods
-  bool get hasDiscount => menu?.hasDiscount ?? false;
-
-  double get originalUnitPrice =>
-      menu?.originalPrice ?? menu?.price ?? unitPrice;
+  bool get hasDiscount => originalUnitPrice > unitPrice;
 
   double get originalSubtotal => originalUnitPrice * quantity;
 
   double get savings => hasDiscount ? originalSubtotal - subtotal : 0;
-
-  double get discountPercentage => menu?.discountPercent ?? 0;
 
   double get totalWithAddons {
     double baseTotal = subtotal;

@@ -82,7 +82,7 @@ class OrderService {
 
         final detailId = detailResponse['id'] as int;
 
-        // Insert addons if any
+        // Insert addons if any - Fixed the addons property access
         for (var addon in detail.addons) {
           await _client.from('transaction_addon_details').insert({
             'transaction_detail_id': detailId,
@@ -322,13 +322,23 @@ class OrderService {
     try {
       _logger.info('Fetching order items for order #$orderId');
 
-      // Fix the query syntax for nested selects
+      // Updated query to include discount fields
       final response = await _client.from('transaction_details').select('''
         id,
+        transaction_id,
+        menu_id,
         quantity,
         unit_price,
         subtotal,
         notes,
+        created_at,
+        addon_name,
+        addon_price,
+        addon_quantity,
+        addon_subtotal,
+        original_price,            
+        discounted_price,
+        applied_discount_percentage,
         menu:menu_id (
           id,
           food_name,
@@ -342,18 +352,26 @@ class OrderService {
           total_ratings,
           stall_id
         ),
-        addons:transaction_addon_details (
+        transaction:transaction_id (
           id,
-          quantity,
-          unit_price,
-          subtotal,
-          addon:addon_id (
+          student_id,
+          status,
+          order_type,
+          created_at,
+          student:student_id (
             id,
-            addon_name,
-            price
+            studentName:nama_siswa,
+            address:alamat,
+            phone:telp,
+            photo:foto
           )
         )
       ''').eq('transaction_id', orderId).order('created_at');
+
+      if (response == null) {
+        _logger.error('Null response received when fetching order items');
+        throw Exception('Failed to fetch order items: Null response');
+      }
 
       _logger.debug('Received ${response.length} order items');
 
@@ -372,59 +390,87 @@ class OrderService {
             menu['stall_id'] = 0;
           }
 
-          final addons = item['addons'] as List<dynamic>? ?? [];
           final quantity = item['quantity'] ?? 1;
 
-          // Fix type conversion for prices
-          final unitPrice = (item['unit_price'] is int)
-              ? (item['unit_price'] as int).toDouble()
-              : (item['unit_price'] ?? menu['price'] ?? 0).toDouble();
+          // Get the discounted price from transaction_details
+          // If no discounted price is available, use unit_price, then menu price
+          double unitPrice;
+          double originalPrice;
+          double appliedDiscountPercentage = 0.0;
+          
+          // Get original and discounted prices from transaction details
+          if (item['original_price'] != null && item['discounted_price'] != null) {
+            originalPrice = (item['original_price'] is int)
+                ? (item['original_price'] as int).toDouble()
+                : (item['original_price'] as num).toDouble();
+                
+            unitPrice = (item['discounted_price'] is int)
+                ? (item['discounted_price'] as int).toDouble() 
+                : (item['discounted_price'] as num).toDouble();
+                
+            if (item['applied_discount_percentage'] != null) {
+              appliedDiscountPercentage = (item['applied_discount_percentage'] is int)
+                  ? (item['applied_discount_percentage'] as int).toDouble()
+                  : (item['applied_discount_percentage'] as num).toDouble();
+            }
+          } else {
+            // Fallback to unit_price and menu price
+            unitPrice = (item['unit_price'] is int)
+                ? (item['unit_price'] as int).toDouble()
+                : (item['unit_price'] ?? menu['price'] ?? 0).toDouble();
+            originalPrice = (menu['price'] as num?)?.toDouble() ?? unitPrice;
+          }
 
           final subtotal = (item['subtotal'] is int)
               ? (item['subtotal'] as int).toDouble()
               : item['subtotal']?.toDouble() ?? (unitPrice * quantity);
 
+          // Create a modified menu object that includes discount info
+          final menuWithDiscount = Menu.fromJson({
+            ...menu,
+            'original_price': originalPrice,
+            'discounted_price': unitPrice,
+            'discount_percent': appliedDiscountPercentage,
+            'has_discount': originalPrice > unitPrice,
+          });
+
           List<OrderAddonDetail> addonDetails = [];
-
-          // Process addons with proper type conversion
-          for (var addon in addons) {
-            final addonData = addon['addon'];
-            if (addonData != null) {
-              final addonQuantity = addon['quantity'] ?? 1;
-
-              // Fix addon price conversion
-              final addonUnitPrice = (addon['unit_price'] is int)
-                  ? (addon['unit_price'] as int).toDouble()
-                  : (addon['unit_price'] ?? addonData['price'] ?? 0).toDouble();
-
-              final addonSubtotal = (addon['subtotal'] is int)
-                  ? (addon['subtotal'] as int).toDouble()
-                  : addon['subtotal']?.toDouble() ??
-                      (addonUnitPrice * addonQuantity);
-
-              addonDetails.add(OrderAddonDetail(
-                id: addon['id'].toString(),
-                addonId: addonData['id'],
-                addonName: addonData['addon_name'] ?? 'Unknown Addon',
-                price: addonUnitPrice,
-                quantity: addonQuantity,
-                unitPrice: addonUnitPrice,
-                subtotal: addonSubtotal,
-              ));
-            }
+          
+          // Handle addon data from direct fields in transaction_details
+          if (item['addon_name'] != null && item['addon_price'] != null) {
+            final addonQuantity = item['addon_quantity'] ?? 1;
+            final addonPrice = (item['addon_price'] is int)
+                ? (item['addon_price'] as int).toDouble()
+                : (item['addon_price'] ?? 0).toDouble();
+                
+            final addonSubtotal = (item['addon_subtotal'] is int)
+                ? (item['addon_subtotal'] as int).toDouble()
+                : item['addon_subtotal']?.toDouble() ?? (addonPrice * addonQuantity);
+                
+            addonDetails.add(OrderAddonDetail(
+              id: "${item['id']}_addon",
+              addonId: 0,
+              addonName: item['addon_name'],
+              price: addonPrice,
+              quantity: addonQuantity,
+              unitPrice: addonPrice,
+              subtotal: addonSubtotal,
+            ));
           }
 
           items.add(OrderItem(
             id: item['id'].toString(),
             orderId: orderId,
-            menu: Menu.fromJson(menu),
+            menu: menuWithDiscount, // Use the enhanced menu object
             quantity: quantity,
             unitPrice: unitPrice,
+            originalUnitPrice: originalPrice, // Save the original price
+            discountPercentage: appliedDiscountPercentage,
             subtotal: subtotal,
-            status: 'pending', // Status will be managed at transaction level
+            status: item['transaction']['status'] ?? 'pending',
+            notes: item['notes'],
             addons: addonDetails,
-            createdAt:
-                DateTime.now(), // Use transaction creation date if needed
+            createdAt: DateTime.parse(item['created_at'] ?? item['transaction']['created_at']),
           ));
         } catch (itemError, stack) {
           _logger.error('Error processing order item: $itemError');
@@ -469,10 +515,7 @@ class OrderService {
       final response = await _client.from('transaction_details').select('''
             *,
             menu:menu_id(*),
-            addons:transaction_addon_details(
-              *,
-              addon:addon_id(*)
-            )
+            transaction:transaction_id(*)
           ''').eq('transaction_id', transactionId);
 
       return (response as List)

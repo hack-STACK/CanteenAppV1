@@ -370,26 +370,33 @@ class _OrdersScreenState extends State<OrdersScreen>
   }
 
   Future<void> _showOrderDetails(Transaction order) async {
-    // Get student data first
-    final student = await _orderService.getStudentById(order.studentId);
+    try {
+      // Get student data first - with error handling
+      final student = await _orderService.getStudentById(order.studentId);
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.9,
-        minChildSize: 0.5,
-        maxChildSize: 0.95,
-        builder: (_, controller) => MerchantOrderDetails(
-          order: order,
-          onStatusUpdate: (status) => _handleOrderAction(order, status),
-          student: student, // Add the student parameter
+      await showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (context) => DraggableScrollableSheet(
+          initialChildSize: 0.9,
+          minChildSize: 0.5,
+          maxChildSize: 0.95,
+          builder: (_, controller) => MerchantOrderDetails(
+            order: order,
+            onStatusUpdate: (status) => _handleOrderAction(order, status),
+            student: student,
+          ),
         ),
-      ),
-    );
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error loading order details: $e'))
+      );
+    }
   }
 
   Widget _buildModalHeader(Transaction order) {
@@ -451,7 +458,7 @@ class _OrdersScreenState extends State<OrdersScreen>
               style: Theme.of(context).textTheme.titleMedium,
             ),
             Text(
-              'Rp ${order.totalAmount.toStringAsFixed(2)}',
+              'Rp ${(order.totalAmount ?? 0.0).toStringAsFixed(2)}',  // Fix herexed(2)}',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
@@ -505,7 +512,7 @@ class _OrdersScreenState extends State<OrdersScreen>
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '${detail.quantity}x @ Rp ${detail.unitPrice.toStringAsFixed(2)}',
+                        '${detail.quantity}x @ Rp ${(detail.unitPrice ?? 0.0).toStringAsFixed(2)}',
                         style: TextStyle(
                           color: Colors.grey[600],
                           fontSize: 14,
@@ -527,7 +534,7 @@ class _OrdersScreenState extends State<OrdersScreen>
                 ),
                 // Subtotal
                 Text(
-                  'Rp ${detail.subtotal.toStringAsFixed(2)}',
+                  'Rp ${(detail.subtotal ?? 0.0).toStringAsFixed(2)}',  // Fix herexed(2)}',
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 14,
@@ -535,31 +542,32 @@ class _OrdersScreenState extends State<OrdersScreen>
                 ),
               ],
             ),
-            // Show addons if any
-            if (detail.addons.isNotEmpty ?? false) ...[
+            
+            // Show addon info if available directly in the transaction_details record
+            if (detail.addonName != null && detail.addonPrice != null) ...[
               const Divider(height: 16),
-              ...detail.addons.map((addon) => Padding(
-                    padding: const EdgeInsets.only(left: 72),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          '+ ${addon.addonName}', // Use addonName instead of addon?.name
-                          style: TextStyle(
-                            color: Colors.grey[600],
-                            fontSize: 12,
-                          ),
-                        ),
-                        Text(
-                          'Rp ${addon.subtotal.toStringAsFixed(2)}',
-                          style: TextStyle(
-                            color: Colors.grey[600],
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
+              Padding(
+                padding: const EdgeInsets.only(left: 72),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      '+ ${detail.addonName}',
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 12,
+                      ),
                     ),
-                  )),
+                    Text(
+                      'Rp ${((detail.addonQuantity ?? 1) * (detail.addonPrice ?? 0.0)).toStringAsFixed(2)}',
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ],
           ],
         ),
@@ -1103,18 +1111,54 @@ class _OrderPageState extends State<OrderPage> {
     return FutureBuilder<StudentModel?>(
       future: _orderService.getStudentById(order.studentId),
       builder: (context, studentSnapshot) {
+        if (studentSnapshot.connectionState == ConnectionState.waiting) {
+          return ShimmerLoading(height: 200); // Use shimmer loading for better UX
+        }
+
+        if (studentSnapshot.hasError) {
+          print('Error loading student data: ${studentSnapshot.error}');
+          // Continue with order display even if student data fails to load
+        }
+
         return FutureBuilder<List<OrderItem>>(
           future: _orderService.getOrderItems(order.id),
           builder: (context, itemsSnapshot) {
+            if (itemsSnapshot.connectionState == ConnectionState.waiting) {
+              return ShimmerLoading(height: 200);
+            }
+
+            if (itemsSnapshot.hasError) {
+              print('Error loading order items: ${itemsSnapshot.error}');
+              return Card(
+                margin: const EdgeInsets.only(bottom: 16),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Order #${order.id}', style: Theme.of(context).textTheme.titleMedium),
+                      const SizedBox(height: 8),
+                      Text('Error loading order items', style: TextStyle(color: Colors.red)),
+                      TextButton(
+                        onPressed: () => setState(() {}),
+                        child: const Text('Retry'),
+                      )
+                    ],
+                  ),
+                ),
+              );
+            }
+
+            final orderItems = itemsSnapshot.data ?? [];
+
             return Hero(
               tag: 'order_${order.id}',
               child: ModernOrderCard(
                 key: ValueKey('order_${order.id}'),
                 order: order,
                 student: studentSnapshot.data,
-                orderItems: itemsSnapshot.data,
-                isLoading:
-                    itemsSnapshot.connectionState == ConnectionState.waiting,
+                orderItems: orderItems,
+                isLoading: false,
                 onStatusUpdate: (status) => _handleOrderStatus(order, status),
                 onTap: () => _showOrderDetails(order),
               ),
@@ -1417,8 +1461,8 @@ class _OrderCardState extends State<OrderCard> {
                 ),
               ],
             ),
-            // Addons section
-            if (item.addons?.isNotEmpty ?? false)
+            // Addons section - handle possibly null or empty addons list
+            if (item.addons != null && item.addons!.isNotEmpty)
               _buildAddonsSection(item.addons!),
             // Notes section
             if (item.notes?.isNotEmpty ?? false)
@@ -1572,6 +1616,8 @@ class _OrderCardState extends State<OrderCard> {
   }
 
   Widget _buildAddonsSection(List<dynamic> addons) {
+    if (addons.isEmpty) return const SizedBox.shrink();
+    
     return Padding(
       padding: const EdgeInsets.only(top: 8),
       child: Column(
@@ -1587,7 +1633,7 @@ class _OrderCardState extends State<OrderCard> {
                     SizedBox(width: 4),
                     Expanded(
                       child: Text(
-                        '${addon.quantity}x ${addon.addonName}',
+                        '${addon.quantity}x ${addon.addonName ?? "Addon"}',
                         style: TextStyle(
                           fontSize: 12,
                           color: Colors.grey[600],
@@ -1721,8 +1767,8 @@ class _OrderCardState extends State<OrderCard> {
 
       total += (discountedPrice * item.quantity);
 
-      // Add addon costs
-      if (item.addons != null) {
+      // Add addon costs - handle possibly null or empty addons list
+      if (item.addons != null && item.addons!.isNotEmpty) {
         for (final addon in item.addons!) {
           total += addon.subtotal;
         }

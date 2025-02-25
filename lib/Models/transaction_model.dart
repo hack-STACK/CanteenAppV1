@@ -88,51 +88,175 @@ class Transaction {
 
 class TransactionDetail {
   final int id;
+  final int transactionId;
   final int menuId;
-  final int quantity;
-  final double unitPrice;
-  final double subtotal;
+  final int? quantity;
+  final double? unitPrice;
+  final double? subtotal;
   final String? notes;
+  final DateTime createdAt;
   final Menu? menu;
-  final List<OrderAddonDetail> addons;
+  final String? addonName;
+  final double? addonPrice;
+  final int? addonQuantity;
+  final double? addonSubtotal;
+  final double? originalPrice;
+  final double? discountedPrice;
+  final double? appliedDiscountPercentage;
+
+  // Define addons as empty list by default
+  final List<AddonDetail> addons;
 
   TransactionDetail({
     required this.id,
+    required this.transactionId,
     required this.menuId,
-    required this.quantity,
-    required this.unitPrice,
-    required this.subtotal,
+    this.quantity,
+    this.unitPrice,
+    this.subtotal,
     this.notes,
+    required this.createdAt,
     this.menu,
-    this.addons = const [],
+    this.addonName,
+    this.addonPrice,
+    this.addonQuantity,
+    this.addonSubtotal,
+    this.originalPrice,
+    this.discountedPrice,
+    this.appliedDiscountPercentage,
+    this.addons = const [], // Initialize with empty list by default
   });
 
   factory TransactionDetail.fromJson(Map<String, dynamic> json) {
+    // Parse any direct addon data from the transaction_details record
+    List<AddonDetail> addonDetails = [];
+    if (json['addon_name'] != null && json['addon_price'] != null) {
+      addonDetails.add(AddonDetail(
+        id: json['id'],
+        addonId: null,
+        addonName: json['addon_name'],
+        price: json['addon_price'] != null
+            ? double.parse(json['addon_price'].toString())
+            : 0.0,
+        quantity: json['addon_quantity'] ?? 1,
+        unitPrice: json['addon_price'] != null
+            ? double.parse(json['addon_price'].toString())
+            : 0.0,
+        subtotal: json['addon_subtotal'] != null
+            ? double.parse(json['addon_subtotal'].toString())
+            : 0.0,
+      ));
+    }
+
     return TransactionDetail(
       id: json['id'],
+      transactionId: json['transaction_id'],
       menuId: json['menu_id'],
       quantity: json['quantity'],
-      unitPrice: (json['unit_price'] as num).toDouble(),
-      subtotal: (json['subtotal'] as num).toDouble(),
+      unitPrice: json['unit_price'] != null
+          ? double.parse(json['unit_price'].toString())
+          : null,
+      subtotal: json['subtotal'] != null
+          ? double.parse(json['subtotal'].toString())
+          : null,
       notes: json['notes'],
+      addonName: json['addon_name'],
+      addonPrice: json['addon_price'] != null
+          ? double.parse(json['addon_price'].toString())
+          : null,
+      addonQuantity: json['addon_quantity'],
+      addonSubtotal: json['addon_subtotal'] != null
+          ? double.parse(json['addon_subtotal'].toString())
+          : null,
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'])
+          : DateTime.now(),
       menu: json['menu'] != null ? Menu.fromJson(json['menu']) : null,
-      addons: (json['addons'] as List<dynamic>?)
-              ?.map((addon) => OrderAddonDetail.fromJson(addon))
-              .toList() ??
-          [],
+      originalPrice: json['original_price'] != null
+          ? double.parse(json['original_price'].toString())
+          : null,
+      discountedPrice: json['discounted_price'] != null
+          ? double.parse(json['discounted_price'].toString())
+          : null,
+      appliedDiscountPercentage: json['applied_discount_percentage'] != null
+          ? double.parse(json['applied_discount_percentage'].toString())
+          : null,
+      addons: addonDetails,
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'transaction_id': transactionId,
       'menu_id': menuId,
       'quantity': quantity,
       'unit_price': unitPrice,
       'subtotal': subtotal,
       'notes': notes,
+      'addon_name': addonName,
+      'addon_price': addonPrice,
+      'addon_quantity': addonQuantity,
+      'addon_subtotal': addonSubtotal,
+      'created_at': createdAt.toIso8601String(),
       'menu': menu?.toJson(),
+      'original_price': originalPrice,
+      'discounted_price': discountedPrice,
+      'applied_discount_percentage': appliedDiscountPercentage,
       'addons': addons.map((addon) => addon.toJson()).toList(),
+    };
+  }
+}
+
+// Add AddonDetail class if not already defined
+class AddonDetail {
+  final int id;
+  final int? addonId;
+  final String? addonName;
+  final double? price;
+  final int? quantity;
+  final double? unitPrice;
+  final double? subtotal;
+
+  AddonDetail({
+    required this.id,
+    this.addonId,
+    this.addonName,
+    this.price,
+    this.quantity,
+    this.unitPrice,
+    this.subtotal,
+  });
+
+  factory AddonDetail.fromJson(Map<String, dynamic> json) {
+    return AddonDetail(
+      id: json['id'],
+      addonId: json['addon_id'],
+      addonName: json['addon_name'] ?? json['addon']?['addon_name'],
+      price: json['price'] != null
+          ? double.parse(json['price'].toString())
+          : json['unit_price'] != null
+              ? double.parse(json['unit_price'].toString())
+              : null,
+      quantity: json['quantity'],
+      unitPrice: json['unit_price'] != null
+          ? double.parse(json['unit_price'].toString())
+          : null,
+      subtotal: json['subtotal'] != null
+          ? double.parse(json['subtotal'].toString())
+          : null,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'addon_id': addonId,
+      'addon_name': addonName,
+      'price': price,
+      'quantity': quantity,
+      'unit_price': unitPrice,
+      'subtotal': subtotal,
     };
   }
 }

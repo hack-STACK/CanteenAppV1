@@ -7,6 +7,7 @@ import 'package:kantin/models/enums/transaction_enums.dart';
 import 'package:intl/intl.dart';
 import 'package:timeline_tile/timeline_tile.dart';
 import 'package:kantin/widgets/user_avatar.dart';
+import 'package:kantin/utils/logger.dart'; // Add logger import
 
 class MerchantOrderDetails extends StatefulWidget {
   // Changed to StatefulWidget
@@ -29,6 +30,7 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
   bool _isLoading = false;
   String? _error;
   List<OrderItem> _orderItems = [];
+  final _logger = Logger(); // Add logger instance
 
   @override
   void initState() {
@@ -45,21 +47,21 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
     }
 
     try {
-      print('DEBUG: Loading order details for Order #${widget.order.id}');
-      print('DEBUG: Raw order details: ${widget.order.details}');
+      _logger.debug('Loading order details for Order #${widget.order.id}');
+      _logger.debug('Raw order details: ${widget.order.details}');
 
       if (widget.order.details.isEmpty) {
-        print('DEBUG: Order details is empty. Fetching from service...');
+        _logger.debug('Order details is empty. Fetching from service...');
         // Attempt to fetch order details from service
         final orderService = OrderService();
         final details = await orderService.getOrderItems(widget.order.id);
 
         if (details.isEmpty) {
-          print('DEBUG: No items found in service');
+          _logger.debug('No items found in service');
           throw Exception('No items found for this order');
         }
 
-        print('DEBUG: Found ${details.length} items from service');
+        _logger.debug('Found ${details.length} items from service');
         if (mounted) {
           setState(() {
             _orderItems = details;
@@ -69,30 +71,29 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
         return;
       }
 
-      print('DEBUG: Processing ${widget.order.details.length} order items');
+      _logger.debug('Processing ${widget.order.details.length} order items');
 
       final orderItems = widget.order.details.map((detail) {
-        print('DEBUG: Processing detail: $detail');
+        _logger.debug('Processing detail: $detail');
 
         // Extract addon information
         final addonsList = detail.addons.map((addon) {
-              print('DEBUG: Processing addon: $addon');
+              _logger.debug('Processing addon: $addon');
               return OrderAddonDetail(
-                id: addon.id.toString() ?? '',
-                addonId: (addon.addonId as num?)?.toInt() ?? 0,
+                id: addon.id.toString(),
+                addonId: (addon.addonId as num).toInt(),
                 addonName: addon.addonName ?? 'Unknown Addon',
                 price: addon.price ?? 0,
                 quantity: addon.quantity ?? 1,
                 unitPrice: addon.unitPrice ?? 0,
                 subtotal: addon.subtotal ?? 0,
               );
-            }).toList() ??
-            [];
+            }).toList();
 
-        print('DEBUG: Processed ${addonsList.length} addons');
+        _logger.debug('Processed ${addonsList.length} addons');
 
         return OrderItem(
-          id: detail.id.toString() ?? '',
+          id: detail.id.toString(),
           orderId: widget.order.id,
           menuId: detail.menuId,
           quantity: detail.quantity ?? 0,
@@ -105,7 +106,7 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
         );
       }).toList();
 
-      print('DEBUG: Successfully processed ${orderItems.length} items');
+      _logger.debug('Successfully processed ${orderItems.length} items');
 
       if (mounted) {
         setState(() {
@@ -114,9 +115,9 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
         });
       }
     } catch (e, stack) {
-      print('DEBUG: Error occurred while loading order details:');
-      print('DEBUG: Error: $e');
-      print('DEBUG: Stack trace: $stack');
+      _logger.error('Error occurred while loading order details:');
+      _logger.error('Error: $e');
+      _logger.error('Stack trace: $stack');
 
       if (mounted) {
         setState(() {
@@ -176,8 +177,8 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            color.withOpacity(0.8),
-            color.withOpacity(0.6),
+            color.withAlpha(204), // 0.8 opacity = 204 alpha
+            color.withAlpha(153), // 0.6 opacity = 153 alpha
           ],
         ),
       ),
@@ -189,7 +190,7 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
             height: 4,
             margin: const EdgeInsets.only(bottom: 12),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.3),
+              color: Colors.white.withAlpha(77), // 0.3 opacity = 77 alpha
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -206,7 +207,7 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
           Text(
             _getStatusDescription(widget.order.status),
             style: TextStyle(
-              color: Colors.white.withOpacity(0.9),
+              color: Colors.white.withAlpha(230), // 0.9 opacity = 230 alpha
               fontSize: 14,
             ),
           ),
@@ -430,8 +431,13 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
   }
 
   Widget _buildOrderItemCard(BuildContext context, OrderItem item) {
-    final mainCoursePrice = item.menu?.price ?? 0.0;
-    final mainCourseTotal = mainCoursePrice * item.quantity;
+    // Use properties from OrderItem that handle discounts properly
+    final originalPrice = item.originalUnitPrice;
+    final effectivePrice = item.unitPrice;
+    final hasDiscount = item.hasDiscount;
+    
+    // Calculate totals
+    final mainCourseTotal = effectivePrice * item.quantity;
     final addonsTotal = item.addons?.fold<double>(
           0,
           (sum, addon) => sum + (addon.price * addon.quantity),
@@ -469,6 +475,27 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [
+                          if (hasDiscount) ...[
+                            Icon(
+                              Icons.discount_outlined,
+                              color: Theme.of(context).primaryColor,
+                              size: 14,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Saved: ${NumberFormat.currency(
+                                locale: 'id',
+                                symbol: 'Rp ',
+                                decimalDigits: 0,
+                              ).format(item.savings)}',
+                              style: TextStyle(
+                                color: Theme.of(context).primaryColor,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            const Spacer(),
+                          ],
                           Text(
                             'Item Total: ',
                             style: TextStyle(
@@ -526,9 +553,16 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
   }
 
   Widget _buildItemHeader(BuildContext context, OrderItem item) {
-    final mainPrice = item.menu?.price ?? 0.0;
+    // Get prices from OrderItem - these already handle discounts
+    final originalPrice = item.originalUnitPrice;
+    final effectivePrice = item.unitPrice;
+    final hasDiscount = item.hasDiscount;
+    final discount = hasDiscount 
+        ? ((originalPrice - effectivePrice) / originalPrice * 100).round() 
+        : 0;
+    
     final quantity = item.quantity;
-    final mainCourseTotal = mainPrice * quantity;
+    final mainCourseTotal = effectivePrice * quantity;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -543,8 +577,11 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
                   fontWeight: FontWeight.w600,
                   fontSize: 16,
                 ),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
               ),
             ),
+            const SizedBox(width: 8),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
@@ -562,20 +599,65 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
           ],
         ),
         const SizedBox(height: 4),
+        // Show both original and discounted price if there's a discount
+        if (hasDiscount) ...[
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.red.withAlpha(30),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.red.withAlpha(100)),
+                ),
+                child: Text(
+                  '-$discount%',
+                  style: TextStyle(
+                    color: Colors.red,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  'Original: ${NumberFormat.currency(
+                    locale: 'id',
+                    symbol: 'Rp ',
+                    decimalDigits: 0,
+                  ).format(originalPrice)}',
+                  style: TextStyle(
+                    decoration: TextDecoration.lineThrough,
+                    color: Colors.grey[500],
+                    fontSize: 13,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+        ],
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              'Price: ${NumberFormat.currency(
-                locale: 'id',
-                symbol: 'Rp ',
-                decimalDigits: 0,
-              ).format(mainPrice)}',
-              style: TextStyle(
-                color: Colors.grey[600],
-                fontSize: 14,
+            Flexible(
+              child: Text(
+                'Price: ${NumberFormat.currency(
+                  locale: 'id',
+                  symbol: 'Rp ',
+                  decimalDigits: 0,
+                ).format(effectivePrice)}',
+                style: TextStyle(
+                  color: hasDiscount ? Theme.of(context).primaryColor : Colors.grey[600],
+                  fontSize: 14,
+                  fontWeight: hasDiscount ? FontWeight.bold : FontWeight.normal,
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
+            const SizedBox(width: 8),
             Text(
               NumberFormat.currency(
                 locale: 'id',
@@ -727,8 +809,7 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
   }
 
   Widget _buildDeliveryInfo(BuildContext context) {
-    final deliveryAddress =
-        widget.student?.studentAddress ?? widget.order.deliveryAddress;
+    final deliveryAddress = widget.student?.studentAddress ?? widget.order.deliveryAddress;
 
     if (deliveryAddress == null || deliveryAddress.isEmpty) {
       return const SizedBox.shrink();
@@ -763,11 +844,21 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
   }
 
   Widget _buildPaymentSummary(BuildContext context) {
-    // Calculate main course total
-    final mainCourseTotal = _orderItems.fold<double>(
+    // Calculate original total (without discounts)
+    final originalTotal = _orderItems.fold<double>(
       0,
-      (sum, item) => sum + ((item.menu?.price ?? 0) * item.quantity),
+      (sum, item) => sum + (item.originalUnitPrice * item.quantity),
     );
+
+    // Calculate discounted total (what the customer actually pays)
+    final discountedTotal = _orderItems.fold<double>(
+      0,
+      (sum, item) => sum + (item.unitPrice * item.quantity),
+    );
+
+    // Calculate the savings from discounts
+    final totalSavings = originalTotal - discountedTotal;
+    final hasDiscount = totalSavings > 0;
 
     // Calculate addons total
     final addonsTotal = _orderItems.fold<double>(
@@ -783,7 +874,7 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
 
     final deliveryFee =
         widget.order.orderType == OrderType.delivery ? 2000.0 : 0.0;
-    final subtotal = mainCourseTotal + addonsTotal;
+    final subtotal = discountedTotal + addonsTotal;
     final total = subtotal + deliveryFee;
 
     return Container(
@@ -805,7 +896,7 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: _getPaymentStatusColor().withOpacity(0.1),
+              color: _getPaymentStatusColor().withAlpha(25),
               borderRadius:
                   const BorderRadius.vertical(top: Radius.circular(16)),
             ),
@@ -823,6 +914,7 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
               ],
             ),
           ),
+          
           // Price Breakdown
           Padding(
             padding: const EdgeInsets.all(16),
@@ -837,29 +929,59 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                _buildPriceRow(
-                  'Main Course Total',
-                  mainCourseTotal,
-                  showDivider: true,
-                ),
+                
+                // Fix the list spread operator here
+                if (hasDiscount) ...[
+                  _buildPriceRow(
+                    'Original Price',
+                    originalTotal,
+                    showDivider: true,
+                    isStrikeThrough: true,
+                  ),
+                  
+                  _buildPriceRow(
+                    'Discounted Price',
+                    discountedTotal,
+                    showDivider: true,
+                    isDiscounted: true,
+                  ),
+
+                  _buildPriceRow(
+                    'Discount Savings',
+                    -totalSavings, // Negative to show as a reduction
+                    showDivider: true,
+                    isDiscount: true,
+                  ),
+                ] else ...[  // Note the ... spread operator here
+                  _buildPriceRow(
+                    'Main Course Total',
+                    discountedTotal,
+                    showDivider: true,
+                  ),
+                ],
+                  
                 _buildPriceRow(
                   'Add-ons Total',
                   addonsTotal,
                   showDivider: true,
                 ),
+                
                 _buildPriceRow(
                   'Subtotal',
                   subtotal,
                   showDivider: true,
                   isSubtotal: true,
                 ),
+                
                 if (widget.order.orderType == OrderType.delivery)
                   _buildPriceRow(
                     'Delivery Fee',
                     deliveryFee,
                     showDivider: true,
                   ),
+                  
                 const SizedBox(height: 8),
+                
                 _buildPriceRow(
                   'Total Amount',
                   total,
@@ -868,6 +990,7 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
               ],
             ),
           ),
+          
           // Payment Method
           Container(
             padding: const EdgeInsets.all(16),
@@ -886,7 +1009,7 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  widget.order.paymentMethod.label, // Add required text content
+                  widget.order.paymentMethod.label,
                   style: TextStyle(
                     color: _getPaymentMethodColor(widget.order.paymentMethod),
                     fontWeight: FontWeight.w500,
@@ -906,6 +1029,9 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
     bool showDivider = false,
     bool isTotal = false,
     bool isSubtotal = false,
+    bool isDiscounted = false,
+    bool isDiscount = false,
+    bool isStrikeThrough = false,
   }) {
     final textStyle = isTotal
         ? const TextStyle(
@@ -917,10 +1043,17 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
               )
-            : TextStyle(
-                fontSize: 14,
-                color: Colors.grey[600],
-              );
+            : isDiscounted
+                ? TextStyle(
+                    fontSize: 14,
+                    color: Theme.of(context).primaryColor,
+                    fontWeight: FontWeight.w500,
+                  )
+                : TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[600],
+                    decoration: isStrikeThrough ? TextDecoration.lineThrough : null,
+                  );
 
     return Column(
       children: [
@@ -935,12 +1068,18 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
                   locale: 'id',
                   symbol: 'Rp ',
                   decimalDigits: 0,
-                ).format(amount),
+                ).format(isDiscount ? -amount : amount), // Negative for discounts
                 style: isTotal
                     ? textStyle.copyWith(
                         color: Theme.of(context).primaryColor,
                       )
-                    : textStyle,
+                    : isDiscount
+                        ? TextStyle(
+                            fontSize: 14,
+                            color: Colors.green,
+                            fontWeight: FontWeight.w500,
+                          )
+                        : textStyle,
               ),
             ],
           ),
@@ -954,33 +1093,9 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
     );
   }
 
-  Color _getPaymentStatusColor() {
-    return switch (widget.order.paymentStatus) {
-      PaymentStatus.unpaid => Colors.orange,
-      PaymentStatus.paid => Colors.green,
-      PaymentStatus.refunded => Colors.red,
-    };
-  }
-
-  IconData _getPaymentIcon() {
-    return switch (widget.order.paymentStatus) {
-      PaymentStatus.unpaid => Icons.pending_outlined,
-      PaymentStatus.paid => Icons.payment,
-      PaymentStatus.refunded => Icons.reply,
-    };
-  }
-
-  Color _getPaymentMethodColor(PaymentMethod method) {
-    return switch (method) {
-      PaymentMethod.cash => Colors.green,
-      PaymentMethod.e_wallet => Colors.blue,
-      PaymentMethod.bank_transfer => Colors.purple,
-      PaymentMethod.credit_card => Colors.orange,
-    };
-  }
-
   Widget _buildStatusChip(BuildContext context) {
     final (Color color, IconData icon) = _getStatusDesign(widget.order.status);
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
@@ -1002,42 +1117,7 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
     );
   }
 
-  Widget _buildActionButtons(BuildContext context) {
-    if (widget.order.status == TransactionStatus.completed ||
-        widget.order.status == TransactionStatus.cancelled) {
-      return const SizedBox.shrink();
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: Colors.grey.shade200)),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: OutlinedButton(
-              onPressed: () =>
-                  widget.onStatusUpdate(TransactionStatus.cancelled),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.red,
-                side: const BorderSide(color: Colors.red),
-              ),
-              child: const Text('Cancel Order'),
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: ElevatedButton(
-              onPressed: () => widget.onStatusUpdate(_getNextStatus()),
-              child: Text(_getActionButtonText()),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  // Removed unused _buildActionButtons method
 
   // Helper methods
   Color _getStatusColor(TransactionStatus status) {
@@ -1281,5 +1361,31 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
         ),
       ),
     );
+  }
+
+  // Add these missing payment-related methods before the _buildPriceRow method
+  Color _getPaymentStatusColor() {
+    return switch (widget.order.paymentStatus) {
+      PaymentStatus.unpaid => Colors.orange,
+      PaymentStatus.paid => Colors.green,
+      PaymentStatus.refunded => Colors.red,
+    };
+  }
+
+  IconData _getPaymentIcon() {
+    return switch (widget.order.paymentStatus) {
+      PaymentStatus.unpaid => Icons.pending_outlined,
+      PaymentStatus.paid => Icons.payment,
+      PaymentStatus.refunded => Icons.reply,
+    };
+  }
+
+  Color _getPaymentMethodColor(PaymentMethod method) {
+    return switch (method) {
+      PaymentMethod.cash => Colors.green,
+      PaymentMethod.e_wallet => Colors.blue,
+      PaymentMethod.bank_transfer => Colors.purple,
+      PaymentMethod.credit_card => Colors.orange,
+    };
   }
 }

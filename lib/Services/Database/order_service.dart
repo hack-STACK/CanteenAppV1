@@ -368,11 +368,6 @@ class OrderService {
         )
       ''').eq('transaction_id', orderId).order('created_at');
 
-      if (response == null) {
-        _logger.error('Null response received when fetching order items');
-        throw Exception('Failed to fetch order items: Null response');
-      }
-
       _logger.debug('Received ${response.length} order items');
 
       final List<OrderItem> items = [];
@@ -397,21 +392,23 @@ class OrderService {
           double unitPrice;
           double originalPrice;
           double appliedDiscountPercentage = 0.0;
-          
+
           // Get original and discounted prices from transaction details
-          if (item['original_price'] != null && item['discounted_price'] != null) {
+          if (item['original_price'] != null &&
+              item['discounted_price'] != null) {
             originalPrice = (item['original_price'] is int)
                 ? (item['original_price'] as int).toDouble()
                 : (item['original_price'] as num).toDouble();
-                
+
             unitPrice = (item['discounted_price'] is int)
-                ? (item['discounted_price'] as int).toDouble() 
+                ? (item['discounted_price'] as int).toDouble()
                 : (item['discounted_price'] as num).toDouble();
-                
+
             if (item['applied_discount_percentage'] != null) {
-              appliedDiscountPercentage = (item['applied_discount_percentage'] is int)
-                  ? (item['applied_discount_percentage'] as int).toDouble()
-                  : (item['applied_discount_percentage'] as num).toDouble();
+              appliedDiscountPercentage =
+                  (item['applied_discount_percentage'] is int)
+                      ? (item['applied_discount_percentage'] as int).toDouble()
+                      : (item['applied_discount_percentage'] as num).toDouble();
             }
           } else {
             // Fallback to unit_price and menu price
@@ -435,18 +432,19 @@ class OrderService {
           });
 
           List<OrderAddonDetail> addonDetails = [];
-          
+
           // Handle addon data from direct fields in transaction_details
           if (item['addon_name'] != null && item['addon_price'] != null) {
             final addonQuantity = item['addon_quantity'] ?? 1;
             final addonPrice = (item['addon_price'] is int)
                 ? (item['addon_price'] as int).toDouble()
                 : (item['addon_price'] ?? 0).toDouble();
-                
+
             final addonSubtotal = (item['addon_subtotal'] is int)
                 ? (item['addon_subtotal'] as int).toDouble()
-                : item['addon_subtotal']?.toDouble() ?? (addonPrice * addonQuantity);
-                
+                : item['addon_subtotal']?.toDouble() ??
+                    (addonPrice * addonQuantity);
+
             addonDetails.add(OrderAddonDetail(
               id: "${item['id']}_addon",
               addonId: 0,
@@ -470,7 +468,8 @@ class OrderService {
             status: item['transaction']['status'] ?? 'pending',
             notes: item['notes'],
             addons: addonDetails,
-            createdAt: DateTime.parse(item['created_at'] ?? item['transaction']['created_at']),
+            createdAt: DateTime.parse(
+                item['created_at'] ?? item['transaction']['created_at']),
           ));
         } catch (itemError, stack) {
           _logger.error('Error processing order item: $itemError');

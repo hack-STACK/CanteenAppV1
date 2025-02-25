@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart'; // Add this import
 import 'package:intl/intl.dart';
@@ -10,6 +13,7 @@ import 'package:kantin/pages/StudentState/OrderPage.dart';
 import 'package:provider/provider.dart';
 import 'package:kantin/Models/Restaurant.dart';
 import 'package:kantin/pages/StudentState/food_cart.dart';
+import 'package:shimmer/shimmer.dart';
 import 'package:supabase_flutter/supabase_flutter.dart'; // Add this import
 import 'package:kantin/widgets/stall_detail/stall_banner_header.dart';
 import 'package:kantin/widgets/stall_detail/stall_info_section.dart';
@@ -112,6 +116,10 @@ class _StallDetailPageState extends State<StallDetailPage>
   // Add MenuService instance
   final MenuService _menuService = MenuService();
 
+  // Add these new properties for stall ratings
+  double _stallAverageRating = 0.0;
+  int _stallTotalRatings = 0;
+
   @override
   void initState() {
     super.initState();
@@ -160,6 +168,9 @@ class _StallDetailPageState extends State<StallDetailPage>
           for (var menu in _menus) {
             print('Menu: ${menu.foodName}, Type: ${menu.type}');
           }
+
+          // Calculate stall rating after menus are loaded
+          _calculateStallRating();
         });
       }
     } catch (e) {
@@ -171,6 +182,35 @@ class _StallDetailPageState extends State<StallDetailPage>
         );
       }
     }
+  }
+
+  // Add this new method to calculate average stall rating
+  void _calculateStallRating() {
+    if (_menus.isEmpty) {
+      _stallAverageRating = 0.0;
+      _stallTotalRatings = 0;
+      return;
+    }
+
+    int totalRatedMenus = 0;
+    double ratingSum = 0.0;
+    int ratingsCount = 0;
+
+    for (var menu in _menus) {
+      if (menu.rating != null && menu.rating! > 0) {
+        ratingSum += menu.rating!;
+        totalRatedMenus++;
+        // Add the number of ratings for this menu (if available)
+        ratingsCount += menu.totalRatings ?? 1;
+      }
+    }
+
+    _stallAverageRating =
+        totalRatedMenus > 0 ? ratingSum / totalRatedMenus : 0.0;
+    _stallTotalRatings = ratingsCount;
+
+    print(
+        'Calculated stall rating: $_stallAverageRating from $totalRatedMenus menus with $ratingsCount total ratings');
   }
 
   @override
@@ -848,47 +888,78 @@ class _StallDetailPageState extends State<StallDetailPage>
     );
   }
 
-  // Add better image URL validation
+  // Updated image URL validation to handle database URLs correctly
   bool _isValidImageUrl(String? url) {
     if (url == null || url.isEmpty) return false;
+
     try {
       final uri = Uri.parse(url);
-      return uri.hasScheme && (uri.scheme == 'http' || uri.scheme == 'https');
+
+      // Handle file:/// URIs
+      if (uri.scheme == 'file') {
+        // File exists check (for local files)
+        final file = File(uri.path);
+        return file.existsSync();
+      }
+
+      // Handle Supabase storage URLs (your database URLs)
+      if (uri.host.contains('supabase.co') ||
+          uri.path.contains('storage/v1/object/public')) {
+        return true;
+      }
+
+      // Standard HTTP/HTTPS validation
+      return uri.hasScheme &&
+          (uri.scheme == 'http' || uri.scheme == 'https') &&
+          uri.host.isNotEmpty;
     } catch (e) {
+      print('Error validating URL: $e');
       return false;
     }
   }
 
-  // Update image loading method
+  // Updated image loading method for database compatibility
   Widget _loadMenuImage(Menu menu) {
     if (menu.photo == null || menu.photo!.isEmpty) {
       return _buildMenuImagePlaceholder(menu);
     }
 
     try {
-      final uri = Uri.parse(menu.photo!);
-      if (!uri.hasScheme ||
-          (!uri.scheme.startsWith('http') && !uri.scheme.startsWith('https'))) {
+      final url = menu.photo!;
+      final uri = Uri.parse(url);
+
+      // Handle file:/// URIs separately
+      if (uri.scheme == 'file') {
+        final file = File(uri.path);
+        if (file.existsSync()) {
+          return Image.file(
+            file,
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) {
+              print('Error loading file image: $error');
+              return _buildMenuImagePlaceholder(menu);
+            },
+          );
+        }
         return _buildMenuImagePlaceholder(menu);
       }
 
-      return Image.network(
-        menu.photo!,
+      // Handle Supabase storage and other network URLs
+      return CachedNetworkImage(
+        imageUrl: url,
         fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => _buildMenuImagePlaceholder(menu),
-        loadingBuilder: (context, child, loadingProgress) {
-          if (loadingProgress == null) return child;
-          return Center(
-            child: CircularProgressIndicator(
-              value: loadingProgress.expectedTotalBytes != null
-                  ? loadingProgress.cumulativeBytesLoaded /
-                      loadingProgress.expectedTotalBytes!
-                  : null,
-            ),
-          );
+        placeholder: (context, url) => Shimmer.fromColors(
+          baseColor: Colors.grey[300]!,
+          highlightColor: Colors.grey[100]!,
+          child: Container(color: Colors.white),
+        ),
+        errorWidget: (context, url, error) {
+          print('Error loading network image: $error');
+          return _buildMenuImagePlaceholder(menu);
         },
       );
     } catch (e) {
+      print('Error loading menu image: $e');
       return _buildMenuImagePlaceholder(menu);
     }
   }
@@ -1441,7 +1512,7 @@ class _StallDetailPageState extends State<StallDetailPage>
                         StallInfoSection(
                           stall: widget.stall,
                           metrics: _buildMetrics(),
-                          schedule: _scheduleByDay,
+                          scheduleByDay: _scheduleByDay,
                           amenities: _amenities,
                           paymentMethods: _paymentMethods,
                         ),
@@ -1516,7 +1587,16 @@ class _StallDetailPageState extends State<StallDetailPage>
     }
 
     return [
-      // ...existing metrics...
+      StallMetric(
+        icon: Icons.star_rate_rounded,
+        value: _stallAverageRating > 0
+            ? _stallAverageRating.toStringAsFixed(1)
+            : 'New',
+        label: _stallTotalRatings > 0
+            ? '$_stallTotalRatings ratings'
+            : 'No ratings yet',
+        color: Colors.amber,
+      ),
       StallMetric(
         icon: Icons.access_time,
         value: _formatLocalTime(widget.stall.openTime),

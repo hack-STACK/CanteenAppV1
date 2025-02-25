@@ -14,7 +14,7 @@ import 'package:kantin/utils/order_id_formatter.dart';
 class OrderDetailsSheet extends StatelessWidget {
   final Map<String, dynamic> order;
   final VoidCallback onRefresh;
-  Logger _logger = Logger();
+  final Logger _logger = Logger();
 
   OrderDetailsSheet({
     super.key,
@@ -68,8 +68,9 @@ class OrderDetailsSheet extends StatelessWidget {
 
   Widget _buildHeader(BuildContext context) {
     // Format order ID first
-    final String orderId = OrderIdFormatter.format(order['virtual_id'] ?? order['id'] ?? 0);
-    
+    final String orderId =
+        OrderIdFormatter.format(order['virtual_id'] ?? order['id'] ?? 0);
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -301,7 +302,8 @@ class OrderDetailsSheet extends StatelessWidget {
   Future<Map<String, dynamic>> _fetchStaticOrderDetails() async {
     try {
       final transactionService = TransactionService();
-      final result = await transactionService.fetchOrderTrackingDetails(order['id']);
+      final result =
+          await transactionService.fetchOrderTrackingDetails(order['id']);
 
       if (!result['success']) {
         throw Exception(result['error'] ?? 'Failed to fetch order details');
@@ -309,7 +311,7 @@ class OrderDetailsSheet extends StatelessWidget {
 
       // Handle empty items safely
       final items = result['items'] as List? ?? [];
-      
+
       return {
         'items': items,
         'total': items.fold<double>(
@@ -319,7 +321,10 @@ class OrderDetailsSheet extends StatelessWidget {
       };
     } catch (e) {
       debugPrint('Error fetching static order details: $e');
-      return {'items': [], 'total': 0.0}; // Return empty data instead of throwing
+      return {
+        'items': [],
+        'total': 0.0
+      }; // Return empty data instead of throwing
     }
   }
 
@@ -365,7 +370,8 @@ class OrderDetailsSheet extends StatelessWidget {
                         height: 60,
                         fit: BoxFit.cover,
                         placeholder: (context, url) => _buildShimmerEffect(),
-                        errorWidget: (context, url, error) => _buildPlaceholder(),
+                        errorWidget: (context, url, error) =>
+                            _buildPlaceholder(),
                       ),
                     ),
                   const SizedBox(width: 12),
@@ -399,8 +405,11 @@ class OrderDetailsSheet extends StatelessWidget {
                               Padding(
                                 padding: const EdgeInsets.only(left: 8),
                                 child: _buildDiscountBadge(
-                                  ((priceDetails['originalPrice'] - priceDetails['discountedPrice']) / 
-                                   priceDetails['originalPrice'] * 100).round(),
+                                  ((priceDetails['originalPrice'] -
+                                              priceDetails['discountedPrice']) /
+                                          priceDetails['originalPrice'] *
+                                          100)
+                                      .round(),
                                 ),
                               ),
                           ],
@@ -428,9 +437,7 @@ class OrderDetailsSheet extends StatelessWidget {
   }
 
   bool _validateItemData(Map<String, dynamic> item) {
-    return item.isNotEmpty && 
-           item['menu'] != null &&
-           item['quantity'] != null;
+    return item.isNotEmpty && item['menu'] != null && item['quantity'] != null;
   }
 
   Map<String, dynamic>? _processMenuData(Map<String, dynamic> item) {
@@ -451,16 +458,19 @@ class OrderDetailsSheet extends StatelessWidget {
         final addonName = item['addon_name'].toString();
         final addonPrice = (item['addon_price'] as num).toDouble();
         final addonQuantity = item['addon_quantity'] as int? ?? 1;
-        final addonSubtotal = item['addon_subtotal'] as num? ?? (addonPrice * addonQuantity);
+        final addonSubtotal =
+            item['addon_subtotal'] as num? ?? (addonPrice * addonQuantity);
 
         // Only return if addon has valid data
         if (addonName.isNotEmpty && addonPrice > 0) {
-          return [{
-            'name': addonName,
-            'price': addonPrice,
-            'quantity': addonQuantity,
-            'subtotal': addonSubtotal,
-          }];
+          return [
+            {
+              'name': addonName,
+              'price': addonPrice,
+              'quantity': addonQuantity,
+              'subtotal': addonSubtotal,
+            }
+          ];
         }
       }
 
@@ -479,15 +489,16 @@ class OrderDetailsSheet extends StatelessWidget {
     try {
       final quantity = item['quantity'] as int? ?? 1;
       final originalPrice = (item['original_price'] as num?)?.toDouble() ?? 0.0;
-      final discountedPrice = (item['discounted_price'] as num?)?.toDouble() ?? originalPrice;
-      
+      final discountedPrice =
+          (item['discounted_price'] as num?)?.toDouble() ?? originalPrice;
+
       final baseTotal = discountedPrice * quantity;
       final addonsTotal = addons.fold<double>(
         0.0,
         (sum, addon) => sum + (addon['subtotal'] as num).toDouble(),
       );
       final savings = ((originalPrice - discountedPrice) * quantity).abs();
-      
+
       return {
         'hasDiscount': discountedPrice < originalPrice,
         'originalPrice': originalPrice,
@@ -519,7 +530,8 @@ class OrderDetailsSheet extends StatelessWidget {
       children: [
         if (priceDetails['hasDiscount'])
           Text(
-            PriceFormatter.format(priceDetails['originalPrice'] * priceDetails['quantity']),
+            PriceFormatter.format(
+                priceDetails['originalPrice'] * priceDetails['quantity']),
             style: TextStyle(
               decoration: TextDecoration.lineThrough,
               color: Colors.grey[600],
@@ -531,7 +543,9 @@ class OrderDetailsSheet extends StatelessWidget {
           style: TextStyle(
             fontWeight: FontWeight.bold,
             fontSize: 16,
-            color: priceDetails['hasDiscount'] ? Colors.red.shade700 : Colors.black87,
+            color: priceDetails['hasDiscount']
+                ? Colors.red.shade700
+                : Colors.black87,
           ),
         ),
         if (priceDetails['savings'] > 0)
@@ -709,7 +723,8 @@ class OrderDetailsSheet extends StatelessWidget {
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 16,
-                        color: hasDiscount ? Colors.red.shade700 : Colors.black87,
+                        color:
+                            hasDiscount ? Colors.red.shade700 : Colors.black87,
                       ),
                     ),
                     if (savings > 0)
@@ -753,7 +768,8 @@ class OrderDetailsSheet extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        PriceFormatter.format((addonSubtotal as double?) ?? (addonPrice * addonQuantity)),
+                        PriceFormatter.format((addonSubtotal as double?) ??
+                            (addonPrice * addonQuantity)),
                         style: TextStyle(
                           color: Colors.grey[600],
                           fontSize: 12,
@@ -778,7 +794,8 @@ class OrderDetailsSheet extends StatelessWidget {
                   style: TextStyle(fontWeight: FontWeight.bold),
                 ),
                 Text(
-                  PriceFormatter.format(subtotal + (addonSubtotal?.toDouble() ?? 0.0)),
+                  PriceFormatter.format(
+                      subtotal + (addonSubtotal?.toDouble() ?? 0.0)),
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
               ],
@@ -1326,13 +1343,15 @@ class OrderDetailsSheet extends StatelessWidget {
     );
   }
 
-  Widget _buildEnhancedAddonsSection(BuildContext context, List<Map<String, dynamic>> addons) {
+  Widget _buildEnhancedAddonsSection(
+      BuildContext context, List<Map<String, dynamic>> addons) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            Icon(Icons.add_circle_outline, size: 16, color: Colors.blue.shade700),
+            Icon(Icons.add_circle_outline,
+                size: 16, color: Colors.blue.shade700),
             const SizedBox(width: 8),
             Text(
               'Add-ons',
@@ -1404,7 +1423,7 @@ class OrderDetailsSheet extends StatelessWidget {
               ],
             ),
           );
-        }).toList(),
+        }),
       ],
     );
   }

@@ -373,13 +373,6 @@ class _PaymentPageState extends State<PaymentPage>
       _logger.info('Starting transaction submission');
       setState(() => _transactionLog = 'Initializing transaction...');
 
-      // Validate payment method
-      if (_selectedPaymentMethod == null) {
-        throw payment_errors.PaymentValidationError(
-          message: 'Payment method must be selected',
-        );
-      }
-
       _logger.debug('Selected payment method: ${_selectedPaymentMethod.name}');
 
       // Calculate total amount

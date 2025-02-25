@@ -290,7 +290,8 @@ class Menu {
         description: json['description'] ?? '',
         isAvailable: json['is_available'] ?? json['isAvailable'] ?? true,
         category: json['category'] ?? '',
-        rating: (json['rating'] ?? 0).toDouble(),
+        rating:
+            json['rating'] != null ? (json['rating'] as num).toDouble() : null,
         totalRatings: json['total_ratings'] ?? json['totalRatings'] ?? 0,
         addons: (json['addons'] as List<dynamic>?)
                 ?.map((addon) => FoodAddon.fromJson(addon))

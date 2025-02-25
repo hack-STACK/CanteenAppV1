@@ -67,7 +67,7 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
   late TabController _tabController;
   final _refreshKey = GlobalKey<RefreshIndicatorState>();
   StreamSubscription? _orderSubscription;
-  TextEditingController _searchController = TextEditingController();
+  final TextEditingController _searchController = TextEditingController();
   bool _isSearching = false;
   List<Map<String, dynamic>> _filteredActiveOrders = [];
   List<Map<String, dynamic>> _filteredOrderHistory = [];
@@ -1005,7 +1005,7 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
 
   void _sortOrders() {
     setState(() {
-      final comparator = (Map<String, dynamic> a, Map<String, dynamic> b) {
+      comparator(Map<String, dynamic> a, Map<String, dynamic> b) {
         dynamic valueA = a[_currentSortField];
         dynamic valueB = b[_currentSortField];
 
@@ -1038,7 +1038,7 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
         }
 
         return _sortAscending ? comparison : -comparison;
-      };
+      }
 
       _activeOrders.sort(comparator);
       _orderHistory.sort(comparator);
@@ -2033,8 +2033,9 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
                   },
                   order: order,
                   priceData: {
-                    'hasDiscount': item['applied_discount_percentage'] != null &&
-                        (item['applied_discount_percentage'] as num) > 0,
+                    'hasDiscount':
+                        item['applied_discount_percentage'] != null &&
+                            (item['applied_discount_percentage'] as num) > 0,
                     'originalPrice':
                         (item['original_price'] as num?)?.toDouble() ?? 0.0,
                     'discountedPrice':
@@ -2042,13 +2043,15 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
                             (item['original_price'] as num?)?.toDouble() ??
                             0.0,
                     'discountPercentage':
-                        (item['applied_discount_percentage'] as num?)?.toDouble() ??
+                        (item['applied_discount_percentage'] as num?)
+                                ?.toDouble() ??
                             0.0,
                     'quantity': item['quantity'] as int? ?? 1,
-                    'subtotal': ((item['discounted_price'] as num?)?.toDouble() ??
-                            (item['original_price'] as num?)?.toDouble() ??
-                            0.0) *
-                        (item['quantity'] as int? ?? 1),
+                    'subtotal':
+                        ((item['discounted_price'] as num?)?.toDouble() ??
+                                (item['original_price'] as num?)?.toDouble() ??
+                                0.0) *
+                            (item['quantity'] as int? ?? 1),
                   },
                   ratingData: {'average': 0.0, 'count': 0},
                   isCompleted: _isOrderCompleted(order),
@@ -3231,7 +3234,6 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
                             _filterOrders();
                           });
                         },
-                        child: const Text('Reset Filters'),
                         style: OutlinedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           side:
@@ -3240,6 +3242,7 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
                             borderRadius: BorderRadius.circular(8),
                           ),
                         ),
+                        child: const Text('Reset Filters'),
                       ),
                     ),
                     const SizedBox(width: 16),
@@ -3249,7 +3252,6 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
                           _filterOrders();
                           Navigator.pop(context);
                         },
-                        child: const Text('Apply Filters'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Theme.of(context)
                               .primaryColor, // Changed from primary to backgroundColor
@@ -3258,6 +3260,7 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
                             borderRadius: BorderRadius.circular(8),
                           ),
                         ),
+                        child: const Text('Apply Filters'),
                       ),
                     ),
                   ],
@@ -3549,11 +3552,11 @@ Widget _buildSafeImage(
 }) {
   // Better validation for image URLs
   final bool hasValidImageUrl = imageUrl != null &&
-                             imageUrl.trim().isNotEmpty && 
-                             (imageUrl.startsWith('http://') || 
-                              imageUrl.startsWith('https://') || 
-                              imageUrl.startsWith('data:image/'));
-  
+      imageUrl.trim().isNotEmpty &&
+      (imageUrl.startsWith('http://') ||
+          imageUrl.startsWith('https://') ||
+          imageUrl.startsWith('data:image/'));
+
   if (!hasValidImageUrl) {
     return Container(
       width: width,
@@ -3562,17 +3565,17 @@ Widget _buildSafeImage(
       child: Center(
         child: Icon(
           fallbackIcon,
-          size: (width != null && height != null) 
-              ? math.min(width, height) / 2 
+          size: (width != null && height != null)
+              ? math.min(width, height) / 2
               : 40,
           color: Colors.grey[400],
         ),
       ),
     );
   }
-  
+
   return Image.network(
-    imageUrl!,
+    imageUrl,
     width: width,
     height: height,
     fit: fit,
@@ -3585,8 +3588,8 @@ Widget _buildSafeImage(
         child: Center(
           child: Icon(
             fallbackIcon,
-            size: (width != null && height != null) 
-                ? math.min(width, height) / 2 
+            size: (width != null && height != null)
+                ? math.min(width, height) / 2
                 : 40,
             color: Colors.grey[400],
           ),

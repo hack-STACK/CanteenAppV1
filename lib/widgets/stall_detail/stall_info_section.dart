@@ -5,23 +5,52 @@ import 'package:kantin/Models/stall_detail_models.dart';
 class StallInfoSection extends StatelessWidget {
   final Stan stall;
   final List<StallMetric> metrics;
-  final Map<String, String> schedule;
-  final List<String> amenities;
   final List<String> paymentMethods;
+  final Map<String, String> scheduleByDay;
+  final List<String> amenities;
+  final double stallRating; // Add this property
 
   const StallInfoSection({
-    super.key,
+    Key? key,
     required this.stall,
     required this.metrics,
-    required this.schedule,
-    required this.amenities,
     required this.paymentMethods,
-  });
+    required this.scheduleByDay,
+    required this.amenities,
+    this.stallRating = 0.0, // Default to 0.0
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Display stall name and rating
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                stall.stanName,
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+            ),
+            if (stallRating > 0) // Only show if rating exists
+              Row(
+                children: [
+                  const Icon(Icons.star, color: Colors.amber, size: 20),
+                  const SizedBox(width: 4),
+                  Text(
+                    stallRating.toStringAsFixed(1),
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                  ),
+                ],
+              ),
+          ],
+        ),
         _buildMetricsRow(),
         const Divider(),
         _buildScheduleSection(),
@@ -87,7 +116,7 @@ class StallInfoSection extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          ...schedule.entries.map((entry) {
+          ...scheduleByDay.entries.map((entry) {
             bool isToday =
                 DateTime.now().toLocal().weekday.toString() == entry.key;
             return Padding(

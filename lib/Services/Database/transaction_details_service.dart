@@ -1,8 +1,6 @@
 import 'package:kantin/Models/menu_cart_item.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:kantin/utils/logger.dart';
-import 'package:kantin/Models/transaction_detail.dart';
-import 'package:kantin/Models/menus.dart';
 
 class TransactionDetailsService {
   final _supabase = Supabase.instance.client;

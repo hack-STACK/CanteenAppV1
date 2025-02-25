@@ -31,23 +31,24 @@ class EnhancedOrderCard extends StatefulWidget {
   State<EnhancedOrderCard> createState() => _EnhancedOrderCardState();
 }
 
-class _EnhancedOrderCardState extends State<EnhancedOrderCard> with SingleTickerProviderStateMixin {
+class _EnhancedOrderCardState extends State<EnhancedOrderCard>
+    with SingleTickerProviderStateMixin {
   bool _isRated = false;
   bool _isLoading = true;
   late AnimationController _animationController;
   late Animation<double> _scaleAnimation;
-  
+
   @override
   void initState() {
     super.initState();
     _checkRatingStatus();
-    
+
     // Initialize animation controller
     _animationController = AnimationController(
       duration: const Duration(milliseconds: 300),
       vsync: this,
     );
-    
+
     _scaleAnimation = Tween<double>(begin: 1.0, end: 0.98).animate(
       CurvedAnimation(
         parent: _animationController,
@@ -55,7 +56,7 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> with SingleTicker
       ),
     );
   }
-  
+
   @override
   void dispose() {
     _animationController.dispose();
@@ -69,19 +70,23 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> with SingleTicker
     }
 
     try {
-      final menuId = widget.item['menu']?['id'] ?? 
-                     widget.item['menu_id'] ?? 
-                     widget.item['menuData']?['id'];
+      final menuId = widget.item['menu']?['id'] ??
+          widget.item['menu_id'] ??
+          widget.item['menuData']?['id'];
       // Safely convert transaction ID to int if it's a string
       final rawTransactionId = widget.order['id'];
-      final transactionId = rawTransactionId is String ? int.tryParse(rawTransactionId) : rawTransactionId;
+      final transactionId = rawTransactionId is String
+          ? int.tryParse(rawTransactionId)
+          : rawTransactionId;
 
       if (menuId != null && transactionId != null) {
         final hasRated = await RatingService().hasUserRatedMenu(
           menuId is String ? int.tryParse(menuId.toString()) ?? 0 : menuId,
-          transactionId is String ? int.tryParse(transactionId.toString()) ?? 0 : transactionId as int,
+          transactionId is String
+              ? int.tryParse(transactionId.toString()) ?? 0
+              : transactionId as int,
         );
-        
+
         if (mounted) {
           setState(() {
             _isRated = hasRated;
@@ -152,23 +157,23 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> with SingleTicker
               children: [
                 // Enhanced image header with stacked elements
                 ClipRRect(
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(20)),
                   child: Stack(
                     children: [
                       // Hero image
                       _buildMenuImage(menuData['photo']),
-                      
+
                       // Premium gradient overlay
                       _buildEnhancedGradientOverlay(),
-                      
+
                       // Status indicator - top right
-                      if (widget.order['status'] != null) 
+                      if (widget.order['status'] != null)
                         _buildStatusBadge(widget.order['status']),
-                      
+
                       // Discount badge - if applicable
-                      if (hasDiscount) 
-                        _buildDiscountBadge(priceDetails),
-                      
+                      if (hasDiscount) _buildDiscountBadge(priceDetails),
+
                       // Title and stall info
                       Positioned(
                         bottom: 12,
@@ -195,7 +200,7 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> with SingleTicker
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
-                            
+
                             // Stall name
                             if (menuData['stallName'] != null) ...[
                               const SizedBox(height: 4),
@@ -227,7 +232,7 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> with SingleTicker
                     ],
                   ),
                 ),
-                
+
                 // Enhanced content area
                 Padding(
                   padding: const EdgeInsets.all(16),
@@ -255,23 +260,29 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> with SingleTicker
                                 const SizedBox(height: 4),
                                 // Price values
                                 Row(
-                                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.baseline,
                                   textBaseline: TextBaseline.alphabetic,
                                   children: [
                                     Text(
-                                      _formatPrice(priceDetails['discountedPrice']),
+                                      _formatPrice(
+                                          priceDetails['discountedPrice']),
                                       style: TextStyle(
                                         fontSize: 18,
                                         fontWeight: FontWeight.bold,
-                                        color: hasDiscount ? theme.colorScheme.error : theme.colorScheme.primary,
+                                        color: hasDiscount
+                                            ? theme.colorScheme.error
+                                            : theme.colorScheme.primary,
                                       ),
                                     ),
                                     if (hasDiscount) ...[
                                       const SizedBox(width: 6),
                                       Text(
-                                        _formatPrice(priceDetails['originalPrice']),
+                                        _formatPrice(
+                                            priceDetails['originalPrice']),
                                         style: TextStyle(
-                                          decoration: TextDecoration.lineThrough,
+                                          decoration:
+                                              TextDecoration.lineThrough,
                                           color: Colors.grey[500],
                                           fontSize: 14,
                                         ),
@@ -282,12 +293,14 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> with SingleTicker
                               ],
                             ),
                           ),
-                          
+
                           // Enhanced quantity indicator
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 8),
                             decoration: BoxDecoration(
-                              color: theme.colorScheme.primaryContainer.withOpacity(0.6),
+                              color: theme.colorScheme.primaryContainer
+                                  .withOpacity(0.6),
                               borderRadius: BorderRadius.circular(14),
                               boxShadow: [
                                 BoxShadow(
@@ -319,7 +332,7 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> with SingleTicker
                           ),
                         ],
                       ),
-                      
+
                       // Order date
                       if (widget.order['created_at'] != null) ...[
                         const SizedBox(height: 12),
@@ -332,7 +345,8 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> with SingleTicker
                             ),
                             const SizedBox(width: 6),
                             Text(
-                              _formatDateTime(DateTime.parse(widget.order['created_at'])),
+                              _formatDateTime(
+                                  DateTime.parse(widget.order['created_at'])),
                               style: TextStyle(
                                 fontSize: 13,
                                 color: Colors.grey[600],
@@ -342,7 +356,7 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> with SingleTicker
                         ),
                         const SizedBox(height: 6),
                       ],
-                      
+
                       // Divider before addons
                       if (processedAddons.isNotEmpty) ...[
                         const Padding(
@@ -351,7 +365,7 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> with SingleTicker
                         ),
                         _buildEnhancedAddonsSection(processedAddons),
                       ],
-                      
+
                       // Notes section with improved styling
                       if (widget.item['notes']?.isNotEmpty == true) ...[
                         const Padding(
@@ -367,7 +381,8 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> with SingleTicker
                           ),
                           child: Row(
                             children: [
-                              Icon(Icons.notes, size: 16, color: Colors.amber[700]),
+                              Icon(Icons.notes,
+                                  size: 16, color: Colors.amber[700]),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
@@ -383,26 +398,29 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> with SingleTicker
                           ),
                         ),
                       ],
-                      
+
                       // Order summary - only show in detailed view
-                      if (priceDetails['savings'] > 0 || priceDetails['addonsTotal'] > 0) ...[
+                      if (priceDetails['savings'] > 0 ||
+                          priceDetails['addonsTotal'] > 0) ...[
                         const SizedBox(height: 16),
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
+                            color: theme.colorScheme.surfaceContainerHighest
+                                .withOpacity(0.3),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Column(
                             children: [
                               // Item subtotal row
                               Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
                                 children: [
                                   Text(
                                     'Item subtotal:',
                                     style: TextStyle(
-                                      fontSize: 13, 
+                                      fontSize: 13,
                                       color: Colors.grey[700],
                                     ),
                                   ),
@@ -416,17 +434,18 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> with SingleTicker
                                   ),
                                 ],
                               ),
-                              
+
                               // Addons total row
                               if (priceDetails['addonsTotal'] > 0) ...[
                                 const SizedBox(height: 4),
                                 Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
                                   children: [
                                     Text(
                                       'Add-ons:',
                                       style: TextStyle(
-                                        fontSize: 13, 
+                                        fontSize: 13,
                                         color: Colors.grey[700],
                                       ),
                                     ),
@@ -441,12 +460,13 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> with SingleTicker
                                   ],
                                 ),
                               ],
-                              
+
                               // Savings row
                               if (priceDetails['savings'] > 0) ...[
                                 const SizedBox(height: 4),
                                 Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
                                   children: [
                                     Row(
                                       children: [
@@ -459,7 +479,7 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> with SingleTicker
                                         Text(
                                           'You saved:',
                                           style: TextStyle(
-                                            fontSize: 13, 
+                                            fontSize: 13,
                                             color: Colors.green[700],
                                           ),
                                         ),
@@ -476,21 +496,22 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> with SingleTicker
                                   ],
                                 ),
                               ],
-                              
+
                               // Divider before total
                               const Padding(
                                 padding: EdgeInsets.symmetric(vertical: 6),
                                 child: Divider(height: 1),
                               ),
-                              
+
                               // Total row
                               Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
                                 children: [
                                   const Text(
                                     'Total:',
                                     style: TextStyle(
-                                      fontSize: 14, 
+                                      fontSize: 14,
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
@@ -511,7 +532,7 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> with SingleTicker
                     ],
                   ),
                 ),
-                
+
                 // Enhanced rate button for completed orders
                 if (widget.isCompleted && widget.onRatePressed != null)
                   Container(
@@ -522,10 +543,14 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> with SingleTicker
                         _isRated ? Icons.star : Icons.star_outline,
                         size: 18,
                       ),
-                      label: Text(_isRated ? 'View Your Rating' : 'Rate This Item'),
+                      label: Text(
+                          _isRated ? 'View Your Rating' : 'Rate This Item'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: _isRated ? Colors.amber : theme.colorScheme.primaryContainer,
-                        foregroundColor: _isRated ? Colors.white : theme.colorScheme.primary,
+                        backgroundColor: _isRated
+                            ? Colors.amber
+                            : theme.colorScheme.primaryContainer,
+                        foregroundColor:
+                            _isRated ? Colors.white : theme.colorScheme.primary,
                         elevation: _isRated ? 0 : 0,
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         shape: RoundedRectangleBorder(
@@ -538,9 +563,8 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> with SingleTicker
             ),
           ),
         ),
-      ).animate()
-       .fadeIn(duration: 400.ms, curve: Curves.easeOut)
-       .slideY(begin: 0.1, end: 0, duration: 500.ms, curve: Curves.easeOutQuint);
+      ).animate().fadeIn(duration: 400.ms, curve: Curves.easeOut).slideY(
+          begin: 0.1, end: 0, duration: 500.ms, curve: Curves.easeOutQuint);
     } catch (e, stack) {
       debugPrint('Error building EnhancedOrderCard: $e\n$stack');
       return _buildErrorCard(
@@ -555,7 +579,7 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> with SingleTicker
     Color badgeColor;
     String label;
     IconData icon;
-    
+
     switch (status.toLowerCase()) {
       case 'pending':
         badgeColor = Colors.orange;
@@ -641,7 +665,8 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> with SingleTicker
     // Calculate discount percentage
     final originalPrice = priceDetails['originalPrice'] as double;
     final discountedPrice = priceDetails['discountedPrice'] as double;
-    final discountPercent = ((originalPrice - discountedPrice) / originalPrice * 100).round();
+    final discountPercent =
+        ((originalPrice - discountedPrice) / originalPrice * 100).round();
 
     return Positioned(
       top: 12,
@@ -697,18 +722,18 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> with SingleTicker
   // Create a safer image builder method
   Widget _buildSafeImage(String? photoUrl) {
     // Better validation for image URLs
-    final bool hasValidImageUrl = photoUrl != null && 
-                                photoUrl.trim().isNotEmpty && 
-                                (photoUrl.startsWith('http://') || 
-                                 photoUrl.startsWith('https://') || 
-                                 photoUrl.startsWith('data:image/'));
-    
+    final bool hasValidImageUrl = photoUrl != null &&
+        photoUrl.trim().isNotEmpty &&
+        (photoUrl.startsWith('http://') ||
+            photoUrl.startsWith('https://') ||
+            photoUrl.startsWith('data:image/'));
+
     if (!hasValidImageUrl) {
       return _buildPlaceholder();
     }
-    
+
     return CachedNetworkImage(
-      imageUrl: photoUrl!,
+      imageUrl: photoUrl,
       fit: BoxFit.cover,
       placeholder: (context, url) => _buildShimmerEffect(),
       errorWidget: (context, url, error) {
@@ -922,16 +947,17 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> with SingleTicker
       decimalDigits: 0,
     ).format(price);
   }
-  
+
   String _formatDateTime(DateTime dateTime) {
     // Convert to local time if it's in UTC
     final localDateTime = dateTime.isUtc ? dateTime.toLocal() : dateTime;
-    
+
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final yesterday = DateTime(now.year, now.month, now.day - 1);
-    final orderDate = DateTime(localDateTime.year, localDateTime.month, localDateTime.day);
-    
+    final orderDate =
+        DateTime(localDateTime.year, localDateTime.month, localDateTime.day);
+
     if (orderDate == today) {
       return 'Today, ${DateFormat('HH:mm').format(localDateTime)}';
     } else if (orderDate == yesterday) {
@@ -940,11 +966,9 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> with SingleTicker
       return DateFormat('dd MMM yyyy, HH:mm').format(localDateTime);
     }
   }
-  
+
   bool _validateItemData(Map<String, dynamic> item) {
-    return item.isNotEmpty && 
-           item['menu'] != null &&
-           item['quantity'] != null;
+    return item.isNotEmpty && item['menu'] != null && item['quantity'] != null;
   }
 
   Map<String, dynamic>? _processMenuData(Map<String, dynamic> item) {
@@ -971,12 +995,13 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> with SingleTicker
     try {
       final quantity = item['quantity'] as int? ?? 1;
       final originalPrice = (item['original_price'] as num?)?.toDouble() ?? 0.0;
-      final discountedPrice = (item['discounted_price'] as num?)?.toDouble() ?? originalPrice;
-      
+      final discountedPrice =
+          (item['discounted_price'] as num?)?.toDouble() ?? originalPrice;
+
       final baseTotal = discountedPrice * quantity;
       final addonsTotal = _calculateAddonTotal(addons);
       final savings = ((originalPrice - discountedPrice) * quantity).abs();
-      
+
       return {
         'hasDiscount': discountedPrice < originalPrice,
         'originalPrice': originalPrice,
@@ -1007,33 +1032,39 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> with SingleTicker
       // Handle single addon case
       if (item['addon_name'] != null && item['addon_price'] != null) {
         // Only return if there's valid addon data
-        if (item['addon_name'].toString().isNotEmpty && 
+        if (item['addon_name'].toString().isNotEmpty &&
             (item['addon_price'] as num?)?.toDouble() != 0.0) {
-          return [{
-            'addon': {
-              'addon_name': item['addon_name'],
-              'price': item['addon_price']
-            },
-            'quantity': item['addon_quantity'] ?? 1,
-            'unit_price': item['addon_price'] ?? 0.0,
-            'subtotal': item['addon_subtotal'] ?? 
-                ((item['addon_price'] ?? 0.0) * (item['addon_quantity'] ?? 1)),
-          }];
+          return [
+            {
+              'addon': {
+                'addon_name': item['addon_name'],
+                'price': item['addon_price']
+              },
+              'quantity': item['addon_quantity'] ?? 1,
+              'unit_price': item['addon_price'] ?? 0.0,
+              'subtotal': item['addon_subtotal'] ??
+                  ((item['addon_price'] ?? 0.0) *
+                      (item['addon_quantity'] ?? 1)),
+            }
+          ];
         }
       }
 
       // Handle array of addons
       final addonsData = item['addons'] as List<dynamic>? ?? [];
-      return addonsData.where((addon) {
-        // Filter out invalid or empty addons
-        if (addon is! Map<String, dynamic>) return false;
-        final name = addon['addon']?['addon_name'];
-        final price = (addon['unit_price'] as num?)?.toDouble();
-        return name != null && 
-               name.toString().isNotEmpty && 
-               price != null && 
-               price > 0;
-      }).map((addon) => addon as Map<String, dynamic>).toList();
+      return addonsData
+          .where((addon) {
+            // Filter out invalid or empty addons
+            if (addon is! Map<String, dynamic>) return false;
+            final name = addon['addon']?['addon_name'];
+            final price = (addon['unit_price'] as num?)?.toDouble();
+            return name != null &&
+                name.toString().isNotEmpty &&
+                price != null &&
+                price > 0;
+          })
+          .map((addon) => addon as Map<String, dynamic>)
+          .toList();
     } catch (e) {
       print('Error processing addons: $e');
       return [];

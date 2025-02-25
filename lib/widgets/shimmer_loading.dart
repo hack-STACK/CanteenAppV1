@@ -3,11 +3,11 @@ import 'package:shimmer/shimmer.dart';
 
 class ShimmerLoading extends StatelessWidget {
   final double? height;
-  
+
   const ShimmerLoading({
-    Key? key,
+    super.key,
     this.height,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

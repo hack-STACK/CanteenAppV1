@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/material.dart' as material show Icon, Widget;
@@ -10,6 +11,7 @@ import 'package:kantin/services/menu_service.dart';
 import 'package:kantin/utils/order_id_formatter.dart';
 import 'package:kantin/utils/price_formatter.dart';
 import 'package:kantin/widgets/enhanced_order_card.dart';
+import 'package:kantin/widgets/rating_indicator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:kantin/widgets/order_details_sheet.dart';
 import 'package:timeline_tile/timeline_tile.dart';
@@ -24,6 +26,10 @@ import 'package:kantin/widgets/review_history_tab.dart';
 import 'package:lottie/lottie.dart';
 import 'package:animated_text_kit/animated_text_kit.dart';
 import 'package:kantin/utils/time_formatter.dart';
+import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
+import 'package:shimmer/shimmer.dart';
+// import 'package:flutter_map/flutter_map.dart';
+// import 'package:latlong2/latlong.dart';
 
 // Add this extension outside the class at the top of the file
 extension StringExtension on String {
@@ -31,6 +37,9 @@ extension StringExtension on String {
     return "${this[0].toUpperCase()}${substring(1).toLowerCase()}";
   }
 }
+
+// Create a global logger for the static methods
+final _globalLogger = Logger('OrderPage');
 
 class OrderPage extends StatefulWidget {
   final int studentId;
@@ -58,6 +67,24 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
   late TabController _tabController;
   final _refreshKey = GlobalKey<RefreshIndicatorState>();
   StreamSubscription? _orderSubscription;
+  TextEditingController _searchController = TextEditingController();
+  bool _isSearching = false;
+  List<Map<String, dynamic>> _filteredActiveOrders = [];
+  List<Map<String, dynamic>> _filteredOrderHistory = [];
+
+  // Pagination variables
+  int _activeOrdersPage = 1;
+  int _historyOrdersPage = 1;
+  final int _ordersPerPage = 5;
+  bool _hasMoreActiveOrders = true;
+  bool _hasMoreHistoryOrders = true;
+  bool _isLoadingMoreActive = false;
+  bool _isLoadingMoreHistory = false;
+
+  // Filter variables
+  String _statusFilter = 'All';
+  String _timeFilter = 'All';
+  String _orderTypeFilter = 'All';
 
   String _currentSortField =
       'created_at_timestamp'; // Changed from 'created_at'
@@ -65,18 +92,23 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
 
   late AnimationController _refreshIconController;
   late AnimationController _slideController;
+  late AnimationController _fabAnimationController;
+
+  // Scroll controllers for pagination
+  final ScrollController _activeOrdersScrollController = ScrollController();
+  final ScrollController _orderHistoryScrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-    
+
     // Initialize loading state
     setState(() => _isLoading = true);
-    
-    // Setup subscription
+
+    // Setup subscription which now will trigger a full reload on update
     _setupOrderSubscription();
-    
+
     // Rest of your initState code...
     _authService.authStateChanges.listen((user) {
       if (user == null && mounted) {
@@ -94,54 +126,138 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
       duration: const Duration(milliseconds: 1000),
       vsync: this,
     );
+
     _slideController = AnimationController(
       duration: const Duration(milliseconds: 500),
+      vsync: this,
+    );
+
+    _fabAnimationController = AnimationController(
+      duration: const Duration(milliseconds: 300),
       vsync: this,
     );
 
     // Start the slide animation when the page loads
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _slideController.forward();
+      _fabAnimationController.forward();
+    });
+
+    // Setup scroll listeners for pagination
+    _activeOrdersScrollController.addListener(_scrollListenerActiveOrders);
+    _orderHistoryScrollController.addListener(_scrollListenerOrderHistory);
+
+    // Listen for tab changes to update search and filters
+    _tabController.addListener(() {
+      if (_isSearching) {
+        _filterOrders();
+      }
+    });
+  }
+
+  void _scrollListenerActiveOrders() {
+    if (_activeOrdersScrollController.position.pixels >=
+            _activeOrdersScrollController.position.maxScrollExtent - 200 &&
+        !_isLoadingMoreActive &&
+        _hasMoreActiveOrders) {
+      _loadMoreActiveOrders();
+    }
+  }
+
+  void _scrollListenerOrderHistory() {
+    if (_orderHistoryScrollController.position.pixels >=
+            _orderHistoryScrollController.position.maxScrollExtent - 200 &&
+        !_isLoadingMoreHistory &&
+        _hasMoreHistoryOrders) {
+      _loadMoreHistoryOrders();
+    }
+  }
+
+  Future<void> _loadMoreActiveOrders() async {
+    if (!_hasMoreActiveOrders || _isLoadingMoreActive) return;
+
+    setState(() {
+      _isLoadingMoreActive = true;
+    });
+
+    // Simulate loading delay
+    await Future.delayed(const Duration(milliseconds: 500));
+
+    setState(() {
+      _activeOrdersPage++;
+      _isLoadingMoreActive = false;
+
+      // Check if we've loaded all orders
+      if (_activeOrdersPage * _ordersPerPage >= _activeOrders.length) {
+        _hasMoreActiveOrders = false;
+      }
+
+      // Apply filters if searching
+      if (_isSearching) {
+        _filterOrders();
+      }
+    });
+  }
+
+  Future<void> _loadMoreHistoryOrders() async {
+    if (!_hasMoreHistoryOrders || _isLoadingMoreHistory) return;
+
+    setState(() {
+      _isLoadingMoreHistory = true;
+    });
+
+    // Simulate loading delay
+    await Future.delayed(const Duration(milliseconds: 500));
+
+    setState(() {
+      _historyOrdersPage++;
+      _isLoadingMoreHistory = false;
+
+      // Check if we've loaded all orders
+      if (_historyOrdersPage * _ordersPerPage >= _orderHistory.length) {
+        _hasMoreHistoryOrders = false;
+      }
+
+      // Apply filters if searching
+      if (_isSearching) {
+        _filterOrders();
+      }
+    });
+  }
+
+  void _resetPagination() {
+    setState(() {
+      _activeOrdersPage = 1;
+      _historyOrdersPage = 1;
+      _hasMoreActiveOrders = true;
+      _hasMoreHistoryOrders = true;
+      _isLoadingMoreActive = false;
+      _isLoadingMoreHistory = false;
     });
   }
 
   void _setupOrderSubscription() {
     try {
       _orderSubscription?.cancel(); // Cancel existing subscription if any
-      
-      _orderSubscription = _transactionService
-          .subscribeToOrders(widget.studentId)
-          .listen(
-            (orders) {
-              if (mounted) {
-                setState(() {
-                  _activeOrders = orders
-                      .where((order) => !['completed', 'cancelled']
-                          .contains(order['status']?.toString().toLowerCase() ?? ''))
-                      .toList();
 
-                  _orderHistory = orders
-                      .where((order) => ['completed', 'cancelled']
-                          .contains(order['status']?.toString().toLowerCase() ?? ''))
-                      .toList();
-
-                  _isLoading = false;
-                  _error = null;
-                  _isConnected = true;
-                });
-              }
-            },
-            onError: (error) {
-              _logger.error('Order subscription error:', error);
-              if (mounted) {
-                setState(() {
-                  _error = error.toString();
-                  _isConnected = false;
-                  _isLoading = false;
-                });
-              }
-            },
-          );
+      _orderSubscription =
+          _transactionService.subscribeToOrders(widget.studentId).listen(
+        (orders) {
+          // Instead of manually setting state from the orders payload,
+          // re-fetch the orders to ensure complete and consistent data.
+          _loadOrders();
+        },
+        onError: (error) {
+          _logger.error('Order subscription error:', error);
+          if (mounted) {
+            setState(() {
+              _error = error.toString();
+              _isConnected = false;
+              _isLoading = false;
+            });
+          }
+        },
+      );
     } catch (e) {
       _logger.error('Error setting up order subscription:', e);
       if (mounted) {
@@ -171,6 +287,14 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
 
         _isConnected = true;
         _error = null;
+
+        // Reset pagination when data updates
+        _resetPagination();
+
+        // Apply filters if searching
+        if (_isSearching) {
+          _filterOrders();
+        }
       });
     } catch (e) {
       _logger.error('Error updating orders', e);
@@ -190,6 +314,12 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
     _refundCheckTimer?.cancel();
     _refreshIconController.dispose();
     _slideController.dispose();
+    _fabAnimationController.dispose();
+    _searchController.dispose();
+    _activeOrdersScrollController.removeListener(_scrollListenerActiveOrders);
+    _orderHistoryScrollController.removeListener(_scrollListenerOrderHistory);
+    _activeOrdersScrollController.dispose();
+    _orderHistoryScrollController.dispose();
     super.dispose();
   }
 
@@ -246,10 +376,11 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
     }
   }
 
-  Future<void> _loadOrders() async {
+  Future<void> _loadOrders({bool showLoading = true}) async {
     if (!mounted) return;
-
-    _setLoading(true);
+    if (showLoading) {
+      _setLoading(true);
+    }
     try {
       _logger.info('Loading orders for student ID: ${widget.studentId}');
 
@@ -311,13 +442,23 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
               .toList();
 
           _error = null;
+
+          // Reset pagination when loading new data
+          _resetPagination();
+
+          // Apply filters if searching
+          if (_isSearching) {
+            _filterOrders();
+          }
         });
       }
     } catch (e, stack) {
       _logger.error('Error loading orders', e, stack);
       _handleError(e);
     } finally {
-      _setLoading(false);
+      if (showLoading) {
+        _setLoading(false);
+      }
     }
   }
 
@@ -370,15 +511,11 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
   }
 
   Future<void> _refreshOrders() async {
-    setState(() => _isLoading = true);
-    
-    // Cancel and re-setup subscription
+    // Do not set global loading here to avoid blinking; refresh silently.
     _orderSubscription?.cancel();
     _setupOrderSubscription();
-    
     try {
-      // Optional: Fetch initial data
-      await _loadOrders();
+      await _loadOrders(showLoading: false);
     } catch (e) {
       _logger.error('Error refreshing orders:', e);
       if (mounted) {
@@ -386,10 +523,6 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
           _error = e.toString();
           _isConnected = false;
         });
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
       }
     }
   }
@@ -419,6 +552,7 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
     if (dbValue == null) return OrderType.delivery;
 
     try {
+      // Using fully qualified type to avoid ambiguity
       return OrderType.values.firstWhere(
         (type) => type.name == dbValue.toLowerCase(),
         orElse: () => OrderType.delivery,
@@ -430,13 +564,24 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
   }
 
   void _showRatingDialog(Map<String, dynamic> menuItem) {
-    final int? menuId = menuItem['id'];
-    final int? stallId = menuItem['stall']?['id'];
+    _logger.info('Show rating dialog triggered with: $menuItem');
+
+    // Extract required data properly
+    final int? menuId = menuItem['id'] ?? menuItem['menu']?['id'];
+    final int? stallId =
+        menuItem['stall']?['id'] ?? menuItem['menu']?['stall']?['id'];
     final int? transactionId = menuItem['transaction_id'];
-    final String? menuPhoto = menuItem['menu']?['photo']; // Get the photo URL
+    final String? menuName = menuItem['menu_name'] ??
+        menuItem['menu']?['food_name'] ??
+        'Unknown Item';
+    final String? menuPhoto = menuItem['photo'] ?? menuItem['menu']?['photo'];
+
+    _logger.info(
+        'Rating info: menuId=$menuId, stallId=$stallId, transactionId=$transactionId');
 
     if (menuId == null || stallId == null) {
-      _logger.error('Missing required data for rating');
+      _logger.error(
+          'Missing required data for rating: menuId=$menuId, stallId=$stallId');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Cannot rate this item: Missing required information'),
@@ -446,21 +591,45 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
       return;
     }
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => RateMenuDialog(
-        menuName: menuItem['menu_name'] ?? 'Unknown Item',
-        menuId: menuId,
-        stallId: stallId,
-        transactionId: transactionId ?? 0,
-        menuPhoto: menuPhoto, // Pass the photo URL
-        onRatingSubmitted: () {
-          _loadOrders();
-          Navigator.pop(context);
-        },
-      ),
-    );
+    // First check if the user has already rated this menu item
+    RatingService()
+        .hasUserRatedMenu(menuId, transactionId ?? 0)
+        .then((hasRated) {
+      if (hasRated) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('You have already rated this item'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      // If not rated, show the rating dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => RateMenuDialog(
+          menuName: menuName ?? 'Unknown Item',
+          menuId: menuId,
+          stallId: stallId,
+          transactionId: transactionId ?? 0,
+          menuPhoto: menuPhoto,
+          onRatingSubmitted: () {
+            _loadOrders();
+            Navigator.pop(context);
+          },
+        ),
+      );
+    }).catchError((error) {
+      _logger.error('Error checking rating status: $error');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error checking rating status: $error'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    });
   }
 
   void _showRefundDetails(int transactionId) async {
@@ -644,235 +813,178 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
     );
   }
 
-  @override
-  material.Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    if (_error != null) {
-      return Scaffold(
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const material.Icon(Icons.error_outline,
-                  size: 48, color: Colors.red),
-              const SizedBox(height: 16),
-              Text(_error!),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: _loadOrders,
-                child: const Text('Retry'),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return LoadingOverlay(
-      isLoading: _isLoading,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('My Orders'),
-          bottom: TabBar(
-            controller: _tabController,
-            isScrollable: true,
-            tabs: const [
-              Tab(text: 'Active Orders'),
-              Tab(text: 'Order History'),
-              Tab(text: 'Reviews'),
-            ],
-          ),
-          actions: [
-            IconButton(
-              icon: const material.Icon(Icons.sort),
-              onPressed: _showSortOptions,
-            ),
-            IconButton(
-              icon: const material.Icon(Icons.refresh),
-              onPressed: _refreshOrders,
-            ),
-          ],
-        ),
-        body: _error != null
-            ? _buildErrorView()
-            : TabBarView(
-                controller: _tabController,
-                children: [
-                  _buildActiveOrders(),
-                  _buildOrderHistory(),
-                  ReviewHistoryTab(
-                    studentId:
-                        widget.studentId, // Use widget.studentId directly here
-                  ),
-                ],
-              ),
-      ),
-    );
+  // Search and filter methods
+  void _startSearch() {
+    setState(() {
+      _isSearching = true;
+      _filterOrders();
+    });
   }
 
-  void _showSortOptions() {
+  void _cancelSearch() {
+    setState(() {
+      _isSearching = false;
+      _searchController.clear();
+      _statusFilter = 'All';
+      _timeFilter = 'All';
+      _orderTypeFilter = 'All';
+      _filteredActiveOrders = [];
+      _filteredOrderHistory = [];
+      _resetPagination();
+    });
+  }
+
+  void _filterOrders() {
+    final String searchTerm = _searchController.text.toLowerCase();
+
+    // Filter active orders
+    final filteredActive = _activeOrders.where((order) {
+      // Search by order ID, stall name, or status
+      bool matchesSearch = searchTerm.isEmpty ||
+          order['virtual_id'].toString().contains(searchTerm) ||
+          (order['items']?[0]?['menu']?['stall']?['nama_stalls'] ?? '')
+              .toString()
+              .toLowerCase()
+              .contains(searchTerm) ||
+          (order['status'] ?? '').toString().toLowerCase().contains(searchTerm);
+
+      // Apply status filter
+      bool matchesStatus = _statusFilter == 'All' ||
+          order['status']?.toString().toLowerCase() ==
+              _statusFilter.toLowerCase();
+
+      // Apply time filter
+      bool matchesTime = _timeFilter == 'All';
+      if (!matchesTime) {
+        final orderDate = DateTime.parse(order['created_at']);
+        final now = DateTime.now();
+        switch (_timeFilter) {
+          case 'Today':
+            matchesTime = orderDate.day == now.day &&
+                orderDate.month == now.month &&
+                orderDate.year == now.year;
+            break;
+          case 'This Week':
+            final weekStart = now.subtract(Duration(days: now.weekday - 1));
+            matchesTime =
+                orderDate.isAfter(weekStart.subtract(const Duration(days: 1)));
+            break;
+          case 'This Month':
+            matchesTime =
+                orderDate.month == now.month && orderDate.year == now.year;
+            break;
+        }
+      }
+
+      // Apply order type filter
+      bool matchesType = _orderTypeFilter == 'All' ||
+          order['order_type']?.toString().toLowerCase() ==
+              _orderTypeFilter.toLowerCase();
+
+      return matchesSearch && matchesStatus && matchesTime && matchesType;
+    }).toList();
+
+    // Filter order history
+    final filteredHistory = _orderHistory.where((order) {
+      bool matchesSearch = searchTerm.isEmpty ||
+          order['virtual_id'].toString().contains(searchTerm) ||
+          (order['items']?[0]?['menu']?['stall']?['nama_stalls'] ?? '')
+              .toString()
+              .toLowerCase()
+              .contains(searchTerm) ||
+          (order['status'] ?? '').toString().toLowerCase().contains(searchTerm);
+
+      bool matchesStatus = _statusFilter == 'All' ||
+          order['status']?.toString().toLowerCase() ==
+              _statusFilter.toLowerCase();
+
+      bool matchesTime = _timeFilter == 'All';
+      if (!matchesTime) {
+        final orderDate = DateTime.parse(order['created_at']);
+        final now = DateTime.now();
+        switch (_timeFilter) {
+          case 'Today':
+            matchesTime = orderDate.day == now.day &&
+                orderDate.month == now.month &&
+                orderDate.year == now.year;
+            break;
+          case 'This Week':
+            final weekStart = now.subtract(Duration(days: now.weekday - 1));
+            matchesTime =
+                orderDate.isAfter(weekStart.subtract(const Duration(days: 1)));
+            break;
+          case 'This Month':
+            matchesTime =
+                orderDate.month == now.month && orderDate.year == now.year;
+            break;
+        }
+      }
+
+      bool matchesType = _orderTypeFilter == 'All' ||
+          order['order_type']?.toString().toLowerCase() ==
+              _orderTypeFilter.toLowerCase();
+
+      return matchesSearch && matchesStatus && matchesTime && matchesType;
+    }).toList();
+
+    setState(() {
+      _filteredActiveOrders = filteredActive;
+      _filteredOrderHistory = filteredHistory;
+
+      // Reset pagination for filtered results
+      _activeOrdersPage = 1;
+      _historyOrdersPage = 1;
+      _hasMoreActiveOrders = _filteredActiveOrders.length > _ordersPerPage;
+      _hasMoreHistoryOrders = _filteredOrderHistory.length > _ordersPerPage;
+    });
+  }
+
+  void _showSortMenu(BuildContext context) {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) => Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Theme.of(context).scaffoldBackgroundColor,
-                borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(20)),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Sort Orders',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ],
-              ),
+      builder: (context) => ListView(
+        shrinkWrap: true,
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(16.0),
+            child: Text(
+              'Sort Orders By',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
-            const Divider(height: 1),
-            Expanded(
-              child: ListView(
-                children: [
-                  _buildSortOptionTile(
-                    context,
-                    setState,
-                    'Date',
-                    'created_at',
-                    Icons.calendar_today,
-                    subtitle: 'Sort by order date',
-                  ),
-                  _buildSortOptionTile(
-                    context,
-                    setState,
-                    'Amount',
-                    'total_amount',
-                    Icons.attach_money,
-                    subtitle: 'Sort by order total',
-                  ),
-                  _buildSortOptionTile(
-                    context,
-                    setState,
-                    'Status',
-                    'status',
-                    Icons.info_outline,
-                    subtitle: 'Sort by order status',
-                  ),
-                  _buildSortOptionTile(
-                    context,
-                    setState,
-                    'Order Type',
-                    'order_type',
-                    Icons.local_shipping,
-                    subtitle: 'Sort by delivery method',
-                  ),
-                  _buildSortOptionTile(
-                    context,
-                    setState,
-                    'Items Count',
-                    'items_count',
-                    Icons.shopping_basket,
-                    subtitle: 'Sort by number of items',
-                  ),
-                  // Add a reset option
-                  ListTile(
-                    leading: const Icon(Icons.restore),
-                    title: const Text('Reset Sort'),
-                    subtitle: const Text('Return to default sorting'),
-                    onTap: () {
-                      setState(() {
-                        _currentSortField = 'created_at_timestamp';
-                        _sortAscending = false; // Latest first
-                      });
-                      _sortOrders();
-                      Navigator.pop(context);
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+          ),
+          const Divider(),
+          _buildSortOption(context, 'Order Date', 'created_at_timestamp'),
+          _buildSortOption(context, 'Order Total', 'total_amount'),
+          _buildSortOption(context, 'Order Status', 'status'),
+        ],
       ),
     );
   }
 
-  Widget _buildSortOptionTile(
-    BuildContext context,
-    StateSetter setState,
-    String label,
-    String field,
-    IconData icon, {
-    String? subtitle,
-  }) {
+  Widget _buildSortOption(BuildContext context, String label, String field) {
     final bool isSelected = _currentSortField == field;
-    final Color selectedColor = Theme.of(context).primaryColor;
 
     return ListTile(
-      leading: Icon(
-        icon,
-        color: isSelected ? selectedColor : null,
-      ),
+      leading: isSelected
+          ? Icon(
+              _sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
+              color: Theme.of(context).primaryColor,
+            )
+          : null,
       title: Text(
         label,
         style: TextStyle(
-          color: isSelected ? selectedColor : null,
+          color: isSelected ? Theme.of(context).primaryColor : null,
           fontWeight: isSelected ? FontWeight.bold : null,
         ),
       ),
-      subtitle: subtitle != null
-          ? Text(
-              subtitle,
-              style: TextStyle(
-                fontSize: 12,
-                color: isSelected ? selectedColor.withOpacity(0.7) : null,
-              ),
-            )
-          : null,
       trailing: isSelected
-          ? Container(
-              decoration: BoxDecoration(
-                color: selectedColor.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    _sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
-                    size: 16,
-                    color: selectedColor,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    _sortAscending ? 'Asc' : 'Desc',
-                    style: TextStyle(
-                      color: selectedColor,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
+          ? Icon(
+              Icons.check,
+              color: Theme.of(context).primaryColor,
             )
           : null,
       selected: isSelected,
@@ -973,11 +1085,18 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
+          // Fix the animation path
           Lottie.asset(
             'assets/animations/error.json',
             width: 200,
             height: 200,
             repeat: true,
+            // Add error builder to handle missing animation
+            errorBuilder: (context, error, stackTrace) => Icon(
+              Icons.error_outline,
+              size: 100,
+              color: Colors.red[300],
+            ),
           ),
           const SizedBox(height: 24),
           AnimatedTextKit(
@@ -1065,8 +1184,9 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
       );
     }
 
+    // Wrap the ListView with its own RefreshIndicator
     return RefreshIndicator(
-      onRefresh: _loadOrders,
+      onRefresh: _refreshOrders,
       child: ListView.builder(
         padding: const EdgeInsets.all(16),
         itemCount: _activeOrders.length,
@@ -1093,8 +1213,9 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
       );
     }
 
+    // Wrap the ListView with its own RefreshIndicator
     return RefreshIndicator(
-      onRefresh: _loadOrders,
+      onRefresh: _refreshOrders,
       child: ListView.builder(
         padding: const EdgeInsets.all(16),
         itemCount: _orderHistory.length,
@@ -1137,13 +1258,6 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
                   _buildOrderCard(order, false),
                   const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    child: Text(
-                      'Order Items',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
-                    ),
                   ),
                   // ...items.map((item) => _buildOrderItem(item)),
                   // const SizedBox(height: 24),
@@ -1190,22 +1304,13 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (menuPhoto != null)
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Image.network(
-                      menuPhoto,
-                      width: 60,
-                      height: 60,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                        width: 60,
-                        height: 60,
-                        color: Colors.grey[200],
-                        child: const Icon(Icons.fastfood, color: Colors.grey),
-                      ),
-                    ),
-                  ),
+                // Replace with safe image loading
+                _buildSafeImage(
+                  menuPhoto,
+                  width: 60,
+                  height: 60,
+                  fallbackIcon: Icons.fastfood,
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -1324,7 +1429,9 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
                       ),
                     ),
                     Text(
-                      PriceFormatter.format((addonSubtotal ?? (addonPrice * addonQuantity)).toDouble()),
+                      PriceFormatter.format(
+                          (addonSubtotal ?? (addonPrice * addonQuantity))
+                              .toDouble()),
                       style: TextStyle(
                         color: Colors.grey[600],
                         fontSize: 12,
@@ -1466,47 +1573,110 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
     );
   }
 
+// Updated _buildOrderCard method with improved card layout:
   material.Widget _buildOrderCard(Map<String, dynamic> order, bool isActive) {
     final DateTime orderDate = DateTime.parse(order['created_at']);
     final String status = order['status'];
     final List<dynamic> items = order['items'] ?? [];
     final orderType = _getOrderType(order['order_type'] as String?);
 
-    // Remove SlideTransition and use a simpler animation
     return AnimatedOpacity(
       duration: const Duration(milliseconds: 300),
       opacity: 1.0,
       child: Container(
-        margin: const EdgeInsets.only(bottom: 16),
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.grey.shade300, width: 1),
           boxShadow: [
             BoxShadow(
               color: Colors.grey.withOpacity(0.1),
-              spreadRadius: 1,
+              spreadRadius: 2,
               blurRadius: 10,
-              offset: const Offset(0, 2),
+              offset: const Offset(0, 3),
             ),
           ],
         ),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _buildOrderHeader(order, status),
-            const Divider(height: 1),
+            // Header with gradient and increased padding
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(16)),
+                gradient: LinearGradient(
+                  colors: [Colors.blue.shade100, Colors.white],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+              ),
+              child: Row(
+                children: [
+                  // Order image
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(25),
+                    child: _buildSafeImage(
+                      order['items']?[0]?['menu']?['stall']?['image_url'],
+                      width: 50,
+                      height: 50,
+                      fallbackIcon: Icons.restaurant,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  // Order details text
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          order['items']?[0]?['menu']?['stall']
+                                  ?['nama_stalls'] ??
+                              'Restaurant Name',
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 17),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Order ${OrderIdFormatter.format(order['virtual_id'] ?? 0)}',
+                          style: TextStyle(
+                              color: Colors.grey.shade600, fontSize: 13),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          TimeFormatter.formatDateTime(orderDate),
+                          style: TextStyle(
+                              color: Colors.grey.shade600, fontSize: 13),
+                        ),
+                      ],
+                    ),
+                  ),
+                  _buildStatusChip(status),
+                ],
+              ),
+            ),
+            const Divider(height: 1, thickness: 1),
+            // Content area with enhanced spacing
             Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildOrderInfo(orderDate, orderType, order),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
                   _buildOrderTimeline(status),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
                   _buildItemsList(items, order),
-                  const Divider(height: 24),
+                  const Divider(height: 24, thickness: 1),
                   _buildOrderTotal(order),
-                  if (isActive) _buildActionButtons(order),
+                  if (isActive) ...[
+                    const SizedBox(height: 14),
+                    _buildActionButtons(order),
+                  ],
                 ],
               ),
             ),
@@ -1837,58 +2007,66 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
           ),
         ),
         const SizedBox(height: 8),
-        ...safeItems.map((item) {
-          _logger.debug('Processing item: $item');
-          return EnhancedOrderCard(
-            item: {
-              ...item,
-              'addons': item['addons'] ?? [],
-            },
-            order: order,
-            priceData: {
-              'hasDiscount': item['applied_discount_percentage'] != null &&
-                  (item['applied_discount_percentage'] as num) > 0,
-              'originalPrice':
-                  (item['original_price'] as num?)?.toDouble() ?? 0.0,
-              'discountedPrice':
-                  (item['discounted_price'] as num?)?.toDouble() ??
-                      (item['original_price'] as num?)?.toDouble() ??
-                      0.0,
-              'discountPercentage':
-                  (item['applied_discount_percentage'] as num?)?.toDouble() ??
-                      0.0,
-              'quantity': item['quantity'] as int? ?? 1,
-              'subtotal': ((item['discounted_price'] as num?)?.toDouble() ??
-                      (item['original_price'] as num?)?.toDouble() ??
-                      0.0) *
-                  (item['quantity'] as int? ?? 1),
-            },
-            ratingData: {'average': 0.0, 'count': 0},
-            isCompleted: _isOrderCompleted(order),
-            onRatePressed: () => _refreshOrders(),
-          );
-        }).toList(),
+        // Limit the number of items displayed to prevent overflow
+        // And wrap in a container with fixed height and scrolling
+        Container(
+          constraints: const BoxConstraints(maxHeight: 300),
+          child: SingleChildScrollView(
+            child: Column(
+              children: safeItems.map((item) {
+                _logger.debug('Processing item: $item');
+
+                // Create a proper menu data object for the rating functionality
+                final menuData = {
+                  'id': item['menu']?['id'],
+                  'menu_name': item['menu']?['food_name'] ?? 'Unknown Item',
+                  'stall': item['menu']?['stall'],
+                  'transaction_id': order['id'],
+                  'photo': item['menu']?['photo'],
+                };
+
+                return EnhancedOrderCard(
+                  item: {
+                    ...item,
+                    'addons': item['addons'] ?? [],
+                    'menuData': menuData, // Pass complete menu data
+                  },
+                  order: order,
+                  priceData: {
+                    'hasDiscount': item['applied_discount_percentage'] != null &&
+                        (item['applied_discount_percentage'] as num) > 0,
+                    'originalPrice':
+                        (item['original_price'] as num?)?.toDouble() ?? 0.0,
+                    'discountedPrice':
+                        (item['discounted_price'] as num?)?.toDouble() ??
+                            (item['original_price'] as num?)?.toDouble() ??
+                            0.0,
+                    'discountPercentage':
+                        (item['applied_discount_percentage'] as num?)?.toDouble() ??
+                            0.0,
+                    'quantity': item['quantity'] as int? ?? 1,
+                    'subtotal': ((item['discounted_price'] as num?)?.toDouble() ??
+                            (item['original_price'] as num?)?.toDouble() ??
+                            0.0) *
+                        (item['quantity'] as int? ?? 1),
+                  },
+                  ratingData: {'average': 0.0, 'count': 0},
+                  isCompleted: _isOrderCompleted(order),
+                  onRatePressed: () {
+                    _logger.info(
+                        'Rate button pressed for item: ${item['menu']?['food_name']}');
+                    _showRatingDialog(menuData);
+                  },
+                );
+              }).toList(),
+            ),
+          ),
+        ),
       ],
     );
   }
 
 // Combine rating and price calculations into one Future
-  Future<Map<String, dynamic>> _getItemDetails(
-    dynamic menuId,
-    Map<String, dynamic>? menuData,
-    int quantity,
-  ) async {
-    final ratingFuture = RatingService().getMenuRatingSummary(menuId);
-    final priceFuture = _calculatePriceDetails(menuId, menuData, quantity);
-
-    final results = await Future.wait([ratingFuture, priceFuture]);
-
-    return {
-      'rating': results[0],
-      'price': results[1],
-    };
-  }
-
   Future<Map<String, dynamic>> _calculatePriceDetails(
     dynamic menuId,
     Map<String, dynamic>? menuData,
@@ -1958,7 +2136,7 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
     );
   }
 
-// Widget for error state
+// Widget for error state - Fix parameter type issues
   material.Widget _buildErrorItem(String orderId, int quantity,
       {String? message}) {
     return Container(
@@ -2380,7 +2558,7 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
                   };
                   _showRatingDialog(menuData);
                 },
-          tooltip: hasRated ? 'Already rated' : 'Rate this item',
+          // tooltip: hasRated ? 'Already rated' : 'Rate this item',
           iconSize: 20,
         );
       },
@@ -2419,148 +2597,1045 @@ class _OrderPageState extends State<OrderPage> with TickerProviderStateMixin {
     );
   }
 
-  // material.Widget _buildOrderItem(Map<String, dynamic> item) {
-  //   // Extract values from transaction_details
-  //   final originalPrice = (item['original_price'] as num?)?.toDouble() ?? 0.0;
-  //   final discountedPrice =
-  //       (item['discounted_price'] as num?)?.toDouble() ?? originalPrice;
-  //   final quantity = item['quantity'] as int? ?? 1;
-  //   final discountPercentage =
-  //       (item['applied_discount_percentage'] as num?)?.toDouble() ?? 0.0;
-  //   final notes = item['notes'] as String?;
-  //   final menuItem = item['menu'] ?? {};
-  //   final menuName = menuItem['food_name'] ?? 'Unknown Item';
-  //   final menuPhoto = menuItem['photo'] as String?;
+  @override
+  Widget build(BuildContext context) {
+    if (_error != null && !_isConnected) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('My Orders'),
+          elevation: 0,
+        ),
+        body: _buildErrorView(),
+      );
+    }
 
-  //   final hasDiscount = discountPercentage > 0;
-  //   final savings = (originalPrice - discountedPrice) * quantity;
-  //   final subtotal = discountedPrice * quantity;
+    return Scaffold(
+      appBar: AppBar(
+        elevation: 0,
+        title: _isSearching
+            ? TextField(
+                controller: _searchController,
+                decoration: InputDecoration(
+                  hintText: "Search orders...",
+                  border: InputBorder.none,
+                  hintStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.clear, color: Colors.white),
+                    onPressed: _cancelSearch,
+                  ),
+                ),
+                style: const TextStyle(color: Colors.white),
+                onChanged: (value) {
+                  _filterOrders();
+                },
+                autofocus: true,
+              )
+            : const Text('My Orders'),
+        actions: [
+          if (!_isSearching)
+            IconButton(
+              icon: const Icon(Icons.search),
+              onPressed: _startSearch,
+              tooltip: 'Search orders',
+            ),
+          IconButton(
+            icon: const Icon(Icons.filter_list),
+            tooltip: 'Filter orders',
+            onPressed: () => _showFilterDialog(context),
+          ),
+          IconButton(
+            icon: const Icon(Icons.sort),
+            tooltip: 'Sort orders',
+            onPressed: () => _showSortMenu(context),
+          ),
+        ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(4.0),
+          child:
+              _isLoading ? const LinearProgressIndicator() : const SizedBox(),
+        ),
+      ),
+      body: Column(
+        children: [
+          // Custom tab bar with indicators
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.grey.withOpacity(0.1),
+                  spreadRadius: 1,
+                  blurRadius: 2,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: TabBar(
+              controller: _tabController,
+              labelColor: Theme.of(context).primaryColor,
+              unselectedLabelColor: Colors.grey,
+              indicatorColor: Theme.of(context).primaryColor,
+              indicatorWeight: 3,
+              labelStyle: const TextStyle(fontWeight: FontWeight.bold),
+              tabs: const [
+                Tab(
+                  icon: material.Icon(Icons.receipt),
+                  text: 'Active',
+                ),
+                Tab(
+                  icon: material.Icon(Icons.history),
+                  text: 'History',
+                ),
+                Tab(
+                  icon: material.Icon(Icons.star),
+                  text: 'Reviews',
+                ),
+              ],
+            ),
+          ),
+          // Tab content
+          Expanded(
+            child: LoadingOverlay(
+              isLoading: _isLoading,
+              child: RefreshIndicator(
+                key: _refreshKey,
+                onRefresh: _refreshOrders,
+                color: Theme.of(context).primaryColor,
+                backgroundColor: Colors.white,
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    // Active Orders Tab with animations
+                    AnimationLimiter(
+                      child: _isSearching
+                          ? _filteredActiveOrders.isEmpty
+                              ? _buildEmptySearchState()
+                              : _buildOrderList(
+                                  _filteredActiveOrders,
+                                  _activeOrdersScrollController,
+                                  _hasMoreActiveOrders,
+                                  true,
+                                )
+                          : _activeOrders.isEmpty
+                              ? _buildEmptyActiveOrdersState()
+                              : _buildOrderList(
+                                  _activeOrders,
+                                  _activeOrdersScrollController,
+                                  _hasMoreActiveOrders,
+                                  true,
+                                ),
+                    ),
 
-  //   return Card(
-  //     margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-  //     child: Padding(
-  //       padding: const EdgeInsets.all(12),
-  //       child: Row(
-  //         crossAxisAlignment: CrossAxisAlignment.start,
-  //         children: [
-  //           if (menuPhoto != null)
-  //             ClipRRect(
-  //               borderRadius: BorderRadius.circular(8),
-  //               child: Image.network(
-  //                 menuPhoto,
-  //                 width: 60,
-  //                 height: 60,
-  //                 fit: BoxFit.cover,
-  //                 errorBuilder: (_, __, ___) => Container(
-  //                   width: 60,
-  //                   height: 60,
-  //                   color: Colors.grey[200],
-  //                   child: const Icon(Icons.fastfood, color: Colors.grey),
-  //                 ),
-  //               ),
-  //             ),
-  //           const SizedBox(width: 12),
-  //           Expanded(
-  //             child: Column(
-  //               crossAxisAlignment: CrossAxisAlignment.start,
-  //               children: [
-  //                 Text(
-  //                   menuName,
-  //                   style: const TextStyle(
-  //                     fontWeight: FontWeight.bold,
-  //                     fontSize: 16,
-  //                   ),
-  //                 ),
-  //                 if (notes != null) ...[
-  //                   const SizedBox(height: 4),
-  //                   Text(
-  //                     'Note: $notes',
-  //                     style: TextStyle(
-  //                       color: Colors.grey[600],
-  //                       fontSize: 12,
-  //                       fontStyle: FontStyle.italic,
-  //                     ),
-  //                   ),
-  //                 ],
-  //                 const SizedBox(height: 8),
-  //                 Row(
-  //                   children: [
-  //                     Container(
-  //                       padding: const EdgeInsets.symmetric(
-  //                         horizontal: 8,
-  //                         vertical: 4,
-  //                       ),
-  //                       decoration: BoxDecoration(
-  //                         color: Colors.blue.shade50,
-  //                         borderRadius: BorderRadius.circular(12),
-  //                       ),
-  //                       child: Text(
-  //                         '${quantity}x',
-  //                         style: TextStyle(
-  //                           color: Colors.blue.shade700,
-  //                           fontWeight: FontWeight.bold,
-  //                         ),
-  //                       ),
-  //                     ),
-  //                     if (hasDiscount) ...[
-  //                       const SizedBox(width: 8),
-  //                       Container(
-  //                         padding: const EdgeInsets.symmetric(
-  //                           horizontal: 8,
-  //                           vertical: 4,
-  //                         ),
-  //                         decoration: BoxDecoration(
-  //                           color: Colors.red.shade50,
-  //                           borderRadius: BorderRadius.circular(12),
-  //                         ),
-  //                         child: Text(
-  //                           '-${discountPercentage.round()}%',
-  //                           style: TextStyle(
-  //                             color: Colors.red.shade700,
-  //                             fontWeight: FontWeight.bold,
-  //                           ),
-  //                         ),
-  //                       ),
-  //                     ],
-  //                   ],
-  //                 ),
-  //               ],
-  //             ),
-  //           ),
-  //           Column(
-  //             crossAxisAlignment: CrossAxisAlignment.end,
-  //             children: [
-  //               if (hasDiscount)
-  //                 Text(
-  //                   PriceFormatter.format(originalPrice * quantity),
-  //                   style: TextStyle(
-  //                     decoration: TextDecoration.lineThrough,
-  //                     color: Colors.grey[600],
-  //                     fontSize: 13,
-  //                   ),
-  //                 ),
-  //               Text(
-  //                 PriceFormatter.format(subtotal),
-  //                 style: TextStyle(
-  //                   fontWeight: FontWeight.bold,
-  //                   fontSize: 16,
-  //                   color: hasDiscount ? Colors.red.shade700 : Colors.black87,
-  //                 ),
-  //               ),
-  //               if (savings > 0)
-  //                 Text(
-  //                   'Save ${PriceFormatter.format(savings)}',
-  //                   style: TextStyle(
-  //                     color: Colors.green.shade700,
-  //                     fontSize: 12,
-  //                     fontWeight: FontWeight.w500,
-  //                   ),
-  //                 ),
-  //             ],
-  //           ),
-  //         ],
-  //       ),
-  //     ),
-  //   );
-  // }
+                    // History Tab with animations
+                    AnimationLimiter(
+                      child: _isSearching
+                          ? _filteredOrderHistory.isEmpty
+                              ? _buildEmptySearchState()
+                              : _buildOrderList(
+                                  _filteredOrderHistory,
+                                  _orderHistoryScrollController,
+                                  _hasMoreHistoryOrders,
+                                  false,
+                                )
+                          : _orderHistory.isEmpty
+                              ? _buildEmptyHistoryState()
+                              : _buildOrderList(
+                                  _orderHistory,
+                                  _orderHistoryScrollController,
+                                  _hasMoreHistoryOrders,
+                                  false,
+                                ),
+                    ),
+
+                    // Reviews Tab - Keep existing implementation
+                    AnimationLimiter(
+                      child: ReviewHistoryTab(
+                        studentId: widget.studentId,
+                        onReviewTap: (review) {
+                          _showReviewDetails(review);
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+      floatingActionButton: SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(0, 1),
+          end: Offset.zero,
+        ).animate(CurvedAnimation(
+          parent: _fabAnimationController,
+          curve: Curves.elasticOut,
+        )),
+        child: FloatingActionButton.extended(
+          onPressed: () {
+            _refreshIconController.forward(from: 0.0);
+            _refreshOrders();
+          },
+          label: const Text('Refresh'),
+          icon: RotationTransition(
+            turns: Tween(begin: 0.0, end: 1.0).animate(_refreshIconController),
+            child: const Icon(Icons.refresh),
+          ),
+          backgroundColor: Theme.of(context).primaryColor,
+          elevation: 4,
+        ),
+      ),
+    );
+  }
+
+  // Enhanced empty state builders
+  Widget _buildEmptyActiveOrdersState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // Fix the animation path - make sure this asset exists
+          _buildSafeLottie(
+            'assets/animations/empty_orders.json',
+            width: 200,
+            height: 200,
+            fallbackIcon: Icons.receipt_long_outlined,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'No active orders',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey[700],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Your active orders will appear here',
+            style: TextStyle(color: Colors.grey[600]),
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.of(context).pushNamed('/stalls');
+            },
+            icon: const Icon(Icons.restaurant_menu),
+            label: const Text('Order Food'),
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyHistoryState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.history,
+            size: 100,
+            color: Colors.grey[400],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'No order history',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey[700],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Your completed orders will appear here',
+            style: TextStyle(color: Colors.grey[600]),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptySearchState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.search_off,
+            size: 80,
+            color: Colors.grey[400],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'No orders match your search',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey[700],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Try changing your search or filters',
+            style: TextStyle(color: Colors.grey[600]),
+          ),
+          const SizedBox(height: 24),
+          TextButton.icon(
+            onPressed: _cancelSearch,
+            icon: const Icon(Icons.clear),
+            label: const Text('Clear Search'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Consolidated order list builder with animations
+  Widget _buildOrderList(
+    List<Map<String, dynamic>> orders,
+    ScrollController scrollController,
+    bool hasMoreItems,
+    bool isActiveList,
+  ) {
+    return ListView.builder(
+      controller: scrollController,
+      padding: const EdgeInsets.all(12),
+      physics: const AlwaysScrollableScrollPhysics(),
+      itemCount: orders.length + (hasMoreItems ? 1 : 0),
+      itemBuilder: (context, index) {
+        if (index >= orders.length) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(16.0),
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
+
+        return AnimationConfiguration.staggeredList(
+          position: index,
+          duration: const Duration(milliseconds: 375),
+          child: SlideAnimation(
+            verticalOffset: 50.0,
+            child: FadeInAnimation(
+              child: _buildOrderCard(orders[index], isActiveList),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // Enhanced error state with better visuals - Renamed from _buildErrorView to _buildEnhancedErrorView
+  material.Widget _buildEnhancedErrorView() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 120,
+            height: 120,
+            decoration: BoxDecoration(
+              color: Colors.red.withOpacity(0.1),
+              shape: BoxShape.circle,
+            ),
+            child: const Center(
+              child: Icon(
+                Icons.error_outline,
+                size: 60,
+                color: Colors.red,
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            'Oops! Something went wrong',
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Text(
+              _error ?? 'We\'re having trouble loading your orders',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Colors.grey[700],
+                  ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          const SizedBox(height: 32),
+          ElevatedButton.icon(
+            onPressed: () {
+              _refreshIconController.forward(from: 0);
+              _refreshOrders();
+            },
+            icon: RotationTransition(
+              turns:
+                  Tween(begin: 0.0, end: 1.0).animate(_refreshIconController),
+              child: const material.Icon(Icons.refresh),
+            ),
+            label: const Text('Try Again'),
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 32,
+                vertical: 16,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(30),
+              ),
+              backgroundColor: Theme.of(context)
+                  .primaryColor, // Changed from primary to backgroundColor
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Filter dialog with improved UI
+  void _showFilterDialog(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => DraggableScrollableSheet(
+          initialChildSize: 0.6,
+          minChildSize: 0.4,
+          maxChildSize: 0.9,
+          expand: false,
+          builder: (context, scrollController) => Container(
+            padding: const EdgeInsets.all(20),
+            child: ListView(
+              controller: scrollController,
+              shrinkWrap: true,
+              children: [
+                // Header
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Filter Orders',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+                const Divider(),
+
+                // Status Filter with better visualization
+                const SizedBox(height: 16),
+                Text(
+                  'Status',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    'All',
+                    'Pending',
+                    'Confirmed',
+                    'Cooking',
+                    'Ready',
+                    'Delivering',
+                    'Completed',
+                    'Cancelled'
+                  ]
+                      .map((status) => FilterChip(
+                            selected: _statusFilter == status,
+                            label: Text(status),
+                            labelStyle: TextStyle(
+                              color: _statusFilter == status
+                                  ? Colors.white
+                                  : Colors.black87,
+                              fontWeight: _statusFilter == status
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                            ),
+                            selectedColor: Theme.of(context).primaryColor,
+                            checkmarkColor: Colors.white,
+                            backgroundColor: Colors.grey[200],
+                            elevation: _statusFilter == status ? 2 : 0,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            onSelected: (selected) {
+                              setModalState(() {
+                                _statusFilter = selected ? status : 'All';
+                              });
+                              setState(() {
+                                _statusFilter = selected ? status : 'All';
+                              });
+                              _filterOrders();
+                            },
+                          ))
+                      .toList(),
+                ),
+
+                // Time Filter with better visualization
+                const SizedBox(height: 24),
+                Text(
+                  'Time Period',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: ['All', 'Today', 'This Week', 'This Month']
+                      .map((time) => ChoiceChip(
+                            selected: _timeFilter == time,
+                            label: Text(time),
+                            labelStyle: TextStyle(
+                              color: _timeFilter == time
+                                  ? Colors.white
+                                  : Colors.black87,
+                              fontWeight: _timeFilter == time
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                            ),
+                            selectedColor: Theme.of(context).primaryColor,
+                            backgroundColor: Colors.grey[200],
+                            elevation: _timeFilter == time ? 2 : 0,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 8),
+                            onSelected: (selected) {
+                              setModalState(() {
+                                _timeFilter = selected ? time : 'All';
+                              });
+                              setState(() {
+                                _timeFilter = selected ? time : 'All';
+                              });
+                              _filterOrders();
+                            },
+                          ))
+                      .toList(),
+                ),
+
+                // Order Type Filter with icons
+                const SizedBox(height: 24),
+                Text(
+                  'Order Type',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    {'value': 'All', 'label': 'All Types', 'icon': Icons.list},
+                    {
+                      'value': 'Delivery',
+                      'label': 'Delivery',
+                      'icon': Icons.delivery_dining
+                    },
+                    {
+                      'value': 'Pickup',
+                      'label': 'Pickup',
+                      'icon': Icons.store_mall_directory
+                    },
+                    {
+                      'value': 'Dine_in',
+                      'label': 'Dine In',
+                      'icon': Icons.restaurant
+                    }
+                  ]
+                      .map((type) => FilterChip(
+                            avatar: CircleAvatar(
+                              backgroundColor: _orderTypeFilter == type['value']
+                                  ? Colors.white
+                                  : Theme.of(context)
+                                      .primaryColor
+                                      .withOpacity(0.1),
+                              child: Icon(
+                                type['icon'] as IconData,
+                                size: 16,
+                                color: _orderTypeFilter == type['value']
+                                    ? Theme.of(context).primaryColor
+                                    : Colors.grey[600],
+                              ),
+                            ),
+                            selected: _orderTypeFilter == type['value'],
+                            label: Text(type['label'] as String),
+                            labelStyle: TextStyle(
+                              color: _orderTypeFilter == type['value']
+                                  ? Colors.white
+                                  : Colors.black87,
+                              fontWeight: _orderTypeFilter == type['value']
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                            ),
+                            selectedColor: Theme.of(context).primaryColor,
+                            backgroundColor: Colors.grey[200],
+                            elevation:
+                                _orderTypeFilter == type['value'] ? 2 : 0,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            onSelected: (selected) {
+                              setModalState(() {
+                                _orderTypeFilter =
+                                    selected ? type['value'] as String : 'All';
+                              });
+                              setState(() {
+                                _orderTypeFilter =
+                                    selected ? type['value'] as String : 'All';
+                              });
+                              _filterOrders();
+                            },
+                          ))
+                      .toList(),
+                ),
+
+                // Action buttons
+                const SizedBox(height: 32),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () {
+                          setModalState(() {
+                            _statusFilter = 'All';
+                            _timeFilter = 'All';
+                            _orderTypeFilter = 'All';
+                          });
+                          setState(() {
+                            _statusFilter = 'All';
+                            _timeFilter = 'All';
+                            _orderTypeFilter = 'All';
+                            _filterOrders();
+                          });
+                        },
+                        child: const Text('Reset Filters'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          side:
+                              BorderSide(color: Theme.of(context).primaryColor),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          _filterOrders();
+                          Navigator.pop(context);
+                        },
+                        child: const Text('Apply Filters'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Theme.of(context)
+                              .primaryColor, // Changed from primary to backgroundColor
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Pretty review details modal
+  void _showReviewDetails(Map<String, dynamic> review) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        expand: false,
+        builder: (_, scrollController) => SingleChildScrollView(
+          controller: scrollController,
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Handle bar for draggable sheet
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[300],
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                // Review header
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Your Review',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+                const Divider(),
+                // Food photo if available
+                if (review['menu']?['photo'] != null) ...[
+                  const SizedBox(height: 16),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.network(
+                      review['menu']['photo'],
+                      height: 180,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) => Container(
+                        height: 180,
+                        width: double.infinity,
+                        color: Colors.grey[200],
+                        child: const Icon(
+                          Icons.restaurant,
+                          size: 48,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 20),
+                // Menu information
+                Text(
+                  review['menu']?['food_name'] ?? 'Unknown Item',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 24,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Icon(Icons.store, size: 16, color: Colors.grey),
+                    const SizedBox(width: 4),
+                    Text(
+                      review['menu']?['stall']?['nama_stalls'] ??
+                          'Unknown Stall',
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 16,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                // Rating display with label
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.amber.withOpacity(0.5)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.star,
+                        color: Colors.amber,
+                        size: 24,
+                      ),
+                      const SizedBox(width: 12),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Your Rating',
+                            style: TextStyle(
+                              color: Colors.grey[700],
+                              fontSize: 12,
+                            ),
+                          ),
+                          Row(
+                            children: [
+                              Text(
+                                '${(review['rating'] as num).toDouble()}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 20,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              RatingIndicator(
+                                rating: (review['rating'] as num).toDouble(),
+                                size: 18,
+                                ratingCount: 1,
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // Review date
+                Row(
+                  children: [
+                    const Icon(Icons.calendar_today,
+                        size: 16, color: Colors.grey),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Reviewed on ${DateFormat('MMMM d, y').format(
+                        DateTime.parse(review['created_at']).toLocal(),
+                      )}',
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                // Review content
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[50],
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey[300]!),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.format_quote, color: Colors.grey),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Your Comment',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: Colors.grey[800],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      if (review['comment'] == null || review['comment'] == '')
+                        Text(
+                          'No comment provided',
+                          style: TextStyle(
+                            fontStyle: FontStyle.italic,
+                            color: Colors.grey[500],
+                          ),
+                        )
+                      else
+                        Text(
+                          review['comment'],
+                          style: const TextStyle(
+                            fontSize: 16,
+                            height: 1.5,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // Action button to edit if needed
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      // Implement edit review functionality if needed
+                    },
+                    icon: const Icon(Icons.edit),
+                    label: const Text('Edit Review'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Theme.of(context)
+                          .primaryColor, // Changed from primary to backgroundColor
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Instead of redefining _buildOrderCard, we'll use the existing one
+  // Remove the duplicate method and use the existing implementation
+
+  // ...existing code...
+}
+
+// OrderListExtension helper class for virtual IDs
+class OrderListExtension {
+  final List<Map<String, dynamic>> orders;
+
+  OrderListExtension(this.orders);
+
+  List<Map<String, dynamic>> withVirtualIds() {
+    // Generate sequential virtual IDs for better UX
+    int virtualId = 1;
+    return orders.map((order) {
+      // Create a new map with all the original data plus the virtual ID
+      return {
+        ...order,
+        'virtual_id': virtualId++,
+        // Convert created_at to timestamp for easier sorting
+        'created_at_timestamp':
+            DateTime.parse(order['created_at']).millisecondsSinceEpoch,
+      };
+    }).toList();
+  }
+}
+
+// Add missing methods for image and animation handling
+
+// Method to safely display images with error handling
+Widget _buildSafeImage(
+  String? imageUrl, {
+  double? width,
+  double? height,
+  BoxFit fit = BoxFit.cover,
+  IconData fallbackIcon = Icons.image,
+}) {
+  // Better validation for image URLs
+  final bool hasValidImageUrl = imageUrl != null &&
+                             imageUrl.trim().isNotEmpty && 
+                             (imageUrl.startsWith('http://') || 
+                              imageUrl.startsWith('https://') || 
+                              imageUrl.startsWith('data:image/'));
+  
+  if (!hasValidImageUrl) {
+    return Container(
+      width: width,
+      height: height,
+      color: Colors.grey[200],
+      child: Center(
+        child: Icon(
+          fallbackIcon,
+          size: (width != null && height != null) 
+              ? math.min(width, height) / 2 
+              : 40,
+          color: Colors.grey[400],
+        ),
+      ),
+    );
+  }
+  
+  return Image.network(
+    imageUrl!,
+    width: width,
+    height: height,
+    fit: fit,
+    errorBuilder: (context, error, stackTrace) {
+      _globalLogger.error('Image error: $error for $imageUrl');
+      return Container(
+        width: width,
+        height: height,
+        color: Colors.grey[200],
+        child: Center(
+          child: Icon(
+            fallbackIcon,
+            size: (width != null && height != null) 
+                ? math.min(width, height) / 2 
+                : 40,
+            color: Colors.grey[400],
+          ),
+        ),
+      );
+    },
+    loadingBuilder: (context, child, loadingProgress) {
+      if (loadingProgress == null) return child;
+      return Container(
+        width: width,
+        height: height,
+        color: Colors.grey[200],
+        child: const Center(
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    },
+  );
+}
+
+// Method to safely display Lottie animations with error handling
+Widget _buildSafeLottie(
+  String animationPath, {
+  double? width,
+  double? height,
+  bool repeat = true,
+  IconData fallbackIcon = Icons.animation,
+}) {
+  return Lottie.asset(
+    animationPath,
+    width: width,
+    height: height,
+    repeat: repeat,
+    errorBuilder: (context, error, stackTrace) {
+      _globalLogger.error('Lottie error: $error for $animationPath');
+      return Container(
+        width: width,
+        height: height,
+        color: Colors.transparent,
+        child: Center(
+          child: Icon(
+            fallbackIcon,
+            size: (width != null && height != null)
+                ? math.min(width, height) / 2
+                : 80,
+            color: Colors.grey[400],
+          ),
+        ),
+      );
+    },
+  );
 }

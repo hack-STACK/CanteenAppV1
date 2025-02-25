@@ -96,6 +96,7 @@ class _RateMenuDialogState extends State<RateMenuDialog>
           const SnackBar(
             content: Text('You have already rated this item'),
             backgroundColor: Colors.orange,
+            behavior: SnackBarBehavior.floating,
           ),
         );
       }
@@ -449,6 +450,25 @@ class _RateMenuDialogState extends State<RateMenuDialog>
     if (!mounted) return;
     setState(() => _isSubmitting = true);
     try {
+      // Double-check for existing rating right before submission
+      final hasRating = await _ratingService.hasUserRatedMenu(
+        widget.menuId,
+        widget.transactionId,
+      );
+      
+      if (hasRating) {
+        if (!mounted) return;
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('You have already rated this item'),
+            backgroundColor: Colors.orange,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+      
       await _ratingService.submitReview(
         transactionId: widget.transactionId,
         stallId: widget.stallId,
@@ -461,13 +481,19 @@ class _RateMenuDialogState extends State<RateMenuDialog>
       widget.onRatingSubmitted();
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Thank you for your review!')),
+        const SnackBar(
+          content: Text('Thank you for your review!'),
+          behavior: SnackBarBehavior.floating,
+        ),
       );
     } catch (e) {
       if (!mounted) return;
       print('Error submitting rating: $e'); // Debug log
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
+        SnackBar(
+          content: Text(e.toString()),
+          behavior: SnackBarBehavior.floating,
+        ),
       );
     } finally {
       if (mounted) {

@@ -16,6 +16,11 @@ class RatingService {
   final Duration _cacheDuration = const Duration(minutes: 5);
   final Map<int, DateTime> _cacheTimestamps = {};
 
+  // Map to cache rating check results
+  final Map<String, bool> _userRatingCache = {};
+  final Map<String, DateTime> _ratingCacheTimestamps = {};
+  final Duration _ratingCacheDuration = const Duration(minutes: 5);
+
   Future<int> _getStudentId() async {
     try {
       // Get Firebase user ID
@@ -108,9 +113,10 @@ class RatingService {
 
       await _supabase.from('reviews').insert(reviewData);
 
-      // Clear cache after successful submission
+      // Clear caches after successful submission
       if (type == ReviewType.menu && menuId != null) {
         clearCacheForMenu(menuId);
+        clearRatingCheckCache(menuId, transactionId);
       }
     } catch (e, stack) {
       _logger.error('Failed to submit review', e, stack);
@@ -208,8 +214,22 @@ class RatingService {
 
   Future<bool> hasUserRatedMenu(int menuId, int transactionId) async {
     try {
+      final cacheKey = 'menu_${menuId}_transaction_${transactionId}';
+      
+      // Check cache first
+      if (_userRatingCache.containsKey(cacheKey)) {
+        final cacheTime = _ratingCacheTimestamps[cacheKey];
+        if (cacheTime != null && 
+            DateTime.now().difference(cacheTime) < _ratingCacheDuration) {
+          _logger.debug('Using cached rating check for menu $menuId, transaction $transactionId');
+          return _userRatingCache[cacheKey]!;
+        }
+      }
+      
+      _logger.debug('Checking if user has rated menu $menuId for transaction $transactionId');
+      
       final studentId = await _getStudentId();
-
+      
       final response = await _supabase
           .from('reviews')
           .select()
@@ -218,7 +238,15 @@ class RatingService {
           .eq('transaction_id', transactionId)
           .maybeSingle();
 
-      return response != null;
+      final hasRated = response != null;
+      
+      // Cache the result
+      _userRatingCache[cacheKey] = hasRated;
+      _ratingCacheTimestamps[cacheKey] = DateTime.now();
+      
+      _logger.debug('User has ${hasRated ? '' : 'not '}rated menu $menuId for transaction $transactionId');
+      
+      return hasRated;
     } catch (e) {
       _logger.error('Failed to check user rating status', e);
       return false;
@@ -297,6 +325,14 @@ class RatingService {
     _ratingSummaryCache.remove(menuId);
     _cacheTimestamps.remove(menuId);
     _logger.debug('Cleared cache for menu $menuId');
+  }
+
+  // Add method to clear rating check cache
+  void clearRatingCheckCache(int menuId, int transactionId) {
+    final cacheKey = 'menu_${menuId}_transaction_${transactionId}';
+    _userRatingCache.remove(cacheKey);
+    _ratingCacheTimestamps.remove(cacheKey);
+    _logger.debug('Cleared rating check cache for menu $menuId, transaction $transactionId');
   }
 
   Future<Map<String, dynamic>> verifyStudent(int studentId) async {

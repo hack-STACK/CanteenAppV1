@@ -54,71 +54,71 @@ class RatingService {
   }
 
   Future<void> submitReview({
-    required int transactionId,
-    required int stallId,
-    required ReviewType type,
+    required int menuId,
     required double rating,
-    int? menuId,
+    required int transactionId,
+    int? stallId,
+    ReviewType type = ReviewType.menu,
     String? comment,
   }) async {
     try {
-      // Get student ID from transaction with non-nullable filter
-      final Map<String, Object> transactionFilter = {'id': transactionId};
-      final studentData = await _supabase
-          .from('transactions')
-          .select('student_id')
-          .match(transactionFilter)
-          .single();
-
-      final studentId = studentData['student_id'] as int;
-      _logger.debug('Submitting review for student_id: $studentId');
-
-      // Create a non-nullable filter for review check
-      final baseFilter = <String, Object>{
-        'transaction_id': transactionId,
-        'student_id': studentId,
-      };
-
-      // Only add menu_id if it's not null
-      if (menuId != null) {
-        baseFilter['menu_id'] = menuId;
-      }
-
+      _logger.debug('Submitting review for menu_id: $menuId, transaction_id: $transactionId');
+      
+      // Get student ID 
+      final studentId = await _getStudentId();
+      
+      // Check if a review already exists for this menu and student
       final existingReview = await _supabase
           .from('reviews')
           .select()
-          .match(baseFilter)
+          .eq('menu_id', menuId)
+          .eq('student_id', studentId)
+          .eq('transaction_id', transactionId)
           .maybeSingle();
 
       if (existingReview != null) {
         throw Exception('You have already reviewed this item');
       }
+      
+      // If stallId is not provided, get it from menu
+      if (stallId == null) {
+        final menuData = await _supabase
+            .from('menu')
+            .select('stall_id')
+            .eq('id', menuId)
+            .single();
+        stallId = menuData['stall_id'] as int;
+      }
 
-      // Create the review data with required fields first
-      final Map<String, Object> reviewData = {
-        'transaction_id': transactionId,
+      // Create the review data with required fields
+      // Convert rating to integer since the database column expects an integer
+      final Map<String, dynamic> reviewData = {
+        'menu_id': menuId,
         'stall_id': stallId,
         'student_id': studentId,
-        'rating': rating.round(),
+        'transaction_id': transactionId, // Now required per schema
+        'rating': rating.round(), // Convert double to integer
         'created_at': DateTime.now().toIso8601String(),
       };
 
-      // Add optional fields if they exist
-      if (type == ReviewType.menu && menuId != null) {
-        reviewData['menu_id'] = menuId;
-      }
+      // Add optional comment if provided
       if (comment != null && comment.isNotEmpty) {
         reviewData['comment'] = comment;
       }
 
+      // Database triggers will automatically update menu and stalls ratings
       await _supabase.from('reviews').insert(reviewData);
 
       // Clear caches after successful submission
-      if (type == ReviewType.menu && menuId != null) {
-        clearCacheForMenu(menuId);
-        clearRatingCheckCache(menuId, transactionId);
-      }
+      clearCacheForMenu(menuId);
+      clearCacheForStall(stallId);
+      clearRatingCheckCache(menuId, transactionId);
+      
+      _logger.debug('Review submitted successfully');
     } catch (e, stack) {
+      if (e is PostgrestException) {
+        _handlePostgrestError(e);
+      }
       _logger.error('Failed to submit review', e, stack);
       rethrow;
     }
@@ -269,30 +269,22 @@ class RatingService {
       }
 
       _logger.debug('Fetching fresh ratings for menu $menuId');
-      final response = await _supabase.from('reviews').select('''
-            rating,
-            student:student_id (id)
-          ''').eq('menu_id', menuId);
-
-      if (response.isEmpty) {
-        final summary = {'average': 0.0, 'count': 0};
-        _cacheRatingSummary(menuId, summary);
-        _logger.debug('No reviews found for menu $menuId');
-        return summary;
-      }
-
-      final ratings =
-          response.map((r) => (r['rating'] as num).toDouble()).toList();
-      final average = ratings.reduce((a, b) => a + b) / ratings.length;
-
+      
+      // Get the values directly from the menu table (updated by triggers)
+      final menuData = await _supabase
+          .from('menu')
+          .select('rating, total_ratings')
+          .eq('id', menuId)
+          .single();
+      
       final summary = {
-        'average': average,
-        'count': ratings.length,
+        'average': (menuData['rating'] as num?)?.toDouble() ?? 0.0,
+        'count': (menuData['total_ratings'] as num?)?.toInt() ?? 0,
       };
 
       _cacheRatingSummary(menuId, summary);
       _logger.debug(
-          'Fetched ${ratings.length} reviews for menu $menuId with average $average');
+          'Fetched ratings for menu $menuId: ${summary['average']} from ${summary['count']} reviews');
 
       return summary;
     } catch (e, stack) {
@@ -357,6 +349,8 @@ class RatingService {
 
   void _handlePostgrestError(PostgrestException e) {
     switch (e.code) {
+      case '22P02':
+        throw Exception('Invalid data type: Rating must be a whole number between 1 and 5');
       case '23503':
         throw Exception(
             'Referenced record not found (transaction, menu, stall, or student)');
@@ -381,18 +375,16 @@ class RatingService {
         }
       }
 
-      final response = await _supabase.rpc(
-        'get_stall_rating_summary',
-        params: {'stall_id_param': stallId},
-      );
-
-      final data = response is List ? response.first : response;
-
+      // Get the values directly from the stalls table (updated by triggers)
+      final stallData = await _supabase
+          .from('stalls')
+          .select('rating, total_ratings')
+          .eq('id', stallId)
+          .single();
+      
       final result = {
-        'average': double.parse(
-            ((data['average_rating'] as num?)?.toDouble() ?? 0.0)
-                .toStringAsFixed(1)),
-        'count': (data['total_reviews'] as num?)?.toInt() ?? 0,
+        'average': (stallData['rating'] as num?)?.toDouble() ?? 0.0,
+        'count': (stallData['total_ratings'] as num?)?.toInt() ?? 0,
       };
 
       _ratingSummaryCache[stallId] = result;
@@ -400,8 +392,53 @@ class RatingService {
 
       return result;
     } catch (e) {
+      _logger.error('Failed to get stall ratings for stall $stallId', e);
       return {'average': 0.0, 'count': 0};
     }
+  }
+
+  // Add method to check if a review is active
+  Future<bool> isReviewActive(int reviewId) async {
+    try {
+      // TODO: Add 'is_active' column to the reviews table for proper review status tracking
+      // For now, assume all reviews that exist are active
+      final review = await _supabase
+          .from('reviews')
+          .select('id')
+          .eq('id', reviewId)
+          .maybeSingle();
+      
+      return review != null;
+    } catch (e) {
+      _logger.error('Failed to check review status', e);
+      return false;
+    }
+  }
+  
+  // Add method to deactivate a review
+  Future<void> deactivateReview(int reviewId) async {
+    try {
+      // TODO: Add 'is_active' column to the reviews table for proper deactivation
+      // For now, we'll just delete the review instead of marking it inactive
+      await _supabase
+          .from('reviews')
+          .delete()
+          .eq('id', reviewId);
+      
+      _logger.debug('Review $reviewId deleted (deactivation not supported yet)');
+      
+      // The stall and menu ratings will be updated by a database trigger
+    } catch (e) {
+      _logger.error('Failed to deactivate review', e);
+      rethrow;
+    }
+  }
+  
+  // Add method to clear cache for a stall
+  void clearCacheForStall(int stallId) {
+    _ratingSummaryCache.remove(stallId);
+    _cacheTimestamps.remove(stallId);
+    _logger.debug('Cleared cache for stall $stallId');
   }
 
   // Debug helper method

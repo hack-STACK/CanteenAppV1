@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:kantin/Services/rating_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shimmer/shimmer.dart';
+import 'package:kantin/utils/logger.dart';
 
 class RateMenuDialog extends StatefulWidget {
   const RateMenuDialog({
@@ -14,14 +16,14 @@ class RateMenuDialog extends StatefulWidget {
     required this.transactionId,
     required this.menuName,
     required this.onRatingSubmitted,
-    this.menuPhoto, // Make sure we're properly passing this
+    this.menuPhoto,
   });
 
   final int menuId;
   final int stallId;
   final int transactionId;
   final String menuName;
-  final String? menuPhoto; // Add this property declaration
+  final String? menuPhoto;
   final Function() onRatingSubmitted;
 
   @override
@@ -32,12 +34,18 @@ class _RateMenuDialogState extends State<RateMenuDialog>
     with SingleTickerProviderStateMixin {
   final _ratingService = RatingService();
   final _commentController = TextEditingController();
-  final _supabase = Supabase.instance.client; // Add this line
+  final _supabase = Supabase.instance.client;
+  final _logger = Logger('RateMenuDialog');
+  
   double _rating = 0;
   bool _isSubmitting = false;
+  bool _isCheckingExisting = true;
   String _selectedQuickReview = '';
+  String _ratingMessage = 'Tap to Rate ⭐';
+  String? _errorMessage;
+  bool _showSuccess = false;
+  
   late final AnimationController _animationController;
-  String _ratingMessage = '';
 
   // Quick review options based on rating
   final Map<double, List<String>> _quickReviews = {
@@ -76,11 +84,11 @@ class _RateMenuDialogState extends State<RateMenuDialog>
   @override
   void initState() {
     super.initState();
-    _checkExistingRating();
     _animationController = AnimationController(
       duration: const Duration(milliseconds: 1500),
       vsync: this,
     );
+    _checkExistingRating();
   }
 
   Future<void> _checkExistingRating() async {
@@ -89,6 +97,12 @@ class _RateMenuDialogState extends State<RateMenuDialog>
         widget.menuId,
         widget.transactionId,
       );
+
+      if (mounted) {
+        setState(() {
+          _isCheckingExisting = false;
+        });
+      }
 
       if (hasRating && mounted) {
         Navigator.of(context).pop();
@@ -101,7 +115,13 @@ class _RateMenuDialogState extends State<RateMenuDialog>
         );
       }
     } catch (e) {
-      print('Error checking existing rating: $e');
+      _logger.error('Error checking existing rating', e);
+      if (mounted) {
+        setState(() {
+          _isCheckingExisting = false;
+          _errorMessage = 'Unable to check rating status';
+        });
+      }
     }
   }
 
@@ -134,43 +154,139 @@ class _RateMenuDialogState extends State<RateMenuDialog>
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withOpacity(0.1),
+                spreadRadius: 1,
                 blurRadius: 20,
                 offset: const Offset(0, 10),
               ),
             ],
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Header Image Section
-              _buildHeaderSection(),
+          child: _showSuccess 
+            ? _buildSuccessView() 
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Header Image Section
+                  _buildHeaderSection(),
 
-              // Rating Content Section - Scrollable
-              Flexible(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const SizedBox(height: 24),
-                      _buildRatingSection(),
-                      if (_rating > 0) ...[
-                        const SizedBox(height: 24),
-                        _buildQuickReviews(),
-                        const SizedBox(height: 24),
-                        _buildCommentField(),
-                        const SizedBox(height: 24),
-                      ],
-                    ],
-                  ),
-                ),
+                  // Status indicator for initial loading
+                  if (_isCheckingExisting)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 24),
+                      child: Center(
+                        child: CircularProgressIndicator(),
+                      ),
+                    )
+                  else if (_errorMessage != null)
+                    _buildErrorMessage()
+                  else ...[
+                    // Rating Content Section - Scrollable
+                    Flexible(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const SizedBox(height: 24),
+                            _buildRatingSection(),
+                            if (_rating > 0) ...[
+                              const SizedBox(height: 24),
+                              _buildQuickReviews(),
+                              const SizedBox(height: 24),
+                              _buildCommentField(),
+                              const SizedBox(height: 24),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // Submit Button Section - Fixed at bottom
+                    _buildSubmitButton(),
+                  ],
+                ],
               ),
-
-              // Submit Button Section - Fixed at bottom
-              _buildSubmitButton(),
-            ],
-          ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildSuccessView() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 16),
+          Icon(
+            Icons.check_circle_rounded,
+            size: 80,
+            color: Colors.green.shade400,
+          ).animate().scale(
+            begin: Offset(0.5, 0.5),
+            duration: const Duration(milliseconds: 500),
+            curve: Curves.elasticOut,
+          ),
+          const SizedBox(height: 24),
+          Text(
+            'Thank You For Your Review!',
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+            textAlign: TextAlign.center,
+          ).animate().fade().slideY(begin: 0.3),
+          const SizedBox(height: 16),
+          Text(
+            'Your feedback helps us improve our service',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Colors.grey.shade600,
+                ),
+            textAlign: TextAlign.center,
+          ).animate().fade(delay: 200.ms).slideY(begin: 0.2),
+          const SizedBox(height: 32),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 32,
+                vertical: 16,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
+            child: const Text('Close'),
+          ).animate().fade(delay: 400.ms).scale(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErrorMessage() {
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        children: [
+          Icon(
+            Icons.error_outline_rounded,
+            size: 48,
+            color: Colors.red.shade400,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            _errorMessage ?? 'An error occurred',
+            style: const TextStyle(fontSize: 16),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 24),
+          OutlinedButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
       ),
     );
   }
@@ -181,18 +297,19 @@ class _RateMenuDialogState extends State<RateMenuDialog>
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // Update the image section
           ClipRRect(
             borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
             child: widget.menuPhoto != null && widget.menuPhoto!.isNotEmpty
-                ? CachedNetworkImage(
-                    imageUrl: widget.menuPhoto!,
-                    fit: BoxFit.cover,
-                    width: double.infinity,
-                    height: double.infinity,
-                    placeholder: (context, url) => _buildShimmerLoader(),
-                    errorWidget: (_, __, ___) =>
-                        _buildPlaceholder(), // Changed from errorBuilder to errorWidget
+                ? Hero(
+                    tag: 'menu_photo_${widget.menuId}',
+                    child: CachedNetworkImage(
+                      imageUrl: widget.menuPhoto!,
+                      fit: BoxFit.cover,
+                      width: double.infinity,
+                      height: double.infinity,
+                      placeholder: (context, url) => _buildShimmerLoader(),
+                      errorWidget: (_, __, ___) => _buildPlaceholder(),
+                    ),
                   )
                 : _buildPlaceholder(),
           ),
@@ -246,7 +363,8 @@ class _RateMenuDialogState extends State<RateMenuDialog>
     return Column(
       children: [
         // Rating Message
-        Container(
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
           height: 48,
           alignment: Alignment.center,
           child: Text(
@@ -254,9 +372,10 @@ class _RateMenuDialogState extends State<RateMenuDialog>
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w600,
-              color: Theme.of(context).primaryColor,
+              color: _getRatingColor(_rating),
             ),
             textAlign: TextAlign.center,
+            semanticsLabel: 'Rating: $_ratingMessage',
           ).animate().fadeIn().scale(),
         ),
         const SizedBox(height: 16),
@@ -268,14 +387,27 @@ class _RateMenuDialogState extends State<RateMenuDialog>
           itemCount: 5,
           itemSize: 48,
           glow: true,
-          itemBuilder: (context, _) => Icon(
+          unratedColor: Colors.grey.shade200,
+          itemBuilder: (context, index) => Icon(
             Icons.star_rounded,
             color: Colors.amber.shade600,
+            semanticLabel: 'Star ${index + 1}',
           ),
           onRatingUpdate: _updateRating,
         ).animate().slideY(begin: 0.3).fadeIn(),
       ],
     );
+  }
+
+  Color _getRatingColor(double rating) {
+    return switch (rating) {
+      5.0 => Colors.green.shade600,
+      4.0 => Colors.green.shade600,
+      3.0 => Colors.blue.shade600,
+      2.0 => Colors.orange.shade600,
+      1.0 => Colors.red.shade600,
+      _ => Theme.of(context).primaryColor,
+    };
   }
 
   Widget _buildQuickReviews() {
@@ -294,11 +426,18 @@ class _RateMenuDialogState extends State<RateMenuDialog>
               fontSize: 13,
             ),
           ),
+          elevation: _selectedQuickReview == review ? 2 : 0,
           backgroundColor: _selectedQuickReview == review
               ? Theme.of(context).primaryColor
               : Colors.grey.shade100,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           onPressed: () => _selectQuickReview(review),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: _selectedQuickReview == review
+                ? BorderSide(color: Theme.of(context).primaryColor)
+                : BorderSide.none,
+          ),
         ).animate().scale(delay: 200.ms);
       }).toList(),
     );
@@ -323,6 +462,7 @@ class _RateMenuDialogState extends State<RateMenuDialog>
           borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide(
             color: Theme.of(context).primaryColor,
+            width: 2,
           ),
         ),
         prefixIcon: const Icon(Icons.comment_outlined),
@@ -330,6 +470,7 @@ class _RateMenuDialogState extends State<RateMenuDialog>
       ),
       maxLines: 3,
       maxLength: 200,
+      textCapitalization: TextCapitalization.sentences,
     ).animate().slideY(begin: 0.3).fadeIn();
   }
 
@@ -344,41 +485,70 @@ class _RateMenuDialogState extends State<RateMenuDialog>
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
+          backgroundColor: _getRatingColor(_rating),
+          disabledBackgroundColor: Colors.grey.shade300,
         ),
         child: _isSubmitting
-            ? const SizedBox(
-                height: 20,
-                width: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation(Colors.white),
-                ),
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation(Colors.white),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Text('Submitting...'),
+                ],
               )
-            : const Text(
-                'Submit Review',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Submit Review',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Icon(Icons.send_rounded, size: 16),
+                ],
               ),
       ),
     );
   }
 
   void _updateRating(double rating) {
+    // Add haptic feedback
+    HapticFeedback.selectionClick();
+    
     setState(() {
       _rating = rating;
       _ratingMessage = _getRatingMessage(rating);
       _selectedQuickReview = '';
-      _commentController.clear();
+      if (_commentController.text == _selectedQuickReview) {
+        _commentController.clear();
+      }
     });
     _animationController.forward(from: 0);
   }
 
   void _selectQuickReview(String review) {
+    // Add haptic feedback
+    HapticFeedback.lightImpact();
+    
     setState(() {
-      _selectedQuickReview = review;
-      _commentController.text = review;
+      if (_selectedQuickReview == review) {
+        _selectedQuickReview = '';
+        _commentController.clear();
+      } else {
+        _selectedQuickReview = review;
+        _commentController.text = review;
+      }
     });
   }
 
@@ -427,6 +597,7 @@ class _RateMenuDialogState extends State<RateMenuDialog>
       child: Material(
         color: Colors.white.withOpacity(0.9),
         shape: const CircleBorder(),
+        elevation: 2,
         child: InkWell(
           onTap: () => Navigator.of(context).pop(),
           customBorder: const CircleBorder(),
@@ -440,7 +611,7 @@ class _RateMenuDialogState extends State<RateMenuDialog>
           ),
         ),
       ).animate().scale(
-            duration: Duration(milliseconds: 200),
+            duration: const Duration(milliseconds: 200),
             curve: Curves.easeOut,
           ),
     );
@@ -449,6 +620,7 @@ class _RateMenuDialogState extends State<RateMenuDialog>
   Future<void> _submitRating() async {
     if (!mounted) return;
     setState(() => _isSubmitting = true);
+    
     try {
       // Double-check for existing rating right before submission
       final hasRating = await _ratingService.hasUserRatedMenu(
@@ -477,29 +649,60 @@ class _RateMenuDialogState extends State<RateMenuDialog>
         menuId: widget.menuId,
         comment: _commentController.text.trim(),
       );
+      
       if (!mounted) return;
+
+      // Add haptic feedback on success
+      HapticFeedback.mediumImpact();
+      
+      // Show success animation before closing
+      setState(() {
+        _isSubmitting = false;
+        _showSuccess = true;
+      });
+      
+      // Notify parent
       widget.onRatingSubmitted();
-      Navigator.of(context).pop();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Thank you for your review!'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      
+      // Close dialog after showing success animation
+      Future.delayed(const Duration(milliseconds: 1500), () {
+        if (mounted) Navigator.of(context).pop();
+      });
     } catch (e) {
       if (!mounted) return;
-      print('Error submitting rating: $e'); // Debug log
+      
+      _logger.error('Error submitting rating', e);
+      
+      setState(() {
+        _isSubmitting = false;
+        _errorMessage = _getErrorMessage(e);
+      });
+      
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(e.toString()),
+          content: Text(_errorMessage ?? 'Failed to submit review'),
           behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.red.shade700,
         ),
       );
-    } finally {
-      if (mounted) {
-        setState(() => _isSubmitting = false);
-      }
     }
+  }
+  
+  String _getErrorMessage(dynamic error) {
+    if (error is PostgrestException) {
+      return switch (error.code) {
+        '23505' => 'You have already submitted a review for this item',
+        '23514' => 'Invalid rating value (must be between 1-5)',
+        '23503' => 'Cannot find the required menu or transaction information',
+        _ => 'Database error: ${error.message}',
+      };
+    }
+    
+    if (error is String) {
+      return error;
+    }
+    
+    return error.toString();
   }
 
   @override

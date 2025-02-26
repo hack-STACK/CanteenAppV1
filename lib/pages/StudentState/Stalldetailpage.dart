@@ -1521,6 +1521,7 @@ class _StallDetailPageState extends State<StallDetailPage>
                           child: ReviewSection(
                             stall: widget.stall,
                             onSeeAllReviews: () {},
+                            studentId: widget.studentId, // Pass the student ID
                           ),
                         ),
                       ],

@@ -186,9 +186,11 @@ class Stan {
     );
   }
 
-  // Add method to check if stall is currently open
-  bool isCurrentlyOpen() {
-    if (!isOpen) return false;
+  // Check if stall is manually closed via the is_open flag
+  bool get isManuallyOpen => isOpen;
+
+  // Check if current time is within open hours
+  bool isWithinBusinessHours() {
     if (openTime == null || closeTime == null) return true;
 
     final now = TimeOfDay.now();
@@ -202,6 +204,31 @@ class Stan {
       // Handles cases where closing time is on the next day
       return currentMinutes >= openMinutes || currentMinutes <= closeMinutes;
     }
+  }
+
+  // Determine why stall is closed (returns null if open)
+  String? getClosedReason() {
+    if (!isOpen) {
+      return 'Manually closed by vendor';
+    }
+
+    if (openTime != null && closeTime != null && !isWithinBusinessHours()) {
+      return 'Outside business hours';
+    }
+
+    return null; // Stall is open
+  }
+
+  // Updated method to check if stall is available for orders
+  bool isCurrentlyOpen() {
+    // If manually closed, always return false
+    if (!isOpen) return false;
+
+    // If no hours set, assume always open during business hours
+    if (openTime == null || closeTime == null) return true;
+
+    // Otherwise check if current time is within business hours
+    return isWithinBusinessHours();
   }
 
   bool hasActivePromotions() {

@@ -591,67 +591,6 @@ class _HomepageState extends State<StudentPage>
     ).then((_) => _loadStalls()); // Refresh after returning
   }
 
-  Widget _buildTabView() {
-    return SliverToBoxAdapter(
-      child: Column(
-        children: [
-          Container(
-            color: Colors.white,
-            child: TabBar(
-              controller: _tabController,
-              tabs: const [
-                Tab(text: 'All Stalls'),
-                Tab(text: 'Featured'),
-              ],
-              labelColor: Theme.of(context).primaryColor,
-              unselectedLabelColor: Colors.grey,
-              indicatorColor: Theme.of(context).primaryColor,
-            ),
-          ),
-          SizedBox(
-            height:
-                MediaQuery.of(context).size.height * 0.6, // Increased height
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                _buildAllStallsGrid(),
-                _buildFeaturedStalls(),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAllStallsGrid() {
-    if (_isLoading) {
-      return Center(child: CircularProgressIndicator());
-    }
-
-    return ValueListenableBuilder<List<Stan>>(
-      valueListenable: _filteredStallsNotifier,
-      builder: (context, filteredStalls, child) {
-        if (filteredStalls.isEmpty) {
-          return const Center(child: Text('No stalls found'));
-        }
-
-        return GridView.builder(
-          padding: const EdgeInsets.all(8),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            childAspectRatio: 0.8,
-            crossAxisSpacing: 10,
-            mainAxisSpacing: 10,
-          ),
-          itemCount: filteredStalls.length,
-          itemBuilder: (context, index) =>
-              _buildStallCard(filteredStalls[index]),
-        );
-      },
-    );
-  }
-
   Widget _buildStallCard(Stan stall) {
     return Card(
       elevation: 2,
@@ -738,29 +677,6 @@ class _HomepageState extends State<StudentPage>
         ),
       ),
     );
-  }
-
-  Widget _buildFeaturedStalls() {
-    if (_isLoading) {
-      return Center(child: CircularProgressIndicator());
-    }
-
-    return _popularStalls.isEmpty
-        ? Center(child: Text('No featured stalls'))
-        : GridView.builder(
-            padding: const EdgeInsets.all(8),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              childAspectRatio: 0.8,
-              crossAxisSpacing: 10,
-              mainAxisSpacing: 10,
-            ),
-            itemCount: _popularStalls.length,
-            itemBuilder: (context, index) {
-              final stall = _popularStalls[index];
-              return _buildStallCard(stall);
-            },
-          );
   }
 
   // Add new sorting method

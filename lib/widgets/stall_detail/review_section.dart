@@ -56,22 +56,25 @@ class _ReviewSectionState extends State<ReviewSection> {
     });
 
     try {
-      if (_debugMode) print('⏳ Loading reviews for stall ID: ${widget.stall.id}');
+      if (_debugMode)
+        print('⏳ Loading reviews for stall ID: ${widget.stall.id}');
 
       // Load reviews and rating summary concurrently
-      _reviewsFuture = ReviewService.getStallReviews(widget.stall.id, limit: widget.maxReviews);
-      _ratingSummaryFuture = ReviewService.getStallRatingSummary(widget.stall.id);
-      
+      _reviewsFuture = ReviewService.getStallReviews(widget.stall.id,
+          limit: widget.maxReviews);
+      _ratingSummaryFuture =
+          ReviewService.getStallRatingSummary(widget.stall.id);
+
       // Wait for both futures to complete
       final results = await Future.wait([_reviewsFuture, _ratingSummaryFuture]);
-      
+
       _reviews = results[0] as List<StallReview>;
       _ratingSummary = results[1] as Map<String, dynamic>;
 
       if (_debugMode) {
         print('✅ Loaded ${_reviews.length} reviews');
         print('📊 Rating summary: $_ratingSummary');
-        
+
         // Print each review for debugging
         if (_reviews.isNotEmpty) {
           print('\n--- Review Details ---');
@@ -111,7 +114,7 @@ class _ReviewSectionState extends State<ReviewSection> {
   double _getRatingPercentage(int rating) {
     final totalRatings = _getTotalRatings();
     if (totalRatings == 0) return 0;
-    
+
     final count = _ratingSummary['distribution']?['$rating'] ?? 0;
     return count / totalRatings;
   }
@@ -224,7 +227,8 @@ class _ReviewSectionState extends State<ReviewSection> {
                         final success = await ReviewService.submitReview(
                           studentId: widget.studentId,
                           stallId: widget.stall.id,
-                          transactionId: 0, // Use 0 for direct reviews (adjust as needed)
+                          transactionId:
+                              0, // Use 0 for direct reviews (adjust as needed)
                           rating: ratingController.value.toInt(),
                           comment: commentController.text.trim(),
                         );
@@ -311,7 +315,8 @@ class _ReviewSectionState extends State<ReviewSection> {
         children: [
           _buildHeader(),
           // Only show rating summary if there are actual ratings AND showRating is true
-          if (_getTotalRatings() > 0 && widget.showRating) _buildRatingSummary(),
+          if (_getTotalRatings() > 0 && widget.showRating)
+            _buildRatingSummary(),
           // Add debug section
           if (_debugMode && _errorMessage != null) _buildErrorMessage(),
           _buildReviewsList(),
@@ -595,8 +600,8 @@ class _ReviewSectionState extends State<ReviewSection> {
             ),
             const SizedBox(height: 16),
             Text(
-              _getTotalRatings() > 0 
-                  ? 'No Reviews to Display' 
+              _getTotalRatings() > 0
+                  ? 'No Reviews to Display'
                   : 'No Reviews Yet',
               style: TextStyle(
                 fontSize: 18,
@@ -615,7 +620,7 @@ class _ReviewSectionState extends State<ReviewSection> {
                 color: Colors.grey[600],
               ),
             ),
-            
+
             // Debug data section
             if (_debugMode) ...[
               const SizedBox(height: 24),
@@ -674,12 +679,13 @@ class _ReviewSectionState extends State<ReviewSection> {
                 ),
               ),
             ],
-            
+
             const SizedBox(height: 16),
             ElevatedButton(
               onPressed: _handleWriteReview, // Connect to the handler
               style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
@@ -747,7 +753,7 @@ class _ReviewSectionState extends State<ReviewSection> {
           ],
         ),
         const SizedBox(height: 12),
-        
+
         // Food item tag - show which food the review is for
         if (review.menuName != null)
           Container(
@@ -778,7 +784,7 @@ class _ReviewSectionState extends State<ReviewSection> {
               ],
             ),
           ),
-        
+
         // Review comment - Improved to handle null comments properly
         if (review.comment != null && review.comment!.isNotEmpty)
           Text(
@@ -800,7 +806,7 @@ class _ReviewSectionState extends State<ReviewSection> {
               color: Colors.grey[600],
             ),
           ),
-          
+
         const SizedBox(height: 12),
         // Review actions
         Row(

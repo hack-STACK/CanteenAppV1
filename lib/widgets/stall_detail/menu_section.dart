@@ -33,6 +33,7 @@ class MenuSection extends StatefulWidget {
   final Map<int, List<FoodAddon>> menuAddons;
   final Set<String> favoriteMenus;
   final Function(Menu) onToggleFavorite;
+  final bool isStallClosed; // Add this new parameter
 
   const MenuSection({
     super.key,
@@ -47,6 +48,7 @@ class MenuSection extends StatefulWidget {
     required this.menuAddons,
     required this.favoriteMenus,
     required this.onToggleFavorite,
+    this.isStallClosed = false, // Default to false
   });
 
   @override
@@ -322,47 +324,28 @@ class _MenuSectionState extends State<MenuSection>
     print('DEBUG: Building with ${filteredAndSortedMenus.length} menus');
 
     return Column(
+      // Remove mainAxisSize constraint to let it grow naturally
+      mainAxisSize: MainAxisSize.min,
       children: [
-        // Remove _buildPriceRangeFilter() from here since it's already in _buildAdvancedFilters
-        Expanded(
-          child: filteredAndSortedMenus.isEmpty
-              ? Center(child: Text('No items found'))
-              : CustomScrollView(
-                  slivers: [
-                    SliverToBoxAdapter(
-                      child: Column(
-                        children: [
-                          _buildSearchBar(),
-                          AnimatedSizeAndFade(
-                            child: _showFilters
-                                ? _buildAdvancedFilters()
-                                : const SizedBox.shrink(),
-                          ),
-                          _buildSortAndViewOptions(),
-                        ],
-                      ),
-                    ),
-                    SliverFillRemaining(
-                      child: RefreshIndicator(
-                        onRefresh: () async {
-                          // Implement refresh logic if needed
-                          return Future.delayed(Duration(seconds: 1));
-                        },
-                        child: _filteredAndSortedMenus.isEmpty
-                            ? _buildEmptyState()
-                            : _isGridView
-                                ? _buildGridView(
-                                    MediaQuery.of(context).size.width,
-                                    items: filteredAndSortedMenus,
-                                  )
-                                : _buildListView(items: filteredAndSortedMenus),
-                      ),
-                    ),
-                    if (_showScrollToTop)
-                      SliverToBoxAdapter(child: SizedBox(height: 72)),
-                  ],
-                ),
+        // Non-scrollable parts (keep these)
+        _buildSearchBar(),
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          height: _showFilters ? null : 0,
+          child: SingleChildScrollView(
+            physics: NeverScrollableScrollPhysics(),
+            child: _buildAdvancedFilters(),
+          ),
         ),
+        _buildSortAndViewOptions(),
+
+        // Content area - REPLACE Expanded with normal widgets that can grow
+        filteredAndSortedMenus.isEmpty
+            ? _buildEmptyState()
+            : _isGridView
+                ? _buildGridView(MediaQuery.of(context).size.width,
+                    items: filteredAndSortedMenus)
+                : _buildListView(items: filteredAndSortedMenus),
       ],
     );
   }
@@ -662,6 +645,13 @@ class _MenuSectionState extends State<MenuSection>
     final spacing = 12.0;
 
     return GridView.builder(
+      // Remove controller to let parent handle scrolling
+      // controller: _scrollController,
+
+      // Change physics to prevent independent scrolling
+      physics: NeverScrollableScrollPhysics(),
+      shrinkWrap: true, // Add this to make grid take only the space it needs
+
       padding: EdgeInsets.all(spacing),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: crossAxisCount,
@@ -1923,26 +1913,21 @@ class _MenuSectionState extends State<MenuSection>
   }
 
   Widget _buildEmptyState() {
-    return CustomScrollView(
-      physics: AlwaysScrollableScrollPhysics(),
-      slivers: [
-        SliverFillRemaining(
-          hasScrollBody: false,
-          child: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.no_meals, size: 64, color: Colors.grey[400]),
-                SizedBox(height: 16),
-                Text(
-                  'No items available in this category',
-                  style: TextStyle(color: Colors.grey[600]),
-                ),
-              ],
-            ),
+    return Container(
+      height: 200, // Give it a reasonable height
+      alignment: Alignment.center,
+      padding: EdgeInsets.all(16),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.no_meals, size: 64, color: Colors.grey[400]),
+          SizedBox(height: 16),
+          Text(
+            'No items available in this category',
+            style: TextStyle(color: Colors.grey[600]),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -1989,19 +1974,20 @@ class _MenuSectionState extends State<MenuSection>
   }
 
   Widget _buildListView({required List<Menu> items}) {
-    _listAnimation.forward();
-    return MediaQuery.removePadding(
-      context: context,
-      removeTop: true,
-      child: ListView.separated(
-        physics: const AlwaysScrollableScrollPhysics(),
-        itemCount: items.length,
-        separatorBuilder: (context, index) => const SizedBox(height: 16),
-        padding: const EdgeInsets.all(16),
-        itemBuilder: (context, index) {
-          return _buildListMenuItem(context, items[index]);
-        },
-      ),
+    return ListView.separated(
+      // Remove controller to let parent handle scrolling
+      // controller: _scrollController,
+
+      // Change physics to prevent independent scrolling
+      physics: NeverScrollableScrollPhysics(),
+      shrinkWrap: true, // Add this to make list take only the space it needs
+
+      itemCount: items.length,
+      separatorBuilder: (context, index) => const SizedBox(height: 16),
+      padding: const EdgeInsets.all(16),
+      itemBuilder: (context, index) {
+        return _buildListMenuItem(context, items[index]);
+      },
     );
   }
 

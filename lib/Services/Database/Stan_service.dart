@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:kantin/Models/Stan_model.dart';
+import 'package:kantin/Models/discount.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class StanService {
@@ -725,54 +726,248 @@ class StanService {
   }
 
   // Check if store should be open right now based on current day and time
-  Future<bool> checkIfStoreIsOpenNow(int stallId) async {
+  // Future<bool> checkIfStoreIsOpenNow(int stallId) async {
+  //   try {
+  //     // Check for manual override first
+  //     final manualOverride = await _client
+  //         .from('stall_schedules')
+  //         .select()
+  //         .eq('stall_id', stallId)
+  //         .eq('day_of_week', 'override')
+  //         .maybeSingle();
+
+  //     // If manual override exists and is active, use its status
+  //     if (manualOverride != null) {
+  //       return manualOverride['is_open'] ?? false;
+  //     }
+
+  //     // Otherwise, check the schedule for the current day
+  //     final now = DateTime.now();
+  //     final currentDay = _getDayOfWeek(now.weekday);
+  //     final currentTime =
+  //         '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:00';
+
+  //     final schedule = await _client
+  //         .from('stall_schedules')
+  //         .select()
+  //         .eq('stall_id', stallId)
+  //         .eq('day_of_week', currentDay)
+  //         .filter('specific_date', 'is', null)
+  //         .maybeSingle();
+
+  //     if (schedule == null) {
+  //       return false; // No schedule found for today
+  //     }
+
+  //     if (!(schedule['is_open'] ?? false)) {
+  //       return false; // Store is closed for this day
+  //     }
+
+  //     final openTime = schedule['open_time'] ?? '00:00:00';
+  //     final closeTime = schedule['close_time'] ?? '23:59:59';
+
+  //     // Check if current time is within operating hours
+  //     return currentTime.compareTo(openTime) >= 0 &&
+  //         currentTime.compareTo(closeTime) <= 0;
+  //   } catch (e) {
+  //     print('Error checking store open status: $e');
+  //     return false; // Default to closed on error
+  //   }
+  // }
+
+  // Helper method to convert weekday number to day string
+
+  Future<String> getNextOpeningInfo(int stallId) async {
     try {
-      // Check for manual override first
-      final manualOverride = await _client
-          .from('stall_schedules')
-          .select()
-          .eq('stall_id', stallId)
-          .eq('day_of_week', 'override')
-          .maybeSingle();
-
-      // If manual override exists and is active, use its status
-      if (manualOverride != null) {
-        return manualOverride['is_open'] ?? false;
-      }
-
-      // Otherwise, check the schedule for the current day
       final now = DateTime.now();
       final currentDay = _getDayOfWeek(now.weekday);
       final currentTime =
           '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:00';
 
-      final schedule = await _client
+      // First check for specific date schedules (holidays, special occasions)
+      final specificSchedules = await _client
           .from('stall_schedules')
-          .select()
+          .select('specific_date, open_time, is_open')
           .eq('stall_id', stallId)
-          .eq('day_of_week', currentDay)
-          .filter('specific_date', 'is', null)
-          .maybeSingle();
+          .not('specific_date', 'is', null)
+          .gte('specific_date', now.toUtc().toIso8601String().split('T')[0])
+          .order('specific_date')
+          .limit(7); // Check next 7 specific dates
 
-      if (schedule == null) {
-        return false; // No schedule found for today
+      // Look for the next open specific date schedule
+      for (final schedule in specificSchedules) {
+        if (schedule['is_open'] == true && schedule['open_time'] != null) {
+          final date = DateTime.parse(schedule['specific_date']);
+          final formattedDate = date.day == now.day &&
+                  date.month == now.month &&
+                  date.year == now.year
+              ? 'Today'
+              : date.day == now.day + 1 &&
+                      date.month == now.month &&
+                      date.year == now.year
+                  ? 'Tomorrow'
+                  : '${_getDayName(date.weekday)}, ${_getMonthName(date.month)} ${date.day}';
+
+          return '$formattedDate at ${_formatTimeString(schedule['open_time'])}';
+        }
       }
 
-      if (!(schedule['is_open'] ?? false)) {
-        return false; // Store is closed for this day
+      // Look through next 7 days for regular schedules
+      for (int i = 0; i < 7; i++) {
+        final checkDate = now.add(Duration(days: i));
+        final checkDay = _getDayOfWeek(checkDate.weekday);
+
+        // Skip today if current time is already past opening time
+        if (i == 0) {
+          final todaySchedule = await _client
+              .from('stall_schedules')
+              .select('open_time, is_open')
+              .eq('stall_id', stallId)
+              .eq('day_of_week', checkDay)
+              .filter('specific_date', 'is', null)
+              .maybeSingle();
+
+          if (todaySchedule != null &&
+              todaySchedule['is_open'] == true &&
+              todaySchedule['open_time'] != null &&
+              currentTime.compareTo(todaySchedule['open_time']) < 0) {
+            // Today is scheduled to open and the opening time hasn't passed yet
+            return 'Today at ${_formatTimeString(todaySchedule['open_time'])}';
+          }
+
+          // If we get here, it means either the store won't open today or it's already past opening time
+          continue;
+        }
+
+        // For future days
+        final daySchedule = await _client
+            .from('stall_schedules')
+            .select('open_time, is_open')
+            .eq('stall_id', stallId)
+            .eq('day_of_week', checkDay)
+            .filter('specific_date', 'is', null)
+            .maybeSingle();
+
+        if (daySchedule != null &&
+            daySchedule['is_open'] == true &&
+            daySchedule['open_time'] != null) {
+          final formattedDay =
+              i == 1 ? 'Tomorrow' : _getDayName(checkDate.weekday);
+          return '$formattedDay at ${_formatTimeString(daySchedule['open_time'])}';
+        }
       }
 
-      final openTime = schedule['open_time'] ?? '00:00:00';
-      final closeTime = schedule['close_time'] ?? '23:59:59';
-
-      // Check if current time is within operating hours
-      return currentTime.compareTo(openTime) >= 0 &&
-          currentTime.compareTo(closeTime) <= 0;
+      // If no opening time found
+      return '';
     } catch (e) {
-      print('Error checking store open status: $e');
-      return false; // Default to closed on error
+      print('Error getting next opening info: $e');
+      return '';
     }
   }
 
-  // Helper method to convert weekday number to day string
+  // Helper methods for formatting
+
+  String _getDayName(int weekday) {
+    switch (weekday) {
+      case 1:
+        return 'Monday';
+      case 2:
+        return 'Tuesday';
+      case 3:
+        return 'Wednesday';
+      case 4:
+        return 'Thursday';
+      case 5:
+        return 'Friday';
+      case 6:
+        return 'Saturday';
+      case 7:
+        return 'Sunday';
+      default:
+        return '';
+    }
+  }
+
+  String _getMonthName(int month) {
+    switch (month) {
+      case 1:
+        return 'January';
+      case 2:
+        return 'February';
+      case 3:
+        return 'March';
+      case 4:
+        return 'April';
+      case 5:
+        return 'May';
+      case 6:
+        return 'June';
+      case 7:
+        return 'July';
+      case 8:
+        return 'August';
+      case 9:
+        return 'September';
+      case 10:
+        return 'October';
+      case 11:
+        return 'November';
+      case 12:
+        return 'December';
+      default:
+        return '';
+    }
+  }
+
+  String _formatTimeString(String timeStr) {
+    // Convert "14:30:00" to "2:30 PM"
+    final parts = timeStr.split(':');
+    if (parts.length < 2) return timeStr;
+
+    int hours = int.tryParse(parts[0]) ?? 0;
+    final minutes = parts[1];
+    final period = hours >= 12 ? 'PM' : 'AM';
+
+    // Convert to 12-hour format
+    hours = hours % 12;
+    if (hours == 0) hours = 12;
+
+    return '$hours:$minutes $period';
+  }
+
+  Future<List<Discount>> getActiveDiscounts(int stallId) async {
+    try {
+      final today = DateTime.now();
+      final formattedToday =
+          "${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}";
+
+      // Query discounts that are currently active
+      final response = await _client
+          .from('discounts')
+          .select()
+          .eq('stall_id', stallId)
+          .eq('is_active', true)
+          .gte('end_date', formattedToday)
+          .lte('start_date', formattedToday)
+          .order('created_at', ascending: false);
+
+      if (response == null) return [];
+
+      // Convert the response to List<Discount>
+      return (response as List)
+          .map((discount) {
+            try {
+              return Discount.fromMap(discount);
+            } catch (e) {
+              print('Error parsing discount: $e');
+              return null;
+            }
+          })
+          .whereType<Discount>()
+          .toList();
+    } catch (e) {
+      print('Error getting active discounts: $e');
+      return []; // Return empty list on error
+    }
+  }
 }

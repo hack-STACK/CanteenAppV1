@@ -172,6 +172,8 @@ class _TrackerScreenState extends State<TrackerScreen> {
                         ImprovedOrdersCard(
                           stallId: widget.stanId!,
                         ),
+                        const SizedBox(height: 44),
+                        // Add more widgets as needed...
                       ],
                     ),
                   ),

@@ -73,15 +73,22 @@ class _BalanceCardWidgetState extends State<BalanceCardWidget>
         (index) => FlSpot(index.toDouble(), data[index]),
       );
 
-      // Check if the data is not empty
+      // Calculate a reasonable max Y value to prevent flat charts
       if (data.isNotEmpty) {
-        // Find the maximum value and ensure it's not zero
+        // Find the maximum value in the dataset
         final maxValue = data.reduce((curr, next) => curr > next ? curr : next);
-        // If maxValue is zero, set _maxY to a minimum default value (like 100)
-        _maxY = maxValue > 0 ? maxValue * 1.2 : 100.0;
+
+        // Use a minimum threshold to prevent flat charts
+        final double minimumYScale =
+            _selectedTimeframe == 'Monthly' || _selectedTimeframe == 'Yearly'
+                ? 100.0 // Higher minimum for monthly/yearly
+                : 10.0; // Lower minimum for daily/weekly
+
+        // Set _maxY to either the actual max value plus 20% margin or the minimum scale
+        _maxY =
+            maxValue > (minimumYScale * 0.8) ? maxValue * 1.2 : minimumYScale;
       } else {
-        // If data is empty, use default value
-        _maxY = 100.0;
+        _maxY = 100.0; // Default value if no data
       }
     });
   }
@@ -139,7 +146,7 @@ class _BalanceCardWidgetState extends State<BalanceCardWidget>
           gridData: FlGridData(
             show: true,
             drawVerticalLine: false,
-            horizontalInterval: _maxY / 5, // This will now never be zero
+            horizontalInterval: _maxY / 4, // Better interval for visualization
             getDrawingHorizontalLine: (value) {
               return FlLine(
                 color: Colors.grey.withOpacity(0.1),
@@ -177,11 +184,16 @@ class _BalanceCardWidgetState extends State<BalanceCardWidget>
           borderData: FlBorderData(show: false),
           minX: 0,
           maxX: (_chartData.length - 1).toDouble(),
-          minY: 0,
+          minY: 0, // Always start from zero
           maxY: _maxY,
           lineBarsData: [
             LineChartBarData(
-              spots: _chartData,
+              spots: _chartData.isEmpty
+                  ? [
+                      const FlSpot(0, 0),
+                      const FlSpot(1, 5)
+                    ] // Default non-flat data
+                  : _chartData,
               isCurved: true,
               color: widget.primaryColor,
               barWidth: 3,

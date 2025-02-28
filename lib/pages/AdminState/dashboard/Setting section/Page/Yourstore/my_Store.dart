@@ -24,6 +24,8 @@ import 'package:kantin/widgets/loading_overlay.dart';
 import 'package:kantin/widgets/addon_dialog.dart';
 import 'package:kantin/widgets/addon_card.dart';
 import 'package:kantin/utils/menu_state_manager.dart';
+import 'package:intl/intl.dart' as intl;
+import 'dart:async';
 
 class MyStorePage extends StatefulWidget {
   final int userId;
@@ -75,9 +77,34 @@ class _MyStorePageState extends State<MyStorePage>
 
   final MenuStateManager _menuStateManager = MenuStateManager();
 
+  // Add these properties at the class level, near other state variables
+  TimeOfDay? _openTime;
+  TimeOfDay? _closeTime;
+  bool _isManuallyOpen = false;
+
+  // Add these variables near other state variables
+  final Map<String, TimeOfDay> _openTimes = {};
+  final Map<String, TimeOfDay> _closeTimes = {};
+  final Map<String, bool> _isDayActive = {};
+  final List<String> _weekdays = [
+    'Mon',
+    'Tue',
+    'Wed',
+    'Thu',
+    'Fri',
+    'Sat',
+    'Sun'
+  ];
+
+  // Add these properties for status indicator
+  Timer? _statusUpdateTimer;
+  String _nextOpeningTime = '';
+  String _closingTime = '';
+  String _todayDayName = '';
+
   Future<void> _handleRefresh() async {
     try {
-      await _initializeStore(); // Changed from _loadStallAndMenus
+      await _initializeStore();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -85,6 +112,7 @@ class _MyStorePageState extends State<MyStorePage>
             duration: Duration(seconds: 1),
           ),
         );
+        _showStoreStatusNotification();
       }
     } catch (e) {
       if (mounted) {
@@ -135,6 +163,13 @@ class _MyStorePageState extends State<MyStorePage>
           _menuAddons = addons;
           _menuStateManager.updateAddons(addons);
         });
+      }
+    });
+
+    // Set up timer to update status periodically
+    _statusUpdateTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (_stall != null && mounted) {
+        _updateStoreTimingInfo();
       }
     });
   }
@@ -252,16 +287,14 @@ class _MyStorePageState extends State<MyStorePage>
     if (!mounted) return;
 
     try {
-      setState(() => _isLoading = true);
+      setState(() {
+        _isLoading = true;
+        _error = null; // Reset any previous errors
+      });
 
       // Load stall data with error handling
       final stall = await _stallService.getStallByUserId(widget.userId);
       if (!mounted) return;
-
-      setState(() {
-        _stall = stall;
-        _isLoading = false;
-      });
 
       // Initialize store service streams
       _storeService.menuStream.listen((menus) {
@@ -292,8 +325,18 @@ class _MyStorePageState extends State<MyStorePage>
         }
       });
 
-      // Load initial data
+      // Load initial data and update UI
       await _storeService.loadMenusForStore(stall.id);
+
+      setState(() {
+        _stall = stall;
+        _isLoading = false;
+      });
+
+      // After loading the stall data, update timing info
+      if (_stall != null && mounted) {
+        await _updateStoreTimingInfo();
+      }
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -303,6 +346,49 @@ class _MyStorePageState extends State<MyStorePage>
       }
     }
   }
+
+  void _showStoreStatusNotification() {
+    if (_stall != null && mounted) {
+      // This will be safe to call after the widget is built
+      Future.delayed(Duration(milliseconds: 500), () {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(
+                  _stall!.isOpen ? Icons.check_circle : Icons.schedule,
+                  color: Colors.white,
+                ),
+                SizedBox(width: 12),
+                Text(
+                  _stall!.isOpen
+                      ? 'Your store is open'
+                      : 'Your store is currently closed',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            backgroundColor: _stall!.isOpen ? Colors.green : Colors.redAccent,
+            duration: Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      });
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    // If we've loaded the stall data but haven't shown the notification yet
+    if (_stall != null && !_isLoading && !_hasShownStatusNotification) {
+      _showStoreStatusNotification();
+      _hasShownStatusNotification = true;
+    }
+  }
+
+  bool _hasShownStatusNotification = false;
 
   Map<String, List<Menu>> _sortMenusByType(List<Menu> menus) {
     final foodMenus = menus.where((menu) => menu.type == 'food').toList();
@@ -346,6 +432,7 @@ class _MyStorePageState extends State<MyStorePage>
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
               _buildHeader(),
+              _buildStoreStatusIndicator(), // Add this new widget
               _buildQuickActions(),
               _buildStats(),
               _buildMenuSection(),
@@ -660,6 +747,12 @@ class _MyStorePageState extends State<MyStorePage>
                     color: primaryColor,
                     onTap: () {/* TODO */},
                   ),
+                  _buildActionButton(
+                    icon: Icons.schedule,
+                    label: 'Hours',
+                    color: Colors.teal,
+                    onTap: () => _showScheduleManagement(),
+                  ),
                 ],
               ),
             ],
@@ -670,68 +763,76 @@ class _MyStorePageState extends State<MyStorePage>
   }
 
   void _showDiscountManagement() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) => StatefulBuilder(
-        builder: (BuildContext context, StateSetter setModalState) {
-          return Container(
-            height: MediaQuery.of(context).size.height * 0.8,
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Manage Discounts',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
+    // Check for expired discounts first
+    _discountService.checkAndDetachExpiredDiscounts().then((_) {
+      // Now show the discount management sheet with updated data
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        builder: (context) => StatefulBuilder(
+          builder: (BuildContext context, StateSetter setModalState) {
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.8,
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Manage Discounts',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
-                    ),
-                    IconButton(
-                      icon: Icon(Icons.add_circle_outline),
-                      onPressed: () => _showAddDiscountDialog(),
-                    ),
-                  ],
-                ),
-                Expanded(
-                  child: FutureBuilder<List<Discount>>(
-                    future: _stall != null
-                        ? _discountService.getDiscountsByStallId(_stall!.id)
-                        : Future.value([]),
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return Center(child: CircularProgressIndicator());
-                      }
-                      if (snapshot.hasError) {
-                        return Center(child: Text('Error: ${snapshot.error}'));
-                      }
-                      if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                        return Center(child: Text('No discounts available'));
-                      }
-
-                      return ListView.builder(
-                        itemCount: snapshot.data!.length,
-                        itemBuilder: (context, index) {
-                          final discount = snapshot.data![index];
-                          return _buildDiscountCard(
-                            discount,
-                            () => setModalState(() {}),
-                          );
-                        },
-                      );
-                    },
+                      IconButton(
+                        icon: Icon(Icons.add_circle_outline),
+                        onPressed: () => _showAddDiscountDialog(),
+                      ),
+                    ],
                   ),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
+                  Expanded(
+                    child: FutureBuilder<List<Discount>>(
+                      future: _stall != null
+                          ? _discountService.getDiscountsByStallId(_stall!.id)
+                          : Future.value([]),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return Center(child: CircularProgressIndicator());
+                        }
+                        if (snapshot.hasError) {
+                          return Center(
+                              child: Text('Error: ${snapshot.error}'));
+                        }
+                        if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                          return Center(child: Text('No discounts available'));
+                        }
+
+                        return ListView.builder(
+                          itemCount: snapshot.data!.length,
+                          itemBuilder: (context, index) {
+                            final discount = snapshot.data![index];
+                            return _buildDiscountCard(
+                              discount,
+                              () => setModalState(() {}),
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      );
+    }).catchError((e) {
+      print('Error checking expired discounts: $e');
+    });
   }
 
   Future<void> _applyDiscountToMenus(Discount discount) async {
@@ -758,11 +859,38 @@ class _MyStorePageState extends State<MyStorePage>
   Widget _buildDiscountCard(Discount discount, VoidCallback refresh) {
     final isWithinDateRange = discount.startDate.isBefore(DateTime.now()) &&
         discount.endDate.isAfter(DateTime.now());
+    final isExpired = discount.isExpired;
 
     return Card(
+      margin: const EdgeInsets.symmetric(vertical: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (isExpired)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.warning_amber_rounded,
+                      color: Colors.red, size: 16),
+                  const SizedBox(width: 8),
+                  Text(
+                    'EXPIRED',
+                    style: TextStyle(
+                      color: Colors.red.shade700,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ListTile(
             title: Text(
               discount.discountName,
@@ -776,36 +904,43 @@ class _MyStorePageState extends State<MyStorePage>
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
-                    color: Theme.of(context).primaryColor,
+                    color: isExpired
+                        ? Colors.grey[600]
+                        : Theme.of(context).primaryColor,
                   ),
                 ),
                 Text(
                   'Valid: ${DateFormat('MMM dd').format(discount.startDate)} - ${DateFormat('MMM dd').format(discount.endDate)}',
-                  style: TextStyle(fontSize: 12),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isExpired ? Colors.grey[500] : Colors.grey[600],
+                  ),
                 ),
               ],
             ),
             trailing: Switch(
               value: discount.isActive,
-              onChanged: (value) async {
-                try {
-                  await _discountService.toggleDiscountStatus(
-                    discount.id,
-                    value,
-                  );
-                  discount.isActive = value;
-                  refresh();
-                } catch (e) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Failed to update status: $e'),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                  }
-                }
-              },
+              onChanged: isExpired
+                  ? null // Disable switch if expired
+                  : (value) async {
+                      try {
+                        await _discountService.toggleDiscountStatus(
+                          discount.id,
+                          value,
+                        );
+                        discount.isActive = value;
+                        refresh();
+                      } catch (e) {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Failed to update status: $e'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      }
+                    },
             ),
           ),
           Padding(
@@ -813,11 +948,21 @@ class _MyStorePageState extends State<MyStorePage>
             child: Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                TextButton.icon(
-                  icon: Icon(Icons.link, size: 18),
-                  label: Text('Apply to Menu'),
-                  onPressed: () => _applyDiscountToMenus(discount),
-                ),
+                if (isExpired)
+                  TextButton.icon(
+                    icon: Icon(Icons.update, size: 18),
+                    label: Text('Update Dates'),
+                    onPressed: () => _editDiscount(discount),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.blue,
+                    ),
+                  )
+                else
+                  TextButton.icon(
+                    icon: Icon(Icons.link, size: 18),
+                    label: Text('Apply to Menu'),
+                    onPressed: () => _applyDiscountToMenus(discount),
+                  ),
                 const SizedBox(width: 8),
                 TextButton.icon(
                   icon: Icon(Icons.edit, size: 18),
@@ -842,13 +987,22 @@ class _MyStorePageState extends State<MyStorePage>
   }
 
   void _editDiscount(Discount discount) {
+    final bool isExpired = discount.isExpired;
+
     showDialog(
       context: context,
       builder: (context) => EditDiscountDialog(
         discount: discount,
+        isExpiredUpdate: isExpired,
         onSave: (updatedDiscount) async {
           try {
             await _discountService.updateDiscount(updatedDiscount);
+
+            // If the discount was expired but now has valid dates, reactivate
+            if (isExpired && !updatedDiscount.isExpired) {
+              await _reactivateExpiredDiscount(updatedDiscount.id);
+            }
+
             Navigator.pop(context); // Close dialog
             Navigator.pop(context); // Close bottom sheet
             _showDiscountManagement(); // Reopen to refresh
@@ -865,31 +1019,46 @@ class _MyStorePageState extends State<MyStorePage>
     );
   }
 
+// Add this helper method for reactivating discount
+  Future<void> _reactivateExpiredDiscount(int discountId) async {
+    try {
+      await _discountService.updateDiscountStatus(discountId, true);
+
+      // Optional: Show a confirmation to the user
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Discount reactivated successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error reactivating discount: $e');
+    }
+  }
+
   void _showAddDiscountDialog() {
+    if (_stall == null) return;
+
     showDialog(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text('Add New Discount'),
+      builder: (context) => AlertDialog(
+        title: const Text('Add New Discount'),
         content: AddDiscountForm(
           stallId: _stall!.id,
           onSave: (discount) async {
             try {
               await _discountService.addDiscount(discount);
-              if (mounted) {
-                Navigator.pop(
-                    dialogContext); // Use dialogContext instead of context
-                Navigator.pop(context); // Close bottom sheet
-                _showDiscountManagement(); // Reopen to refresh
-              }
+              Navigator.pop(context);
+              _showDiscountManagement();
             } catch (e) {
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Failed to add discount: $e'),
-                    backgroundColor: Colors.red,
-                  ),
-                );
-              }
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Failed to add discount: $e'),
+                  backgroundColor: Colors.red,
+                ),
+              );
             }
           },
         ),
@@ -901,7 +1070,7 @@ class _MyStorePageState extends State<MyStorePage>
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Confirm Delete'),
+        title: const Text('Confirm Delete'),
         content: Text('Are you sure you want to delete this discount?'),
         actions: [
           TextButton(
@@ -1225,19 +1394,37 @@ class _MyStorePageState extends State<MyStorePage>
   }
 
   Widget _buildStatusIndicator() {
-    final bool isOpen = true;
+    if (_stall == null) return const SizedBox.shrink();
+
+    final bool isOpen = _stall!.isOpen;
+    final String statusText = isOpen ? 'Open' : 'Closed';
+    final Color statusColor = isOpen ? Colors.green : Colors.red;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: isOpen ? const Color(0xFF4CAF50) : const Color(0xFFE53935),
+        color: statusColor.withOpacity(0.2),
         borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: statusColor.withOpacity(0.5)),
       ),
-      child: Text(
-        isOpen ? 'Open' : 'Closed',
-        style: GoogleFonts.poppins(
-          color: Colors.white,
-          fontWeight: FontWeight.w500,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            isOpen ? Icons.check_circle : Icons.schedule,
+            color: statusColor,
+            size: 14,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            statusText,
+            style: TextStyle(
+              color: statusColor,
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1720,8 +1907,8 @@ class _MyStorePageState extends State<MyStorePage>
             color: Colors.grey[600],
           ),
         ),
-      ],
-    );
+      ], // Added closing bracket for the children list
+    ); // Added closing parenthesis for the Column constructor
   }
 
   Future<void> _toggleMenuAvailability(Menu menu) async {
@@ -2255,12 +2442,903 @@ class _MyStorePageState extends State<MyStorePage>
     }
   }
 
+// Update the _showScheduleManagement method to use the correct approach with stalls table
+  void _showScheduleManagement() {
+    // Create local variables to store schedule data that will be shown in the UI
+    Map<String, Map<String, dynamic>> scheduleDataMap = {};
+    bool isManuallyOpen = false; // Local copy of manual override status
+    bool manualOpenStatus =
+        false; // The actual open/closed status when in manual mode
+
+    // Show loading indicator while fetching data
+    setState(() => _isProcessing = true);
+
+    // Load the initial data then show the bottom sheet
+    _stallService.getCompleteScheduleInfo(_stall!.id).then((completeInfo) {
+      setState(() => _isProcessing = false);
+
+      // Extract regular schedules
+      final List<Map<String, dynamic>> schedules =
+          completeInfo['regularSchedules'] as List<Map<String, dynamic>>;
+
+      // Extract manual override info
+      final Map<String, dynamic> manualOverride =
+          completeInfo['manualOverride'] as Map<String, dynamic>;
+
+      // Set manual override variables - now correctly from stalls table
+      isManuallyOpen = manualOverride['isManuallyOpen'] as bool? ?? false;
+      manualOpenStatus = manualOverride['isOpen'] as bool? ?? false;
+
+      // Initialize scheduleDataMap with the data from the database
+      for (String day in _weekdays) {
+        // Find the schedule for this day
+        final daySchedule = schedules.firstWhere(
+          (s) => s['day_of_week'] == day,
+          orElse: () => {
+            'is_open': false,
+            'open_time': '09:00:00',
+            'close_time': '17:00:00',
+          },
+        );
+
+        scheduleDataMap[day] = Map<String, dynamic>.from(daySchedule);
+      }
+
+      // Now show the bottom sheet with preloaded data
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        builder: (context) => StatefulBuilder(
+          builder: (BuildContext context, StateSetter setModalState) {
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.85,
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Store Hours',
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Day schedule cards - no changes needed here
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: _weekdays.length,
+                      itemBuilder: (context, index) {
+                        // ... existing day schedule builder code ...
+                        final String day = _weekdays[index];
+                        final daySchedule = scheduleDataMap[day]!;
+                        final bool isOpen = daySchedule['is_open'] == true;
+
+                        // Parse time strings to TimeOfDay objects
+                        TimeOfDay parseTimeString(String timeStr) {
+                          final parts = timeStr.split(':');
+                          if (parts.length < 2) {
+                            return TimeOfDay(hour: 9, minute: 0);
+                          }
+                          try {
+                            return TimeOfDay(
+                              hour: int.parse(parts[0]),
+                              minute: int.parse(parts[1]),
+                            );
+                          } catch (e) {
+                            return TimeOfDay(hour: 9, minute: 0);
+                          }
+                        }
+
+                        TimeOfDay openTime = parseTimeString(
+                            daySchedule['open_time'] ?? '09:00:00');
+                        TimeOfDay closeTime = parseTimeString(
+                            daySchedule['close_time'] ?? '17:00:00');
+
+                        return Card(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          _getFullDayName(day),
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 16,
+                                          ),
+                                        ),
+                                        Text(
+                                          isOpen ? 'Open' : 'Closed',
+                                          style: TextStyle(
+                                            color: isOpen
+                                                ? Colors.green
+                                                : Colors.red,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    Switch(
+                                      value: isOpen,
+                                      activeColor: Colors.green,
+                                      onChanged: (bool value) {
+                                        setModalState(() {
+                                          scheduleDataMap[day] = {
+                                            ...scheduleDataMap[day]!,
+                                            'is_open': value,
+                                          };
+                                        });
+                                      },
+                                    ),
+                                  ],
+                                ),
+
+                                // Time picker UI for open days
+                                if (isOpen)
+                                  Column(
+                                    children: [
+                                      const Divider(height: 24),
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: GestureDetector(
+                                              onTap: () async {
+                                                final TimeOfDay? selectedTime =
+                                                    await showTimePicker(
+                                                  context: context,
+                                                  initialTime: openTime,
+                                                );
+
+                                                if (selectedTime != null) {
+                                                  setModalState(() {
+                                                    final String formattedHour =
+                                                        selectedTime.hour
+                                                            .toString()
+                                                            .padLeft(2, '0');
+                                                    final String
+                                                        formattedMinute =
+                                                        selectedTime.minute
+                                                            .toString()
+                                                            .padLeft(2, '0');
+
+                                                    scheduleDataMap[day] = {
+                                                      ...scheduleDataMap[day]!,
+                                                      'open_time':
+                                                          '$formattedHour:$formattedMinute:00',
+                                                    };
+                                                  });
+                                                }
+                                              },
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    'Opening Time',
+                                                    style: TextStyle(
+                                                      color: Colors.grey[600],
+                                                      fontSize: 12,
+                                                    ),
+                                                  ),
+                                                  Container(
+                                                    padding: const EdgeInsets
+                                                        .symmetric(
+                                                        vertical: 12),
+                                                    decoration: BoxDecoration(
+                                                      border: Border(
+                                                        bottom: BorderSide(
+                                                            color: Colors
+                                                                .grey[300]!),
+                                                      ),
+                                                    ),
+                                                    child: Row(
+                                                      children: [
+                                                        Icon(Icons.access_time,
+                                                            color: Colors
+                                                                .grey[600]),
+                                                        const SizedBox(
+                                                            width: 8),
+                                                        Text(openTime
+                                                            .format(context)),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 24),
+                                          Expanded(
+                                            child: GestureDetector(
+                                              onTap: () async {
+                                                final TimeOfDay? selectedTime =
+                                                    await showTimePicker(
+                                                  context: context,
+                                                  initialTime: closeTime,
+                                                );
+
+                                                if (selectedTime != null) {
+                                                  setModalState(() {
+                                                    final String formattedHour =
+                                                        selectedTime.hour
+                                                            .toString()
+                                                            .padLeft(2, '0');
+                                                    final String
+                                                        formattedMinute =
+                                                        selectedTime.minute
+                                                            .toString()
+                                                            .padLeft(2, '0');
+
+                                                    scheduleDataMap[day] = {
+                                                      ...scheduleDataMap[day]!,
+                                                      'close_time':
+                                                          '$formattedHour:$formattedMinute:00',
+                                                    };
+                                                  });
+                                                }
+                                              },
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    'Closing Time',
+                                                    style: TextStyle(
+                                                      color: Colors.grey[600],
+                                                      fontSize: 12,
+                                                    ),
+                                                  ),
+                                                  Container(
+                                                    padding: const EdgeInsets
+                                                        .symmetric(
+                                                        vertical: 12),
+                                                    decoration: BoxDecoration(
+                                                      border: Border(
+                                                        bottom: BorderSide(
+                                                            color: Colors
+                                                                .grey[300]!),
+                                                      ),
+                                                    ),
+                                                    child: Row(
+                                                      children: [
+                                                        Icon(Icons.access_time,
+                                                            color: Colors
+                                                                .grey[600]),
+                                                        const SizedBox(
+                                                            width: 8),
+                                                        Text(closeTime
+                                                            .format(context)),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+
+                  // Manual Override Section - Updated to use stalls table approach
+                  Card(
+                    elevation: 2,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    margin: const EdgeInsets.symmetric(vertical: 16),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Store Status Override',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          SwitchListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(
+                              'Manually Control Store Status',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            subtitle: Text(
+                              'Override scheduled hours',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                            value: isManuallyOpen,
+                            activeColor: accentColor,
+                            onChanged: (bool value) {
+                              setModalState(() {
+                                isManuallyOpen = value;
+                              });
+                            },
+                          ),
+                          if (isManuallyOpen)
+                            SwitchListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: Text(
+                                'Store is currently',
+                                style: TextStyle(fontSize: 14),
+                              ),
+                              subtitle: Text(
+                                manualOpenStatus ? 'OPEN' : 'CLOSED',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: manualOpenStatus
+                                      ? Colors.green
+                                      : Colors.red,
+                                ),
+                              ),
+                              value: manualOpenStatus,
+                              activeColor: Colors.green,
+                              inactiveTrackColor: Colors.red.withOpacity(0.5),
+                              onChanged: (bool value) {
+                                setModalState(() {
+                                  manualOpenStatus = value;
+                                });
+                              },
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  // Save Button
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        try {
+                          setState(() => _isProcessing = true);
+
+                          // Update each day's schedule in the stall_schedules table
+                          for (String day in scheduleDataMap.keys) {
+                            final dayData = scheduleDataMap[day]!;
+                            // Only update if the day already exists in the database or is explicitly marked as open
+                            if (dayData.containsKey('id') ||
+                                dayData['is_open'] == true) {
+                              await _stallService.updateDaySchedule(
+                                  _stall!.id, day, dayData);
+                            }
+                          }
+
+                          // Update the manual override status in the stalls table
+                          await _stallService.updateManualOpenStatus(
+                              _stall!.id, isManuallyOpen);
+
+                          // If manually open, update the current open status according to the switch
+                          if (isManuallyOpen) {
+                            await _stallService.updateStallStatus(
+                                _stall!.id, manualOpenStatus);
+                            setState(() {
+                              _stall =
+                                  _stall!.copyWith(isOpen: manualOpenStatus);
+                            });
+                          } else {
+                            // Otherwise compute open status based on current time and schedule
+                            final shouldBeOpen = await _stallService
+                                .checkIfStoreIsOpenNow(_stall!.id);
+                            await _stallService.updateStallStatus(
+                                _stall!.id, shouldBeOpen);
+                            setState(() {
+                              _stall = _stall!.copyWith(isOpen: shouldBeOpen);
+                            });
+                          }
+
+                          // Update local state
+                          setState(() {
+                            _isManuallyOpen = isManuallyOpen;
+                          });
+
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Schedule saved successfully'),
+                              backgroundColor: Colors.green,
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                        } catch (e) {
+                          print('Error saving schedule: $e');
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Error saving schedule: $e'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        } finally {
+                          if (mounted) {
+                            setState(() => _isProcessing = false);
+                          }
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: primaryColor,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: Text(
+                        'Save Schedule',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      );
+    }).catchError((error) {
+      setState(() => _isProcessing = false);
+      print('Error loading schedule data: $error');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to load schedule data: $error'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    });
+  }
+
+// Helper method to get full day name
+  String _getFullDayName(String shortDay) {
+    switch (shortDay) {
+      case 'Mon':
+        return 'Monday';
+      case 'Tue':
+        return 'Tuesday';
+      case 'Wed':
+        return 'Wednesday';
+      case 'Thu':
+        return 'Thursday';
+      case 'Fri':
+        return 'Friday';
+      case 'Sat':
+        return 'Saturday';
+      case 'Sun':
+        return 'Sunday';
+      default:
+        return shortDay;
+    }
+  }
+
+  // Add this method to update store timing information
+  Future<void> _updateStoreTimingInfo() async {
+    if (_stall == null) return;
+
+    try {
+      // Get current day name
+      final now = DateTime.now();
+      _todayDayName = intl.DateFormat('EEEE').format(now);
+
+      // Get today's schedule
+      final scheduleInfo =
+          await _stallService.getStallSchedulesByDay(_stall!.id);
+      final today = _getDayOfWeek(now.weekday);
+
+      if (scheduleInfo.containsKey(today)) {
+        final todaySchedule = scheduleInfo[today];
+
+        // Format the open and close times for display
+        if (todaySchedule['is_open'] == true) {
+          final openTimeStr =
+              todaySchedule['open_time'] as String? ?? '09:00:00';
+          final closeTimeStr =
+              todaySchedule['close_time'] as String? ?? '17:00:00';
+
+          // Format for display
+          final openFormatted = _formatTimeString(openTimeStr);
+          final closeFormatted = _formatTimeString(closeTimeStr);
+
+          setState(() {
+            _closingTime = closeFormatted;
+
+            // Calculate time until closing
+            final closeParts = closeTimeStr.split(':');
+            if (closeParts.length >= 2) {
+              final closeHour = int.tryParse(closeParts[0]) ?? 17;
+              final closeMinute = int.tryParse(closeParts[1]) ?? 0;
+
+              final closeDateTime = DateTime(
+                  now.year, now.month, now.day, closeHour, closeMinute);
+
+              if (now.isBefore(closeDateTime)) {
+                final remaining = closeDateTime.difference(now);
+                final hours = remaining.inHours;
+                final minutes = remaining.inMinutes % 60;
+
+                if (hours > 0) {
+                  _closingTime =
+                      '$closeFormatted (in $hours hr ${minutes > 0 ? '$minutes min' : ''})';
+                } else {
+                  _closingTime = '$closeFormatted (in $minutes min)';
+                }
+              }
+            }
+          });
+        } else {
+          setState(() {
+            _closingTime = 'Closed today';
+          });
+        }
+      }
+
+      // Find next opening time if currently closed
+      if (!(_stall!.isOpen)) {
+        // Check if we're on manual override
+        if (_stall!.isManuallyOpen) {
+          setState(() {
+            _nextOpeningTime = 'Manual control - schedule overridden';
+          });
+        } else {
+          // Find the next day the store will be open
+          String nextOpenDay = '';
+          String nextOpenTime = '';
+
+          // Check remaining of today first
+          if (_todayDaySchedule(scheduleInfo, today) &&
+              _canStillOpenToday(scheduleInfo[today]['open_time'])) {
+            nextOpenDay = 'Today';
+            nextOpenTime = _formatTimeString(scheduleInfo[today]['open_time']);
+          } else {
+            // Check upcoming days
+            int checkDay = now.weekday;
+            for (int i = 1; i <= 7; i++) {
+              checkDay = (checkDay % 7) +
+                  1; // Move to next day, wrap around after Sunday
+              final dayKey = _getDayOfWeek(checkDay);
+
+              if (_todayDaySchedule(scheduleInfo, dayKey)) {
+                switch (i) {
+                  case 1:
+                    nextOpenDay = 'Tomorrow';
+                    break;
+                  default:
+                    nextOpenDay = intl.DateFormat('EEEE')
+                        .format(now.add(Duration(days: i)));
+                }
+
+                nextOpenTime =
+                    _formatTimeString(scheduleInfo[dayKey]['open_time']);
+                break;
+              }
+            }
+          }
+
+          setState(() {
+            if (nextOpenDay.isNotEmpty) {
+              _nextOpeningTime = '$nextOpenDay at $nextOpenTime';
+            } else {
+              _nextOpeningTime = 'No upcoming opening scheduled';
+            }
+          });
+        }
+      } else {
+        setState(() {
+          _nextOpeningTime = '';
+        });
+      }
+    } catch (e) {
+      print('Error updating store timing info: $e');
+    }
+  }
+
+  // Helper method to check if a day is scheduled to be open
+  bool _todayDaySchedule(Map<String, dynamic> scheduleInfo, String day) {
+    return scheduleInfo.containsKey(day) &&
+        scheduleInfo[day] != null &&
+        scheduleInfo[day]['is_open'] == true;
+  }
+
+  // Check if store can still open later today
+  bool _canStillOpenToday(String openTimeStr) {
+    try {
+      final now = DateTime.now();
+      final parts = openTimeStr.split(':');
+      if (parts.length >= 2) {
+        final openHour = int.tryParse(parts[0]) ?? 9;
+        final openMinute = int.tryParse(parts[1]) ?? 0;
+
+        final openToday =
+            DateTime(now.year, now.month, now.day, openHour, openMinute);
+        return now.isBefore(openToday);
+      }
+      return false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // Add this method to format time string
+  String _formatTimeString(String timeStr) {
+    try {
+      final parts = timeStr.split(':');
+      if (parts.length < 2) return timeStr;
+
+      int hour = int.parse(parts[0]);
+      int minute = int.parse(parts[1]);
+      String period = hour >= 12 ? 'PM' : 'AM';
+
+      hour = hour % 12;
+      hour = hour == 0 ? 12 : hour;
+
+      return '$hour:${minute.toString().padLeft(2, '0')} $period';
+    } catch (e) {
+      return timeStr;
+    }
+  }
+
+  // Add between _buildHeader() and _buildQuickActions()
+  Widget _buildStoreStatusIndicator() {
+    if (_stall == null) return const SizedBox.shrink();
+
+    final bool isOpen = _stall!.isOpen;
+    final bool isManuallyControlled = _stall!.isManuallyOpen;
+
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+        child: Card(
+          elevation: 2,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            children: [
+              // Status indicator
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: isOpen ? Colors.green.shade50 : Colors.red.shade50,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 12,
+                      height: 12,
+                      decoration: BoxDecoration(
+                        color: isOpen ? Colors.green : Colors.red,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: isOpen
+                                ? Colors.green.withOpacity(0.4)
+                                : Colors.red.withOpacity(0.4),
+                            blurRadius: 8,
+                            spreadRadius: 2,
+                          )
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      isOpen ? 'OPEN NOW' : 'CURRENTLY CLOSED',
+                      style: TextStyle(
+                        color: isOpen
+                            ? Colors.green.shade800
+                            : Colors.red.shade800,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                    if (isManuallyControlled)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 8.0),
+                        child: Tooltip(
+                          message: 'Manual override is active',
+                          child: Icon(
+                            Icons.pan_tool,
+                            size: 16,
+                            color: isOpen
+                                ? Colors.green.shade800
+                                : Colors.red.shade800,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+
+              // Store hours info
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  children: [
+                    // Today's hours info
+                    Row(
+                      children: [
+                        Icon(Icons.access_time,
+                            size: 16, color: Colors.grey[600]),
+                        const SizedBox(width: 8),
+                        Text(
+                          isOpen
+                              ? 'Closing at $_closingTime'
+                              : _nextOpeningTime.isNotEmpty
+                                  ? 'Opening $_nextOpeningTime'
+                                  : 'Closed for today',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    // Manual override indicator if active
+                    if (isManuallyControlled)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8.0),
+                        child: Row(
+                          children: [
+                            Icon(Icons.warning, size: 16, color: Colors.amber),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Manual override is active - scheduled hours ignored',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontStyle: FontStyle.italic,
+                                color: Colors.grey[700],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                    // Quick action button
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8.0),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          TextButton.icon(
+                            onPressed: () => _showScheduleManagement(),
+                            icon: Icon(Icons.edit_calendar, size: 16),
+                            label: Text('Manage Hours'),
+                            style: TextButton.styleFrom(
+                              padding: EdgeInsets.symmetric(horizontal: 12),
+                              foregroundColor: Theme.of(context).primaryColor,
+                              visualDensity: VisualDensity.compact,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          OutlinedButton.icon(
+                            onPressed: () => _quickToggleStoreStatus(),
+                            icon: Icon(
+                              isOpen ? Icons.store_mall_directory : Icons.store,
+                              size: 16,
+                            ),
+                            label: Text(isOpen ? 'Close Store' : 'Open Store'),
+                            style: OutlinedButton.styleFrom(
+                              padding: EdgeInsets.symmetric(horizontal: 12),
+                              foregroundColor:
+                                  isOpen ? Colors.red : Colors.green,
+                              side: BorderSide(
+                                color: isOpen ? Colors.red : Colors.green,
+                                width: 1,
+                              ),
+                              visualDensity: VisualDensity.compact,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Add method to quickly toggle store status
+  Future<void> _quickToggleStoreStatus() async {
+    if (_stall == null) return;
+
+    try {
+      setState(() => _isProcessing = true);
+
+      final newStatus = !_stall!.isOpen;
+
+      // Need to enable manual override and set the status
+      await _stallService.updateManualOpenStatus(_stall!.id, true);
+      await _stallService.updateStallStatus(_stall!.id, newStatus);
+
+      setState(() {
+        _stall = _stall!.copyWith(
+          isOpen: newStatus,
+          isManuallyOpen: true,
+        );
+        _isProcessing = false;
+      });
+
+      // Update timing info
+      _updateStoreTimingInfo();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'Store is now ${newStatus ? 'open' : 'closed'} (Manual override)'),
+          backgroundColor: newStatus ? Colors.green : Colors.red,
+        ),
+      );
+    } catch (e) {
+      setState(() => _isProcessing = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to update store status: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   @override
   void dispose() {
+    _statusUpdateTimer?.cancel();
     _storeService.dispose();
     _menuTabController.dispose();
     _scrollController.dispose();
     _menuStateManager.clear();
     super.dispose();
+  }
+
+  // Helper method to convert weekday number to day string
+  String _getDayOfWeek(int weekday) {
+    switch (weekday) {
+      case 1:
+        return 'Mon';
+      case 2:
+        return 'Tue';
+      case 3:
+        return 'Wed';
+      case 4:
+        return 'Thu';
+      case 5:
+        return 'Fri';
+      case 6:
+        return 'Sat';
+      case 7:
+        return 'Sun';
+      default:
+        return 'Mon';
+    }
   }
 }

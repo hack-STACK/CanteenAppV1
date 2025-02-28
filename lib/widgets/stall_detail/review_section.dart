@@ -11,13 +11,13 @@ class ReviewSection extends StatefulWidget {
   final int studentId; // Add this property for the current user
 
   const ReviewSection({
-    Key? key,
+    super.key,
     required this.stall,
     required this.onSeeAllReviews,
     this.showRating = true,
     this.maxReviews = 3,
     required this.studentId, // Make it required
-  }) : super(key: key);
+  });
 
   @override
   State<ReviewSection> createState() => _ReviewSectionState();
@@ -56,8 +56,9 @@ class _ReviewSectionState extends State<ReviewSection> {
     });
 
     try {
-      if (_debugMode)
+      if (_debugMode) {
         print('⏳ Loading reviews for stall ID: ${widget.stall.id}');
+      }
 
       // Load reviews and rating summary concurrently
       _reviewsFuture = ReviewService.getStallReviews(widget.stall.id,

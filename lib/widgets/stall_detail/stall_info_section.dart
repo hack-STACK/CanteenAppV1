@@ -1,9 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:kantin/Models/Stan_model.dart';
 import 'package:kantin/Models/stall_detail_models.dart';
-import 'package:flutter_svg/flutter_svg.dart'; // Add this package dependency
-import 'package:kantin/utils/time_utils.dart'; // Import time utilities
+import 'package:kantin/Services/Database/Stan_service.dart';
 
 class StallInfoSection extends StatefulWidget {
   final Stan stall;
@@ -14,14 +15,14 @@ class StallInfoSection extends StatefulWidget {
   final double stallRating;
 
   const StallInfoSection({
-    Key? key,
+    super.key,
     required this.stall,
     required this.metrics,
     required this.paymentMethods,
     required this.scheduleByDay,
     required this.amenities,
     this.stallRating = 0.0,
-  }) : super(key: key);
+  });
 
   @override
   State<StallInfoSection> createState() => _StallInfoSectionState();
@@ -29,20 +30,31 @@ class StallInfoSection extends StatefulWidget {
 
 class _StallInfoSectionState extends State<StallInfoSection>
     with SingleTickerProviderStateMixin {
-  bool _showFullSchedule = false;
+  final bool _showFullSchedule = false;
   bool _showFullDescription = false;
   late TabController _tabController;
   final List<String> _tabs = ['Info', 'Hours', 'Amenities', 'Payments'];
   bool _showFloatingHeader = false;
   final ScrollController _scrollController = ScrollController();
 
+  final StanService _stallService = StanService();
+  bool _isScheduleLoading = false;
+  Map<String, dynamic>? _databaseSchedule;
+  String? _nextOpeningTime;
+  Timer? _scheduleRefreshTimer;
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: _tabs.length, vsync: this);
-
-    // Add scroll listener for floating header effect
     _scrollController.addListener(_onScroll);
+
+    _fetchStallSchedule();
+    _scheduleRefreshTimer = Timer.periodic(const Duration(minutes: 5), (_) {
+      if (mounted) {
+        _fetchStallSchedule();
+      }
+    });
   }
 
   @override
@@ -50,6 +62,7 @@ class _StallInfoSectionState extends State<StallInfoSection>
     _tabController.dispose();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
+    _scheduleRefreshTimer?.cancel();
     super.dispose();
   }
 
@@ -60,15 +73,111 @@ class _StallInfoSectionState extends State<StallInfoSection>
     }
   }
 
+  Future<void> _fetchStallSchedule() async {
+    if (!mounted) return;
+
+    setState(() => _isScheduleLoading = true);
+
+    try {
+      final scheduleData =
+          await _stallService.getStallSchedulesByDay(widget.stall.id);
+
+      if (!widget.stall.isScheduleOpen()) {
+        _nextOpeningTime =
+            await _stallService.getNextOpeningInfo(widget.stall.id);
+      } else {
+        _nextOpeningTime = null;
+      }
+
+      if (mounted) {
+        setState(() {
+          _databaseSchedule = scheduleData;
+          _isScheduleLoading = false;
+        });
+      }
+    } catch (e) {
+      print('Error fetching stall schedule: $e');
+      if (mounted) {
+        setState(() => _isScheduleLoading = false);
+      }
+    }
+  }
+
+  String _getFormattedHoursForDay(String day) {
+    if (_databaseSchedule != null && _databaseSchedule!.containsKey(day)) {
+      final daySchedule = _databaseSchedule![day];
+
+      if (daySchedule['is_open'] != true) {
+        return 'Closed';
+      }
+
+      final openTime =
+          _formatDatabaseTimeString(daySchedule['open_time'] ?? '09:00:00');
+      final closeTime =
+          _formatDatabaseTimeString(daySchedule['close_time'] ?? '17:00:00');
+
+      return '$openTime - $closeTime';
+    }
+
+    final dayOfWeek = _getDayOfWeekFromName(day);
+    return widget.scheduleByDay[dayOfWeek] ?? 'Hours not set';
+  }
+
+  String _formatDatabaseTimeString(String timeStr) {
+    try {
+      final parts = timeStr.split(':');
+      if (parts.length < 2) return timeStr;
+
+      int hour = int.parse(parts[0]);
+      int minute = int.parse(parts[1]);
+      String period = hour >= 12 ? 'PM' : 'AM';
+
+      hour = hour % 12;
+      hour = hour == 0 ? 12 : hour;
+
+      return '$hour:${minute.toString().padLeft(2, '0')} $period';
+    } catch (e) {
+      return timeStr;
+    }
+  }
+
+  String _getDayOfWeekFromName(String shortName) {
+    switch (shortName.toLowerCase()) {
+      case 'mon':
+        return 'Monday';
+      case 'tue':
+        return 'Tuesday';
+      case 'wed':
+        return 'Wednesday';
+      case 'thu':
+        return 'Thursday';
+      case 'fri':
+        return 'Friday';
+      case 'sat':
+        return 'Saturday';
+      case 'sun':
+        return 'Sunday';
+      default:
+        return shortName;
+    }
+  }
+
+  bool _isOpenOnDay(String day) {
+    if (_databaseSchedule != null && _databaseSchedule!.containsKey(day)) {
+      return _databaseSchedule![day]['is_open'] == true;
+    }
+
+    final dayOfWeek = _getDayOfWeekFromName(day);
+    return widget.scheduleByDay[dayOfWeek] != 'Closed';
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final bool isStallClosed = !widget.stall.isCurrentlyOpen(); // Add this line
 
     return Stack(
       children: [
-        // Main Content
         Container(
           decoration: BoxDecoration(
             color: Colors.white,
@@ -85,12 +194,7 @@ class _StallInfoSectionState extends State<StallInfoSection>
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Column(
             children: [
-              // Add stall closed notification if applicable
-              if (isStallClosed) _buildStallClosedNotification(),
-              // Header section with stall info and metrics
               _buildHeaderSection(colorScheme),
-
-              // Tabs
               Container(
                 decoration: BoxDecoration(
                   border: Border(
@@ -114,10 +218,8 @@ class _StallInfoSectionState extends State<StallInfoSection>
                   ),
                 ),
               ),
-
-              // Tab content
               SizedBox(
-                height: 350, // Fixed height for tab content
+                height: 350,
                 child: TabBarView(
                   controller: _tabController,
                   children: [
@@ -131,8 +233,6 @@ class _StallInfoSectionState extends State<StallInfoSection>
             ],
           ),
         ),
-
-        // Floating header when scrolled
         if (_showFloatingHeader)
           AnimatedOpacity(
             opacity: _showFloatingHeader ? 1.0 : 0.0,
@@ -194,87 +294,15 @@ class _StallInfoSectionState extends State<StallInfoSection>
     );
   }
 
-  // Add this new method
-  Widget _buildStallClosedNotification() {
-    final nextOpeningInfo = TimeUtils.getNextOpeningTime(widget.stall);
-    final closedReason = widget.stall.getClosedReason();
-    final isManualClosure = !widget.stall.isManuallyOpen;
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: Colors.red.shade50,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        border: Border.all(color: Colors.red.shade200),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.red.shade100,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              isManualClosure ? Icons.store_mall_directory : Icons.access_time,
-              color: Colors.red.shade700,
-              size: 24,
-            ),
-          ),
-          SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'This stall is currently CLOSED',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.red.shade700,
-                  ),
-                  softWrap: true,
-                ),
-                Text(
-                  isManualClosure
-                      ? 'The vendor has closed this stall for today'
-                      : 'Outside regular business hours',
-                  style: TextStyle(
-                    color: Colors.red.shade700,
-                  ),
-                  softWrap: true,
-                ),
-                if (nextOpeningInfo != null && !isManualClosure)
-                  Text(
-                    'Opens ${nextOpeningInfo.timeDescription}',
-                    style: TextStyle(
-                      color: Colors.red.shade700,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildHeaderSection(ColorScheme colorScheme) {
-    final bool isStallClosed = !widget.stall.isCurrentlyOpen(); // Add this line
-
     return Container(
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Stall header with image and name
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Stall image with animated border
               Container(
                 width: 80,
                 height: 80,
@@ -319,10 +347,7 @@ class _StallInfoSectionState extends State<StallInfoSection>
                         ),
                 ),
               ),
-
               const SizedBox(width: 16),
-
-              // Stall name and rating
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -335,20 +360,15 @@ class _StallInfoSectionState extends State<StallInfoSection>
                       ),
                     ),
                     const SizedBox(height: 8),
-
-                    // Status indicator (open/closed)
                     _buildOpenStatusBadge(),
-
                     const SizedBox(height: 8),
-
-                    // Rating display with stars
                     if (widget.stallRating > 0)
                       Row(
                         children: [
                           _buildRatingStars(widget.stallRating),
                           const SizedBox(width: 8),
                           Text(
-                            '${widget.stallRating.toStringAsFixed(1)}',
+                            widget.stallRating.toStringAsFixed(1),
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               color: Colors.grey[700],
@@ -361,12 +381,8 @@ class _StallInfoSectionState extends State<StallInfoSection>
               ),
             ],
           ),
-
           const SizedBox(height: 24),
-
-          // Description section (if any)
-          if (widget.stall.description != null &&
-              widget.stall.description!.isNotEmpty)
+          if (widget.stall.description.isNotEmpty)
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -391,47 +407,7 @@ class _StallInfoSectionState extends State<StallInfoSection>
                 ],
               ),
             ),
-
           const SizedBox(height: 24),
-
-          // Operating hours summary if stall is closed
-          if (isStallClosed &&
-              widget.stall.openTime != null &&
-              widget.stall.closeTime != null)
-            Container(
-              padding: EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade50,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.grey.shade200),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.schedule, color: Colors.grey.shade700),
-                  SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Regular Hours',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.grey.shade700,
-                        ),
-                      ),
-                      Text(
-                        '${_formatTime(widget.stall.openTime!)} - ${_formatTime(widget.stall.closeTime!)}',
-                        style: TextStyle(color: Colors.grey.shade600),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-
-          const SizedBox(height: 24),
-
-          // Metrics row
           _buildEnhancedMetricsRow(),
         ],
       ),
@@ -461,8 +437,33 @@ class _StallInfoSectionState extends State<StallInfoSection>
   }
 
   Widget _buildOpenStatusBadge() {
-    final isOpen = widget.stall.isCurrentlyOpen();
-    final isManualClosure = !widget.stall.isManuallyOpen;
+    final now = DateTime.now();
+    final currentTime = TimeOfDay.fromDateTime(now);
+    final currentDay = DateFormat('EEEE').format(now);
+
+    final todaySchedule = widget.scheduleByDay[currentDay] ?? 'Closed';
+
+    bool isOpen = false;
+    if (todaySchedule != 'Closed') {
+      try {
+        final times = todaySchedule.split(' - ');
+        if (times.length == 2) {
+          final openTime = _parseTimeString(times[0]);
+          final closeTime = _parseTimeString(times[1]);
+
+          if (openTime != null && closeTime != null) {
+            final currentMinutes = currentTime.hour * 60 + currentTime.minute;
+            final openMinutes = openTime.hour * 60 + openTime.minute;
+            final closeMinutes = closeTime.hour * 60 + closeTime.minute;
+
+            isOpen =
+                currentMinutes >= openMinutes && currentMinutes <= closeMinutes;
+          }
+        }
+      } catch (e) {
+        print('Error parsing schedule time: $e');
+      }
+    }
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -481,15 +482,24 @@ class _StallInfoSectionState extends State<StallInfoSection>
             width: 8,
             height: 8,
             decoration: BoxDecoration(
+              color: isOpen ? Colors.green[500] : Colors.red[500],
               shape: BoxShape.circle,
-              color: isOpen ? Colors.green[600] : Colors.red[600],
+              boxShadow: [
+                BoxShadow(
+                  color: (isOpen ? Colors.green[500] : Colors.red[500])!
+                      .withOpacity(0.4),
+                  blurRadius: 4,
+                  spreadRadius: 1,
+                ),
+              ],
             ),
           ),
           const SizedBox(width: 8),
           Text(
-            isOpen ? 'Open Now' : (isManualClosure ? 'Closed Today' : 'Closed'),
+            isOpen ? 'Open Now' : 'Closed',
             style: TextStyle(
-              fontWeight: FontWeight.bold,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
               color: isOpen ? Colors.green[700] : Colors.red[700],
             ),
           ),
@@ -615,14 +625,12 @@ class _StallInfoSectionState extends State<StallInfoSection>
     );
   }
 
-  // Tab Content Builders
   Widget _buildInfoTab() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Stall details card
           _buildInfoCard(
             title: 'Stall Information',
             icon: Icons.info_outline,
@@ -637,10 +645,7 @@ class _StallInfoSectionState extends State<StallInfoSection>
               ],
             ),
           ),
-
           const SizedBox(height: 16),
-
-          // Today's schedule card
           _buildInfoCard(
             title: 'Today\'s Schedule',
             icon: Icons.schedule,
@@ -651,10 +656,7 @@ class _StallInfoSectionState extends State<StallInfoSection>
               ],
             ),
           ),
-
           const SizedBox(height: 16),
-
-          // Popular items card
           _buildInfoCard(
             title: 'Popular Items',
             icon: Icons.trending_up,
@@ -747,28 +749,31 @@ class _StallInfoSectionState extends State<StallInfoSection>
   }
 
   Widget _buildTodaySchedule() {
-    final today = DateFormat('EEEE').format(DateTime.now());
-    final todaySchedule = widget.scheduleByDay[today] ?? 'Closed';
+    final now = DateTime.now();
+    final today = DateFormat('EEEE').format(now);
+    final shortToday = _getShortDayName(today);
 
-    // Use the stall's actual status instead of calculating independently
-    final isOpen = widget.stall.isCurrentlyOpen();
-    final isManualClosure = !widget.stall.isManuallyOpen;
+    final String todaySchedule = _getFormattedHoursForDay(shortToday);
+    final bool isOpen = _isOpenOnDay(shortToday);
 
-    // Calculate remaining time if open
     String remainingTime = '';
+    String closeTimeStr = ''; // Declare closeTimeStr outside the try block
+
     if (isOpen && todaySchedule != 'Closed') {
       try {
-        final times = todaySchedule.split(' - ');
-        if (times.length == 2) {
-          final closeTime = _parseTimeString(times[1]);
-          if (closeTime != null) {
-            final now = TimeOfDay.now();
-            final currentMinutes = now.hour * 60 + now.minute;
-            final closeMinutes = closeTime.hour * 60 + closeTime.minute;
-            final remainingMinutes = closeMinutes - currentMinutes;
+        closeTimeStr =
+            todaySchedule.split(' - ').last; // Assign value inside try
+        final closeTime = _parseTimeString(closeTimeStr);
+        if (closeTime != null) {
+          final currentTime = TimeOfDay.now();
 
-            final hours = remainingMinutes ~/ 60;
-            final minutes = remainingMinutes % 60;
+          final currentMinutes = currentTime.hour * 60 + currentTime.minute;
+          final closeMinutes = closeTime.hour * 60 + closeTime.minute;
+
+          if (closeMinutes > currentMinutes) {
+            final remaining = closeMinutes - currentMinutes;
+            final hours = remaining ~/ 60;
+            final minutes = remaining % 60;
 
             if (hours > 0) {
               remainingTime = '$hours hr ${minutes > 0 ? '$minutes min' : ''}';
@@ -782,10 +787,6 @@ class _StallInfoSectionState extends State<StallInfoSection>
       }
     }
 
-    // Get next opening info if closed
-    final nextOpeningInfo =
-        isOpen ? null : TimeUtils.getNextOpeningTime(widget.stall);
-
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -796,8 +797,6 @@ class _StallInfoSectionState extends State<StallInfoSection>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            crossAxisAlignment:
-                CrossAxisAlignment.start, // Add this to align tops
             children: [
               Container(
                 padding: const EdgeInsets.all(8),
@@ -806,48 +805,40 @@ class _StallInfoSectionState extends State<StallInfoSection>
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
-                  isOpen
-                      ? Icons.check_circle
-                      : (isManualClosure
-                          ? Icons.store_mall_directory
-                          : Icons.access_time),
+                  isOpen ? Icons.check_circle : Icons.access_time,
                   color: isOpen ? Colors.green[700] : Colors.red[700],
                   size: 20,
                 ),
               ),
               const SizedBox(width: 12),
-              // Wrap this Column in Expanded to prevent overflow
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      isOpen
-                          ? 'Open Now'
-                          : (isManualClosure ? 'Closed Today' : 'Closed Now'),
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                        color: isOpen ? Colors.green[700] : Colors.red[700],
-                      ),
-                      overflow: TextOverflow.ellipsis, // Add this
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    isOpen ? 'Open Now' : 'Closed Now',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: isOpen ? Colors.green[700] : Colors.red[700],
                     ),
-                    Text(
-                      isOpen
-                          ? 'Closes in $remainingTime'
-                          : (isManualClosure
-                              ? 'The vendor has closed this stall for today'
-                              : (nextOpeningInfo != null
-                                  ? 'Opens ${nextOpeningInfo.timeDescription}'
-                                  : 'Opens tomorrow')),
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: isOpen ? Colors.green[700] : Colors.red[700],
-                      ),
-                      overflow: TextOverflow.ellipsis, // Add this
+                  ),
+                  Text(
+                    isOpen
+                        ? remainingTime.isNotEmpty
+                            ? 'Closes in $remainingTime'
+                            : closeTimeStr.isNotEmpty
+                                ? 'Open until $closeTimeStr'
+                                : 'Open today'
+                        : _nextOpeningTime != null &&
+                                _nextOpeningTime!.isNotEmpty
+                            ? 'Opens $_nextOpeningTime'
+                            : 'Closed for today',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: isOpen ? Colors.green[700] : Colors.red[700],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -869,37 +860,42 @@ class _StallInfoSectionState extends State<StallInfoSection>
                 color: isOpen ? Colors.green[200]! : Colors.red[200]!,
               ),
             ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    todaySchedule,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w500,
-                      color: isOpen ? Colors.green[800] : Colors.red[800],
-                    ),
-                  ),
-                ),
-                if (isManualClosure)
-                  Container(
-                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: Colors.red[50],
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: Colors.red[200]!),
-                    ),
-                    child: Text(
-                      'Vendor Closed',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.red[700],
-                      ),
-                    ),
-                  ),
-              ],
+            child: Text(
+              todaySchedule,
+              style: TextStyle(
+                fontWeight: FontWeight.w500,
+                color: isOpen ? Colors.green[800] : Colors.red[800],
+              ),
             ),
           ),
+          if (widget.stall.isManuallyOpen)
+            Padding(
+              padding: const EdgeInsets.only(top: 12.0),
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.pan_tool, size: 14, color: Colors.orange[700]),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Store hours are manually controlled',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.orange[800],
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -928,8 +924,6 @@ class _StallInfoSectionState extends State<StallInfoSection>
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(15),
                 child: Icon(Icons.fastfood, color: Colors.orange[400]),
-                // Replace with actual image if available:
-                // Image.asset(iconPath, fit: BoxFit.contain),
               ),
             ),
             const SizedBox(width: 8),
@@ -962,139 +956,215 @@ class _StallInfoSectionState extends State<StallInfoSection>
 
   Widget _buildHoursTab(ColorScheme colorScheme) {
     final today = DateFormat('EEEE').format(DateTime.now());
-    final schedules = widget.scheduleByDay.entries.toList();
+    final shortToday = _getShortDayName(today);
 
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        // Week view visualizer
-        _buildWeekVisualizerCard(),
+    final days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-        const SizedBox(height: 20),
-
-        // Week schedule details
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.03),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-            border: Border.all(color: Colors.grey[200]!),
-          ),
-          child: Column(
+    return _isScheduleLoading
+        ? _buildLoadingHoursTab()
+        : ListView(
+            padding: const EdgeInsets.all(16),
             children: [
+              _buildWeekVisualizerCard(days, shortToday),
+              const SizedBox(height: 20),
               Container(
-                padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: colorScheme.primary.withOpacity(0.05),
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(16),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.access_time,
-                      size: 20,
-                      color: colorScheme.primary,
-                    ),
-                    const SizedBox(width: 10),
-                    Text(
-                      'Weekly Hours',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                        color: colorScheme.primary,
-                      ),
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.03),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
                     ),
                   ],
+                  border: Border.all(color: Colors.grey[200]!),
                 ),
-              ),
-              ...schedules.map((entry) {
-                bool isToday = entry.key == today;
-                return Container(
-                  decoration: BoxDecoration(
-                    color:
-                        isToday ? colorScheme.primary.withOpacity(0.04) : null,
-                    border: !isToday
-                        ? Border(
-                            bottom: BorderSide(color: Colors.grey[200]!),
-                          )
-                        : null,
-                  ),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                  child: Row(
-                    children: [
-                      // Day label
-                      SizedBox(
-                        width: 100,
+                child: Column(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: colorScheme.primary.withOpacity(0.05),
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(16),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.access_time,
+                            size: 20,
+                            color: colorScheme.primary,
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            'Weekly Hours',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: colorScheme.primary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    ...days.map((shortDay) {
+                      final dayName = _getDayOfWeekFromName(shortDay);
+                      final isToday = dayName == today;
+                      final hours = _getFormattedHoursForDay(shortDay);
+
+                      return Container(
+                        decoration: BoxDecoration(
+                          color: isToday
+                              ? colorScheme.primary.withOpacity(0.04)
+                              : null,
+                          border: !isToday
+                              ? Border(
+                                  bottom: BorderSide(color: Colors.grey[200]!),
+                                )
+                              : null,
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
                         child: Row(
                           children: [
-                            if (isToday)
-                              Container(
-                                width: 10,
-                                height: 10,
-                                margin: const EdgeInsets.only(right: 8),
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: colorScheme.primary,
+                            SizedBox(
+                              width: 100,
+                              child: Row(
+                                children: [
+                                  if (isToday)
+                                    Container(
+                                      width: 10,
+                                      height: 10,
+                                      margin: const EdgeInsets.only(right: 8),
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: colorScheme.primary,
+                                      ),
+                                    ),
+                                  Text(
+                                    shortDay,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      color: isToday
+                                          ? colorScheme.primary
+                                          : Colors.grey[700],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                hours,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                  color: isToday
+                                      ? colorScheme.primary
+                                      : Colors.grey[800],
                                 ),
                               ),
-                            Text(
-                              entry.key.substring(0, 3),
-                              style: TextStyle(
-                                fontWeight: FontWeight.w600,
-                                color: isToday
-                                    ? colorScheme.primary
-                                    : Colors.grey[700],
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                    if (widget.stall.isManuallyOpen)
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        margin: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border:
+                              Border.all(color: Colors.orange.withOpacity(0.3)),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.info_outline,
+                                color: Colors.orange, size: 16),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'This store is manually controlled by the owner and may open or close regardless of scheduled hours.',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.orange[800],
+                                ),
                               ),
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          entry.value,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w500,
-                            color: isToday
-                                ? colorScheme.primary
-                                : Colors.grey[800],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(),
+                  ],
+                ),
+              ),
             ],
+          );
+  }
+
+  Widget _buildLoadingHoursTab() {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Container(
+          height: 150,
+          decoration: BoxDecoration(
+            color: Colors.grey[200],
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+        const SizedBox(height: 20),
+        Container(
+          height: 300,
+          decoration: BoxDecoration(
+            color: Colors.grey[200],
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(),
+                const SizedBox(height: 16),
+                Text(
+                  'Loading schedule...',
+                  style: TextStyle(color: Colors.grey[600]),
+                ),
+              ],
+            ),
           ),
         ),
       ],
     );
   }
 
-  Widget _buildWeekVisualizerCard() {
-    final today = DateFormat('EEEE').format(DateTime.now());
-    final days = [
-      'Monday',
-      'Tuesday',
-      'Wednesday',
-      'Thursday',
-      'Friday',
-      'Saturday',
-      'Sunday'
-    ];
+  String _getShortDayName(String fullDay) {
+    switch (fullDay) {
+      case 'Monday':
+        return 'Mon';
+      case 'Tuesday':
+        return 'Tue';
+      case 'Wednesday':
+        return 'Wed';
+      case 'Thursday':
+        return 'Thu';
+      case 'Friday':
+        return 'Fri';
+      case 'Saturday':
+        return 'Sat';
+      case 'Sunday':
+        return 'Sun';
+      default:
+        return fullDay.substring(0, 3);
+    }
+  }
 
+  Widget _buildWeekVisualizerCard(List<String> days, String today) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 16),
       decoration: BoxDecoration(
@@ -1126,6 +1196,14 @@ class _StallInfoSectionState extends State<StallInfoSection>
                     color: Theme.of(context).primaryColor,
                   ),
                 ),
+                const Spacer(),
+                IconButton(
+                  icon: Icon(Icons.refresh, size: 16),
+                  onPressed: _fetchStallSchedule,
+                  tooltip: 'Refresh schedule',
+                  padding: EdgeInsets.zero,
+                  constraints: BoxConstraints.tightFor(width: 24, height: 24),
+                ),
               ],
             ),
           ),
@@ -1136,8 +1214,8 @@ class _StallInfoSectionState extends State<StallInfoSection>
             child: Row(
               children: days.map((day) {
                 final isToday = day == today;
-                final schedule = widget.scheduleByDay[day] ?? 'Closed';
-                final isOpen = schedule != 'Closed';
+                final isOpen = _isOpenOnDay(day);
+                final hours = _getFormattedHoursForDay(day);
 
                 return Container(
                   width: 80,
@@ -1156,7 +1234,6 @@ class _StallInfoSectionState extends State<StallInfoSection>
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Day header with today indicator
                       Container(
                         padding: const EdgeInsets.symmetric(vertical: 8),
                         decoration: BoxDecoration(
@@ -1170,7 +1247,7 @@ class _StallInfoSectionState extends State<StallInfoSection>
                         width: double.infinity,
                         alignment: Alignment.center,
                         child: Text(
-                          day.substring(0, 3),
+                          day,
                           style: TextStyle(
                             color: isToday ? Colors.white : Colors.grey[700],
                             fontWeight: FontWeight.w600,
@@ -1178,7 +1255,6 @@ class _StallInfoSectionState extends State<StallInfoSection>
                           ),
                         ),
                       ),
-                      // Status indicator
                       Padding(
                         padding: const EdgeInsets.all(12),
                         child: Column(
@@ -1206,7 +1282,7 @@ class _StallInfoSectionState extends State<StallInfoSection>
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              isOpen ? schedule : '',
+                              isOpen ? hours.split(' - ').join('\n') : '',
                               style: TextStyle(
                                 color: Colors.grey[600],
                                 fontSize: 11,
@@ -1461,7 +1537,6 @@ class _StallInfoSectionState extends State<StallInfoSection>
     );
   }
 
-  // Helper method to get payment descriptions
   String _getPaymentDescription(String method) {
     switch (method.toLowerCase()) {
       case 'cash':
@@ -1479,9 +1554,7 @@ class _StallInfoSectionState extends State<StallInfoSection>
     }
   }
 
-  // Parse time string to TimeOfDay object - already exists in code
   TimeOfDay? _parseTimeString(String timeStr) {
-    // ...existing implementation...
     try {
       final parts = timeStr.split(':');
       if (parts.length != 2) return null;
@@ -1495,8 +1568,6 @@ class _StallInfoSectionState extends State<StallInfoSection>
       return null;
     }
   }
-
-  // Add the missing helper methods
 
   IconData _getAmenityIcon(String amenity) {
     switch (amenity.toLowerCase()) {
@@ -1553,19 +1624,5 @@ class _StallInfoSectionState extends State<StallInfoSection>
       default:
         return Colors.grey;
     }
-  }
-
-  // The rest of the methods are already implemented in the existing code
-  // ...existing code...
-
-  // Add or update the format time method to ensure it's consistent
-  String _formatTime(TimeOfDay time) {
-    final hour = time.hour > 12
-        ? time.hour - 12
-        : time.hour == 0
-            ? 12
-            : time.hour;
-    final period = time.hour >= 12 ? 'PM' : 'AM';
-    return '$hour:${time.minute.toString().padLeft(2, '0')} $period';
   }
 }

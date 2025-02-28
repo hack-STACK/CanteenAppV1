@@ -446,4 +446,53 @@ class DiscountService {
       return null;
     }
   }
+
+  Future<void> checkAndDetachExpiredDiscounts() async {
+    try {
+      _logDebug('Checking for expired discounts...');
+      final now = DateTime.now().toIso8601String();
+
+      // Find expired discounts
+      final expiredDiscountsResponse =
+          await _client.from('discounts').select('id').lt('end_date', now);
+
+      if (expiredDiscountsResponse.isEmpty) {
+        _logDebug('No expired discounts found');
+        return;
+      }
+
+      final expiredDiscountIds =
+          expiredDiscountsResponse.map((d) => d['id'] as int).toList();
+
+      _logDebug('Found ${expiredDiscountIds.length} expired discounts');
+
+      // Deactivate all menu associations for these expired discounts
+      final result = await _client.from('menu_discounts').update(
+          {'is_active': false}).inFilter('id_discount', expiredDiscountIds);
+
+      _logDebug('Deactivated menu associations for expired discounts');
+
+      // Also mark the discounts themselves as inactive
+      await _client
+          .from('discounts')
+          .update({'is_active': false}).inFilter('id', expiredDiscountIds);
+
+      _logDebug('Marked expired discounts as inactive');
+    } catch (e, stackTrace) {
+      _logDebug('Error in checkAndDetachExpiredDiscounts: $e\n$stackTrace');
+    }
+  }
+
+  Future<void> updateDiscountStatus(int discountId, bool newStatus) async {
+    try {
+      _logDebug('Setting discount $discountId active status to $newStatus');
+
+      await _client
+          .from('discounts')
+          .update({'is_active': newStatus}).eq('id', discountId);
+    } catch (e) {
+      _logDebug('Error updating discount status: $e');
+      throw Exception('Failed to update discount status: $e');
+    }
+  }
 }

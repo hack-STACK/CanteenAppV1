@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:carousel_slider/carousel_slider.dart';
 import 'package:kantin/Component/my_drawer.dart';
 import 'package:kantin/Component/my_stall_tile.dart';
 import 'package:kantin/Models/Stan_model.dart';
@@ -11,16 +10,15 @@ import 'package:kantin/Services/Database/Stan_service.dart';
 import 'package:kantin/Services/Database/UserService.dart';
 import 'package:kantin/pages/StudentState/Stalldetailpage.dart';
 import 'package:kantin/utils/avatar_generator.dart';
-import 'package:kantin/utils/banner_generator.dart';
 import 'package:kantin/Services/Database/studentService.dart';
 import 'package:kantin/widgets/home/featured_promos.dart';
 import 'package:kantin/widgets/home/food_category_bar.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 // Add this import
 import 'package:kantin/widgets/search_bar_delegate.dart';
-import 'package:kantin/widgets/student/student_profile_header.dart';
 import 'package:kantin/widgets/shimmer/shimmer_loading.dart'; // Add this import
-import 'package:kantin/widgets/stall/stall_status_badge.dart';
+import 'package:intl/intl.dart'; // Add this for date formatting
+import 'package:kantin/widgets/stall_status_indicator.dart';
 
 class StudentPage extends StatefulWidget {
   const StudentPage({super.key});
@@ -34,22 +32,23 @@ class _HomepageState extends State<StudentPage>
   final StanService _stanService = StanService();
   final StudentService _studentService = StudentService();
   final AuthService _authService = AuthService();
-  final UserService _userService = UserService(); // Add this line
+  final UserService _userService = UserService();
   List<Stan> _stalls = [];
   List<Stan> _popularStalls = [];
+  // Add schedule information maps
+  Map<int, Map<String, dynamic>> _stallSchedules = {};
   bool _isLoading = true;
-  bool _isLoadingProfile = true; // Add this variable
+  bool _isLoadingProfile = true;
   final TextEditingController _searchController = TextEditingController();
   final CarouselController _carouselController = CarouselController();
-  int _currentBannerIndex = 0;
+  final int _currentBannerIndex = 0;
 
   final int _bannerCount = 3;
 
   final List<String> _recentSearches = [];
   final GlobalKey<ScaffoldMessengerState> _scaffoldMessengerKey =
       GlobalKey<ScaffoldMessengerState>();
-  final GlobalKey<ScaffoldState> _scaffoldKey =
-      GlobalKey<ScaffoldState>(); // Add this
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   // Add new controller for tab view
   late TabController _tabController;
@@ -63,7 +62,7 @@ class _HomepageState extends State<StudentPage>
   bool _isScrolled = false;
   StudentModel? _currentStudent;
   final _supabase = Supabase.instance.client;
-  String _sortBy = 'rating'; // New sorting state
+  String _sortBy = 'rating';
 
   // New filtering states
   bool _isOpen = true;
@@ -88,6 +87,9 @@ class _HomepageState extends State<StudentPage>
   String _selectedCategory = 'All';
 
   bool _isDisposed = false; // Add this flag
+
+  // Add error state variable
+  String? _errorMessage;
 
   @override
   void initState() {
@@ -121,6 +123,13 @@ class _HomepageState extends State<StudentPage>
       setState(() {
         _showScrollToTop = _scrollController.offset > 300;
       });
+    });
+
+    // Add a timer to refresh stall statuses every minute
+    _stallStatusTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted && !_isLoading) {
+        _refreshStallStatuses();
+      }
     });
   }
 
@@ -217,34 +226,205 @@ class _HomepageState extends State<StudentPage>
     );
   }
 
+  // Update method to fetch stall schedules and apply defaults where missing
+  Future<Map<int, Map<String, dynamic>>> _fetchStallSchedules() async {
+    try {
+      final now = DateTime.now();
+      final currentTime = DateFormat('HH:mm:ss').format(now);
+      final currentDay = now.weekday;
+      final currentDate = now.toIso8601String().split('T')[0];
+
+      // Query for stall schedules that are open now
+      final response = await _supabase
+          .from('stall_schedules')
+          .select(
+              'id, stall_id, day_of_week, specific_date, open_time, close_time, is_open')
+          .or('day_of_week.eq.$currentDay,specific_date.eq.$currentDate');
+
+      Map<int, Map<String, dynamic>> scheduleMap = {};
+
+      // First, process all the returned schedules
+      for (var schedule in response) {
+        final stallId = schedule['stall_id'] as int;
+        final openTime = schedule['open_time'] as String?;
+        final closeTime = schedule['close_time'] as String?;
+        final isOpen = schedule['is_open'] as bool? ?? false;
+
+        // Check if the current time is within the open and close time
+        bool isCurrentlyOpen = false;
+        if (isOpen && openTime != null && closeTime != null) {
+          isCurrentlyOpen = currentTime.compareTo(openTime) >= 0 &&
+              currentTime.compareTo(closeTime) <= 0;
+        }
+
+        scheduleMap[stallId] = {
+          'is_open': isCurrentlyOpen,
+          'open_time': openTime,
+          'close_time': closeTime,
+          'has_custom_schedule': true,
+        };
+      }
+
+      // Note: We don't need to add default schedules here
+      // The Stan model will handle applying default schedules for stalls without custom schedules
+
+      return scheduleMap;
+    } catch (e) {
+      print('Error fetching stall schedules: $e');
+      // Return empty map on error
+      return {};
+    }
+  }
+
+  // Update the _loadStalls method to include schedule information and next opening times
   Future<void> _loadStalls() async {
     try {
-      setState(() => _isLoading = true);
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
+
+      // First fetch stall schedules
+      final stallSchedules = await _fetchStallSchedules();
+
+      // Then get all stalls
       final stalls = await _stanService.getAllStans();
+
+      // Store next opening times for stalls that are closed
+      Map<int, String> nextOpeningTimes = {};
+
+      // Update stalls with schedule information
+      for (var stall in stalls) {
+        if (stallSchedules.containsKey(stall.id)) {
+          // Stall has custom schedule
+          stall.setScheduleInfo(stallSchedules[stall.id]);
+
+          // Make sure the isOpen property is correctly set
+          final isOpen = stallSchedules[stall.id]?['is_open'] ?? false;
+          stall.isOpen = isOpen;
+        } else {
+          // Stall has no custom schedule - use built-in isCurrentlyOpen method
+          // from the stall model instead of assuming closed
+          stall.setScheduleInfo(null);
+
+          // Try to determine if the stall should be open based on default schedule
+          final now = DateTime.now();
+          final currentTimeMinutes = now.hour * 60 + now.minute;
+
+          if (stall.openTime != null && stall.closeTime != null) {
+            final openMinutes =
+                stall.openTime!.hour * 60 + stall.openTime!.minute;
+            final closeMinutes =
+                stall.closeTime!.hour * 60 + stall.closeTime!.minute;
+
+            // Standard case: open time is before close time (e.g., 9:00 - 17:00)
+            if (closeMinutes > openMinutes) {
+              stall.isOpen = currentTimeMinutes >= openMinutes &&
+                  currentTimeMinutes <= closeMinutes;
+            } else {
+              // Special case: close time is on next day (e.g., 22:00 - 02:00)
+              stall.isOpen = currentTimeMinutes >= openMinutes ||
+                  currentTimeMinutes <= closeMinutes;
+            }
+          }
+        }
+
+        // Print current stall status for debugging
+        print('Stall ${stall.stanName}: isOpen=${stall.isOpen}');
+
+        // If stall is closed, get next opening time
+        if (!stall.isOpen) {
+          final nextOpeningInfo =
+              await _stanService.getNextOpeningInfo(stall.id);
+          nextOpeningTimes[stall.id] = nextOpeningInfo;
+        }
+      }
 
       // Sort stalls by rating to get popular stalls, handling null ratings
       final popularStalls = List<Stan>.from(stalls)
         ..sort((a, b) => (b.rating ?? 0).compareTo(a.rating ?? 0));
 
       if (!_isDisposed) {
-        // Check flag before setState
         setState(() {
           _stalls = stalls;
+          _stallSchedules = stallSchedules;
           _popularStalls = popularStalls.take(5).toList();
           _isLoading = false;
+          _nextOpeningTimes = nextOpeningTimes;
         });
       }
 
-      // Apply initial filters
+      // Apply filters to update UI
       _applyFilters();
     } catch (e) {
       if (!_isDisposed) {
-        // Check flag before setState
-        setState(() => _isLoading = false);
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'Error loading stalls: $e';
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error loading stalls: $e')),
         );
       }
+    }
+  }
+
+  // Add this property to the class
+  Map<int, String> _nextOpeningTimes = {};
+
+  // Replace the current _isStallOpen method with this improved version
+  bool _isStallOpen(Stan stall) {
+    // First check if we have a custom schedule in our loaded data
+    if (_stallSchedules.containsKey(stall.id)) {
+      return _stallSchedules[stall.id]?['is_open'] ?? false;
+    }
+
+    // If no schedule is found in our loaded map, check the stall's own isOpen property
+    // This is set in the setScheduleInfo method when stalls are loaded
+    return stall.isOpen;
+  }
+
+  // Update the getStallHours method to handle default schedule
+  String getStallHours(Stan stall) {
+    // First check if we have custom schedule from the database
+    if (_stallSchedules.containsKey(stall.id)) {
+      final schedule = _stallSchedules[stall.id]!;
+      final openTime = schedule['open_time'] ?? 'N/A';
+      final closeTime = schedule['close_time'] ?? 'N/A';
+
+      // Format the times for better display
+      return '${_formatTimeString(openTime)} - ${_formatTimeString(closeTime)}';
+    }
+
+    // No custom schedule in database, check if there's default schedule info in the stall object
+    if (stall.scheduleInfo != null &&
+        stall.openTimeString != null &&
+        stall.closeTimeString != null) {
+      final openTime = stall.openTimeString!;
+      final closeTime = stall.closeTimeString!;
+
+      return '${_formatTimeString(openTime)} - ${_formatTimeString(closeTime)} ${stall.isUsingDefaultSchedule ? "(Default)" : ""}';
+    }
+
+    return 'Hours not set';
+  }
+
+  // Format time string for display
+  String _formatTimeString(String time) {
+    try {
+      final parts = time.split(':');
+      if (parts.length < 2) return time;
+
+      int hour = int.parse(parts[0]);
+      int minute = int.parse(parts[1]);
+      String period = hour >= 12 ? 'PM' : 'AM';
+
+      hour = hour > 12 ? hour - 12 : hour;
+      hour = hour == 0 ? 12 : hour;
+
+      return '$hour:${minute.toString().padLeft(2, '0')} $period';
+    } catch (e) {
+      return time;
     }
   }
 
@@ -295,179 +475,11 @@ class _HomepageState extends State<StudentPage>
     );
   }
 
-  Widget _buildBannerCarousel() {
-    return Column(
-      children: [
-        CarouselSlider.builder(
-          itemCount: _bannerCount,
-          itemBuilder: (context, index, realIndex) {
-            return Container(
-              width: MediaQuery.of(context).size.width,
-              margin: const EdgeInsets.symmetric(horizontal: 5.0),
-              child: BannerGenerator.generateBanner(index),
-            );
-          },
-          options: CarouselOptions(
-            height: 180.0,
-            viewportFraction: 0.92,
-            enlargeCenterPage: true,
-            autoPlay: true,
-            onPageChanged: (index, reason) {
-              setState(() => _currentBannerIndex = index);
-            },
-          ),
-        ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(_bannerCount, (index) {
-            return Container(
-              width: 8.0,
-              height: 8.0,
-              margin: const EdgeInsets.symmetric(
-                vertical: 8.0,
-                horizontal: 4.0,
-              ),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Theme.of(context)
-                    .primaryColor
-                    .withOpacity(_currentBannerIndex == index ? 0.9 : 0.4),
-              ),
-            );
-          }),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildPopularStalls() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Popular Stalls',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              TextButton(
-                onPressed: () {
-                  // TODO: Show all popular stalls
-                },
-                child: const Text('See All'),
-              ),
-            ],
-          ),
-        ),
-        SizedBox(
-          height: 200,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: _popularStalls.length,
-            itemBuilder: (context, index) {
-              final stall = _popularStalls[index];
-              return SizedBox(
-                width: 160,
-                child: Card(
-                  clipBehavior: Clip.antiAlias,
-                  child: InkWell(
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => StallDetailPage(
-                          stall: stall,
-                          studentId: _currentStudent?.id ??
-                              0, // Add the StudentId parameter
-                        ),
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SizedBox(
-                          height: 120,
-                          width: double.infinity,
-                          child: stall.imageUrl != null
-                              ? Image.network(
-                                  stall.imageUrl!,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) {
-                                    return AvatarGenerator.generateStallAvatar(
-                                      stall.stanName,
-                                      size: 120,
-                                    );
-                                  },
-                                )
-                              : AvatarGenerator.generateStallAvatar(
-                                  stall.stanName,
-                                  size: 120,
-                                ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.all(8),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                stall.stanName,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              Row(
-                                children: [
-                                  Icon(Icons.star,
-                                      size: 16, color: Colors.amber),
-                                  Text(
-                                    ' ${stall.rating?.toStringAsFixed(1) ?? "N/A"}',
-                                    style: TextStyle(fontSize: 12),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildProfileSection() {
-    return SliverToBoxAdapter(
-      child: StudentProfileHeader(
-        student: _currentStudent,
-        isLoading: _isLoadingProfile,
-        onProfileComplete: _navigateToProfileSetup,
-        onRefresh: _loadStudentData,
-      ),
-    );
-  }
-
-  void _navigateToProfileSetup() {
-    // Navigate to profile setup/completion page
-    Navigator.pushNamed(context, '/profile/setup')
-        .then((_) => _loadStudentData());
-  }
-
   void _openDrawer() {
     _scaffoldKey.currentState?.openDrawer();
   }
 
+  // Add a quick refresh button to the app bar
   Widget _buildAppBar() {
     return SliverAppBar(
       expandedHeight: 120,
@@ -476,12 +488,11 @@ class _HomepageState extends State<StudentPage>
       elevation: _isScrolled ? 4 : 0,
       backgroundColor: _isScrolled ? Colors.white : Colors.transparent,
       leading: IconButton(
-        // Add this leading button to open drawer
         icon: Icon(
           Icons.menu,
           color: _isScrolled ? Colors.black : Colors.white,
         ),
-        onPressed: _openDrawer, // Update this
+        onPressed: _openDrawer,
       ),
       flexibleSpace: FlexibleSpaceBar(
         title: Text(
@@ -505,6 +516,11 @@ class _HomepageState extends State<StudentPage>
         ),
       ),
       actions: [
+        IconButton(
+          icon: const Icon(Icons.refresh),
+          onPressed: _handleRefresh,
+          color: _isScrolled ? Colors.black : Colors.white,
+        ),
         IconButton(
           icon: const Icon(Icons.notifications_outlined),
           onPressed: _showNotifications,
@@ -546,6 +562,7 @@ class _HomepageState extends State<StudentPage>
     );
   }
 
+  // Also update the AnimatedStallTile to use our new component
   Widget _buildStallsList() {
     if (_isLoading) {
       return SliverList(
@@ -568,9 +585,155 @@ class _HomepageState extends State<StudentPage>
           final stall = _filteredStalls[index];
           return Hero(
             tag: 'stall-${stall.id}',
-            child: AnimatedStallTile(
-              stall: stall,
-              onTap: () => _navigateToStallDetail(stall),
+            child: Card(
+              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: InkWell(
+                onTap: () => _navigateToStallDetail(stall),
+                borderRadius: BorderRadius.circular(12),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    children: [
+                      // Stall Image
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Stack(
+                          children: [
+                            SizedBox(
+                              width: 80,
+                              height: 80,
+                              child: Image.network(
+                                stall.imageUrl ?? '',
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) =>
+                                    AvatarGenerator.generateStallAvatar(
+                                        stall.stanName),
+                              ),
+                            ),
+                            // Add promo banner if applicable
+                            if (stall.hasActivePromotions())
+                              Positioned(
+                                top: 0,
+                                right: 0,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red,
+                                    borderRadius: const BorderRadius.only(
+                                      bottomLeft: Radius.circular(8),
+                                    ),
+                                  ),
+                                  child: const Text(
+                                    'PROMO',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 9,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+
+                      // Details Section
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              stall.stanName,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+
+                            // Show status with our new component
+                            StallStatusIndicator(
+                                stall: stall, isDetailed: true),
+
+                            // Next opening info if closed
+                            if (!stall.isOpen &&
+                                _nextOpeningTimes.containsKey(stall.id))
+                              StallStatusIndicator.nextOpeningInfo(
+                                  stall, _nextOpeningTimes[stall.id] ?? ''),
+
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                Icon(Icons.access_time,
+                                    size: 14, color: Colors.grey[600]),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    getStallHours(stall),
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey[600],
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+
+                            // Show rating
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                Icon(Icons.star, size: 14, color: Colors.amber),
+                                const SizedBox(width: 4),
+                                Text(
+                                  stall.rating?.toStringAsFixed(1) ??
+                                      'Not rated',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[800],
+                                  ),
+                                ),
+                                if (stall.hasActivePromotions())
+                                  Container(
+                                    margin: const EdgeInsets.only(left: 8),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.red.shade50,
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(
+                                        color: Colors.red.shade200,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      'PROMO',
+                                      style: TextStyle(
+                                        color: Colors.red.shade700,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
           );
         },
@@ -591,100 +754,12 @@ class _HomepageState extends State<StudentPage>
     ).then((_) => _loadStalls()); // Refresh after returning
   }
 
-  Widget _buildStallCard(Stan stall) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: InkWell(
-        onTap: () => _navigateToStallDetail(stall),
-        borderRadius: BorderRadius.circular(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Stack(
-              children: [
-                ClipRRect(
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(12)),
-                  child: AspectRatio(
-                    aspectRatio: 1.5,
-                    child: stall.imageUrl != null
-                        ? Image.network(
-                            stall.imageUrl!,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) =>
-                                AvatarGenerator.generateStallAvatar(
-                                    stall.stanName),
-                          )
-                        : AvatarGenerator.generateStallAvatar(stall.stanName),
-                  ),
-                ),
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: StallStatusBadge(stall: stall),
-                ),
-                if (stall.hasActivePromotions())
-                  Positioned(
-                    top: 8,
-                    left: 8,
-                    child: Container(
-                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.red,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        'PROMO',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    stall.stanName,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Icon(Icons.star, size: 16, color: Colors.amber),
-                      Text(
-                        ' ${stall.rating?.toStringAsFixed(1) ?? "N/A"}',
-                        style: TextStyle(fontSize: 12),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   // Add new sorting method
   void _sortStalls() {
     _applyFilters(); // Re-apply filters with new sort
   }
 
-  // Add sort and filter UI
+  // Update the _buildSortAndFilter method
   Widget _buildSortAndFilter() {
     return SliverToBoxAdapter(
       child: Container(
@@ -707,9 +782,28 @@ class _HomepageState extends State<StudentPage>
               },
             ),
             Spacer(),
+            // Add a toggle chip for quickly toggling open/all stalls
+            FilterChip(
+              label: Text(_isOpen ? 'Open Now' : 'All Stalls'),
+              selected: _isOpen,
+              onSelected: (value) {
+                setState(() {
+                  _isOpen = value;
+                  _isOpenNotifier.value = value;
+                  _applyFilters();
+                });
+              },
+              avatar: Icon(
+                _isOpen ? Icons.check_circle : Icons.access_time,
+                size: 16,
+              ),
+              selectedColor: Theme.of(context).primaryColor.withOpacity(0.2),
+            ),
+            SizedBox(width: 8),
             IconButton(
               icon: Icon(Icons.filter_list),
               onPressed: _showFilterDialog,
+              tooltip: 'More filters',
             ),
           ],
         ),
@@ -736,8 +830,18 @@ class _HomepageState extends State<StudentPage>
                 valueListenable: tempIsOpen,
                 builder: (context, isOpen, child) {
                   return SwitchListTile(
-                    title: const Text('Open Now'),
+                    title: Row(
+                      children: [
+                        Text('Open Now'),
+                        Tooltip(
+                          message: 'Only show stalls that are currently open',
+                          child: Icon(Icons.info_outline,
+                              size: 16, color: Colors.grey),
+                        ),
+                      ],
+                    ),
                     value: isOpen,
+                    activeColor: Theme.of(context).primaryColor,
                     onChanged: (value) {
                       tempIsOpen.value = value;
                       // Apply filter immediately
@@ -750,6 +854,7 @@ class _HomepageState extends State<StudentPage>
                   );
                 },
               ),
+              const Divider(),
               ValueListenableBuilder<bool>(
                 valueListenable: tempHasPromo,
                 builder: (context, hasPromo, child) {
@@ -772,21 +877,32 @@ class _HomepageState extends State<StudentPage>
               ValueListenableBuilder<double>(
                 valueListenable: tempMinRating,
                 builder: (context, minRating, child) {
-                  return Slider(
-                    value: minRating,
-                    min: 0,
-                    max: 5,
-                    divisions: 5,
-                    label: minRating.toString(),
-                    onChanged: (value) {
-                      tempMinRating.value = value;
-                      // Apply filter immediately
-                      _applyTemporaryFilters(
-                        isOpen: tempIsOpen.value,
-                        hasPromo: tempHasPromo.value,
-                        minRating: value,
-                      );
-                    },
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Slider(
+                        value: minRating,
+                        min: 0,
+                        max: 5,
+                        divisions: 5,
+                        label: minRating > 0 ? minRating.toString() : "Any",
+                        onChanged: (value) {
+                          tempMinRating.value = value;
+                          // Apply filter immediately
+                          _applyTemporaryFilters(
+                            isOpen: tempIsOpen.value,
+                            hasPromo: tempHasPromo.value,
+                            minRating: value,
+                          );
+                        },
+                      ),
+                      Text(
+                        minRating > 0
+                            ? '${minRating.toString()} stars or higher'
+                            : 'Any rating',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                      ),
+                    ],
                   );
                 },
               ),
@@ -815,7 +931,7 @@ class _HomepageState extends State<StudentPage>
                 });
                 Navigator.pop(context);
               },
-              child: const Text('Save'),
+              child: const Text('Apply'),
             ),
           ],
         ),
@@ -835,7 +951,8 @@ class _HomepageState extends State<StudentPage>
         return false;
       }
 
-      if (isOpen && !stall.isCurrentlyOpen()) {
+      // Use schedule data for open check
+      if (isOpen && !_isStallOpen(stall)) {
         return false;
       }
 
@@ -891,20 +1008,36 @@ class _HomepageState extends State<StudentPage>
     _debounceTimer = Timer(const Duration(milliseconds: 300), () {
       if (!mounted) return;
 
+      // Debug: count how many stalls match each filter
+      int totalStalls = _stalls.length;
+      int ratingFiltered = 0;
+      int openFiltered = 0;
+      int promoFiltered = 0;
+      int categoryFiltered = 0;
+
       final filteredList = _stalls.where((stall) {
         // Apply minimum rating filter
         if (_minRating > 0 &&
             (stall.rating == null || stall.rating! < _minRating)) {
+          ratingFiltered++;
           return false;
         }
 
-        // Only apply open/closed filter if the stall has this information
-        if (_isOpen && !stall.isCurrentlyOpen()) {
+        // If "Open Now" filter is active, use our improved check
+        if (_isOpen && !_isStallOpen(stall)) {
+          openFiltered++;
           return false;
         }
 
         // Check for active promotions
         if (_hasPromo && !stall.hasActivePromotions()) {
+          promoFiltered++;
+          return false;
+        }
+
+        // Category filter
+        if (_selectedCategory != 'All' && stall.category != _selectedCategory) {
+          categoryFiltered++;
           return false;
         }
 
@@ -922,6 +1055,22 @@ class _HomepageState extends State<StudentPage>
         case 'popularity':
           // Implement your popularity logic here
           break;
+      }
+
+      // Print debug information
+      print(
+          'Filter results: $totalStalls total, ${filteredList.length} passed');
+      print(
+          'Filtered out: $ratingFiltered by rating, $openFiltered by open status, '
+          '$promoFiltered by promo, $categoryFiltered by category');
+
+      if (_isOpen) {
+        print('Open stalls:');
+        for (var stall in _stalls) {
+          print('${stall.stanName}: isOpen=${_isStallOpen(stall)}, '
+              'DB status=${_stallSchedules[stall.id]?["is_open"]}, '
+              'stall.isOpen=${stall.isOpen}');
+        }
       }
 
       // Update the notifier
@@ -1006,7 +1155,7 @@ class _HomepageState extends State<StudentPage>
           ),
         ),
         SizedBox(
-          height: 200,
+          height: 200, // Increased height to accommodate content
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1027,107 +1176,175 @@ class _HomepageState extends State<StudentPage>
       margin: const EdgeInsets.only(right: 16),
       child: Card(
         elevation: 4,
+        clipBehavior: Clip.antiAlias,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         child: InkWell(
           onTap: () => _navigateToStallDetail(stall),
-          borderRadius: BorderRadius.circular(12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              ClipRRect(
-                borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(12)),
-                child: AspectRatio(
-                  aspectRatio: 16 / 9,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      Image.network(
-                        stall.imageUrl ?? '',
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) =>
-                            AvatarGenerator.generateStallAvatar(stall.stanName),
+              // Image section
+              Stack(
+                children: [
+                  SizedBox(
+                    height: 90, // Reduced image height
+                    width: double.infinity,
+                    child: Image.network(
+                      stall.imageUrl ?? '',
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) =>
+                          AvatarGenerator.generateStallAvatar(stall.stanName),
+                    ),
+                  ),
+                  // Promo badge
+                  if (stall.hasActivePromotions())
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.red,
+                          borderRadius: BorderRadius.circular(4),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black26,
+                              blurRadius: 2,
+                              offset: Offset(0, 1),
+                            ),
+                          ],
+                        ),
+                        child: const Text(
+                          'PROMO',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 9,
+                          ),
+                        ),
                       ),
-                      if (stall.hasActivePromotions())
-                        Positioned(
-                          top: 8,
-                          right: 8,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
+                    ),
+                ],
+              ),
+
+              // Content section - use constrainedBox to prevent overflow
+              ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: 95),
+                child: Padding(
+                  padding: const EdgeInsets.all(10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Stall name
+                      Text(
+                        stall.stanName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+
+                      // Rating and status
+                      Row(
+                        children: [
+                          // Rating
+                          Icon(Icons.star, size: 12, color: Colors.amber[700]),
+                          const SizedBox(width: 2),
+                          Text(
+                            stall.rating?.toStringAsFixed(1) ?? 'N/A',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500,
                             ),
+                          ),
+                          const Spacer(),
+
+                          // Compact status badge
+                          Container(
+                            padding: EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 1),
                             decoration: BoxDecoration(
-                              color: Colors.red,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: const Text(
-                              'PROMO',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 12,
+                              color: stall.isOpen
+                                  ? Colors.green[50]
+                                  : Colors.red[50],
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(
+                                color: stall.isOpen
+                                    ? Colors.green[300]!
+                                    : Colors.red[300]!,
+                                width: 0.5,
                               ),
                             ),
+                            child: Text(
+                              stall.isOpen ? 'Open' : 'Closed',
+                              style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w500,
+                                color: stall.isOpen
+                                    ? Colors.green[700]
+                                    : Colors.red[700],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      // Hours - always show in compact form
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Row(
+                          children: [
+                            Icon(Icons.access_time,
+                                size: 10, color: Colors.grey),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                getStallHours(stall),
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  color: Colors.grey[600],
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // Only show next opening if closed
+                      if (!stall.isOpen &&
+                          _nextOpeningTimes.containsKey(stall.id))
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Row(
+                            children: [
+                              Icon(Icons.event_available,
+                                  size: 10, color: Colors.orange[700]),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  'Opens ${_nextOpeningTimes[stall.id] ?? ""}',
+                                  style: TextStyle(
+                                    fontSize: 9,
+                                    color: Colors.orange[700],
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                     ],
                   ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      stall.stanName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.star,
-                          size: 16,
-                          color: Colors.amber[700],
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          stall.rating?.toStringAsFixed(1) ?? 'N/A',
-                          style: TextStyle(
-                            color: Colors.grey[700],
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        if (stall.isCurrentlyOpen())
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.green[50],
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              'Open',
-                              style: TextStyle(
-                                color: Colors.green[700],
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ],
                 ),
               ),
             ],
@@ -1145,20 +1362,163 @@ class _HomepageState extends State<StudentPage>
       );
     }
 
+    if (_errorMessage != null) {
+      return SliverFillRemaining(
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.error_outline, size: 50, color: Colors.red),
+              SizedBox(height: 16),
+              Text(_errorMessage!),
+              SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: _handleRefresh,
+                icon: Icon(Icons.refresh),
+                label: Text('Try Again'),
+              )
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Replace the "No stalls available" section with this improved version
+    if (_filteredStalls.isEmpty) {
+      return SliverFillRemaining(
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.store_mall_directory_outlined,
+                  size: 70, color: Colors.grey),
+              SizedBox(height: 16),
+              Text(
+                'No stalls match your filters',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              SizedBox(height: 8),
+              if (_isOpen)
+                Text(
+                  'Try showing closed stalls as well',
+                  style: TextStyle(color: Colors.grey[600]),
+                ),
+              SizedBox(height: 16),
+
+              // Show two separate buttons for more control
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // Button to toggle just the Open Now filter
+                  if (_isOpen)
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        setState(() {
+                          _isOpen = false;
+                          _isOpenNotifier.value = false;
+                        });
+                        _applyFilters();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Theme.of(context).primaryColor,
+                      ),
+                      icon: Icon(Icons.visibility_outlined),
+                      label: Text('Show All Stalls'),
+                    ),
+
+                  // Add some spacing if both buttons are shown
+                  if (_isOpen &&
+                      (_hasPromo ||
+                          _minRating > 0 ||
+                          _selectedCategory != 'All'))
+                    SizedBox(width: 12),
+
+                  // Reset all filters button
+                  if (_hasPromo || _minRating > 0 || _selectedCategory != 'All')
+                    OutlinedButton.icon(
+                      onPressed: () {
+                        setState(() {
+                          _hasPromo = false;
+                          _hasPromoNotifier.value = false;
+                          _minRating = 0;
+                          _minRatingNotifier.value = 0;
+                          _selectedCategory = 'All';
+                        });
+                        _applyFilters();
+                      },
+                      icon: Icon(Icons.filter_alt_off),
+                      label: Text('Reset Other Filters'),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return SliverList(
       delegate: SliverChildBuilderDelegate(
         (context, index) {
           final stall = _filteredStalls[index];
-          // Remove Hero wrapper since it's handled by AnimatedStallTile
+          // Modify AnimatedStallTile to include schedule information
           return AnimatedStallTile(
             stall: stall,
             onTap: () => _navigateToStallDetail(stall),
-            useHero: true, // Enable Hero animation
+            useHero: true,
+            openingHours: getStallHours(stall),
+            isCurrentlyOpenBySchedule: _isStallOpen(stall),
           );
         },
         childCount: _filteredStalls.length,
       ),
     );
+  }
+
+  // Add a new timer to periodically refresh stall statuses
+  Timer? _stallStatusTimer;
+
+  // Add this method to refresh stall statuses without full reload
+  Future<void> _refreshStallStatuses() async {
+    if (!mounted || _isLoading) return;
+
+    try {
+      // For each loaded stall, check if its status has changed
+      for (final stall in _stalls) {
+        final isCurrentlyOpen =
+            await _stanService.checkIfStoreIsOpenNow(stall.id);
+
+        // If the status changed, update it
+        if (stall.isOpen != isCurrentlyOpen) {
+          setState(() {
+            stall.isOpen = isCurrentlyOpen;
+
+            // If it's now closed, get the next opening time
+            if (!isCurrentlyOpen) {
+              _stanService.getNextOpeningInfo(stall.id).then((nextOpening) {
+                if (mounted) {
+                  setState(() {
+                    _nextOpeningTimes[stall.id] = nextOpening;
+                  });
+                }
+              });
+            } else {
+              // If now open, remove any next opening time
+              _nextOpeningTimes.remove(stall.id);
+            }
+          });
+        }
+      }
+
+      // Re-apply filters as status changes might affect filtered results
+      _applyFilters();
+    } catch (e) {
+      print('Error refreshing stall statuses: $e');
+      // Don't show UI errors for background updates
+    }
   }
 
   @override
@@ -1171,6 +1531,7 @@ class _HomepageState extends State<StudentPage>
     _tabController.dispose();
     _scrollController.dispose();
     _isDisposed = true; // Set flag when disposing
+    _stallStatusTimer?.cancel();
     super.dispose();
   }
 }

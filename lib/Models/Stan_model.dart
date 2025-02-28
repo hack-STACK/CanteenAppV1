@@ -12,14 +12,30 @@ class Stan {
   final String? imageUrl; // maps to image_url
   final String? Banner_img; // maps to Banner_img
   final double? rating; // Add rating field
-  final bool isOpen; // New field
+  bool isOpen; // Changed to non-final to allow update through setScheduleInfo
   final TimeOfDay? openTime; // New field
   final TimeOfDay? closeTime; // New field
-  final List<Discount>? activeDiscounts;
+  List<Discount>? activeDiscounts;
   final String? cuisineType;
   final int reviewCount;
   final bool isBusy;
   final double? distance;
+  final bool isManuallyOpen; // Add this property for manual override
+  final String? category; // Add category property
+
+  // Add map to store schedule information
+  Map<String, dynamic>? _scheduleInfo;
+
+  // Default schedule constants
+  static const Map<String, dynamic> DEFAULT_SCHEDULE = {
+    'is_open': true,
+    'open_time': '08:00:00', // 8 AM default opening time
+    'close_time': '17:00:00', // 5 PM default closing time
+    'is_default': true // Flag to indicate this is a default schedule
+  };
+
+  // Default business days - 1 to 5 (Monday to Friday)
+  static const List<int> DEFAULT_BUSINESS_DAYS = [1, 2, 3, 4, 5];
 
   Stan({
     required this.id,
@@ -40,7 +56,71 @@ class Stan {
     this.reviewCount = 0,
     this.isBusy = false,
     this.distance,
+    this.isManuallyOpen = true, // Default to true
+    this.category, // Include category in constructor
   });
+
+  // Add this method to set schedule information
+  void setScheduleInfo(Map<String, dynamic>? scheduleInfo) {
+    // If no schedule provided, use default schedule
+    if (scheduleInfo == null || scheduleInfo.isEmpty) {
+      // Check if today is a default business day
+      final now = DateTime.now();
+      final isBusinessDay = DEFAULT_BUSINESS_DAYS.contains(now.weekday);
+
+      if (isBusinessDay) {
+        _scheduleInfo = Map<String, dynamic>.from(DEFAULT_SCHEDULE);
+        // Update open status based on current time and default hours
+        _updateOpenStatusWithDefaultSchedule();
+      } else {
+        // Weekend or non-business day - closed by default
+        _scheduleInfo = {
+          'is_open': false,
+          'is_default': true,
+          'reason': 'Closed on weekends'
+        };
+      }
+    } else {
+      _scheduleInfo = scheduleInfo;
+    }
+
+    // Update isOpen based on schedule info
+    isOpen = _scheduleInfo!.containsKey('is_open')
+        ? _scheduleInfo!['is_open'] as bool
+        : false;
+  }
+
+  // Helper method to update open status based on default schedule
+  void _updateOpenStatusWithDefaultSchedule() {
+    final now = DateTime.now();
+    final currentTime =
+        '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:00';
+
+    final openTime = _scheduleInfo!['open_time'] as String;
+    final closeTime = _scheduleInfo!['close_time'] as String;
+
+    // Check if current time is within operating hours
+    _scheduleInfo!['is_open'] = currentTime.compareTo(openTime) >= 0 &&
+        currentTime.compareTo(closeTime) <= 0;
+  }
+
+  // Add this method to check if stall is open according to schedule
+  bool isScheduleOpen() {
+    if (_scheduleInfo == null) {
+      // If no schedule info at all, apply default schedule first
+      setScheduleInfo(null);
+    }
+
+    return _scheduleInfo != null &&
+        (_scheduleInfo!['is_open'] as bool? ?? false);
+  }
+
+  // Add public getter methods for schedule information
+  Map<String, dynamic>? get scheduleInfo => _scheduleInfo;
+
+  String? get openTimeString => _scheduleInfo?['open_time'] as String?;
+  String? get closeTimeString => _scheduleInfo?['close_time'] as String?;
+  bool get isUsingDefaultSchedule => _scheduleInfo?['is_default'] == true;
 
   factory Stan.fromMap(Map<String, dynamic> map) {
     String? openTimeStr = map['open_time'];
@@ -110,6 +190,8 @@ class Stan {
         distance: map['distance'] != null
             ? (map['distance'] as num).toDouble()
             : null,
+        isManuallyOpen: map['is_manually_open'] as bool? ?? true,
+        category: map['category'] as String?, // Extract category from map
       );
     } catch (e) {
       print('Error creating Stan from map: $e');
@@ -141,6 +223,8 @@ class Stan {
       'review_count': reviewCount,
       'is_busy': isBusy,
       'distance': distance,
+      'is_manually_open': isManuallyOpen,
+      'category': category, // Add category to map
     };
   }
 
@@ -163,6 +247,8 @@ class Stan {
     int? reviewCount,
     bool? isBusy,
     double? distance,
+    bool? isManuallyOpen,
+    String? category,
   }) {
     return Stan(
       id: id ?? this.id,
@@ -183,55 +269,119 @@ class Stan {
       reviewCount: reviewCount ?? this.reviewCount,
       isBusy: isBusy ?? this.isBusy,
       distance: distance ?? this.distance,
+      isManuallyOpen: isManuallyOpen ?? this.isManuallyOpen,
+      category: category ?? this.category, // Add category to copyWith
     );
   }
 
-  // Check if stall is manually closed via the is_open flag
-  bool get isManuallyOpen => isOpen;
+  // Enhance the isCurrentlyOpen method to be more accurate
+  bool isCurrentlyOpen() {
+    if (!isManuallyOpen) return false; // If manually closed, return false
+    if (!isOpen) return false; // If globally closed, return false
 
-  // Check if current time is within open hours
-  bool isWithinBusinessHours() {
-    if (openTime == null || closeTime == null) return true;
+    // If we're in manual mode, just return the isOpen value
+    if (isManuallyOpen) return isOpen;
+
+    // For schedule-based determination:
+    if (openTime == null || closeTime == null) {
+      return false; // If no times set, assume closed
+    }
 
     final now = TimeOfDay.now();
     final currentMinutes = now.hour * 60 + now.minute;
     final openMinutes = openTime!.hour * 60 + openTime!.minute;
     final closeMinutes = closeTime!.hour * 60 + closeTime!.minute;
 
+    // Handle normal case where open time is before close time
     if (closeMinutes > openMinutes) {
       return currentMinutes >= openMinutes && currentMinutes <= closeMinutes;
     } else {
-      // Handles cases where closing time is on the next day
+      // Handle cases where closing time is on the next day (e.g., 22:00 - 02:00)
       return currentMinutes >= openMinutes || currentMinutes <= closeMinutes;
     }
   }
 
-  // Determine why stall is closed (returns null if open)
-  String? getClosedReason() {
-    if (!isOpen) {
-      return 'Manually closed by vendor';
+  // Helper method to get reason for closure
+  String getClosedReason() {
+    if (!isManuallyOpen) return "Manually closed by vendor";
+    if (_scheduleInfo != null && _scheduleInfo!['is_default'] == true) {
+      // Using default schedule
+      if (_scheduleInfo!['reason'] != null) {
+        return _scheduleInfo!['reason'] as String;
+      }
+
+      // Check if it's outside business hours
+      final now = DateTime.now();
+      final currentTime =
+          '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:00';
+
+      if (_scheduleInfo!.containsKey('open_time') &&
+          currentTime.compareTo(_scheduleInfo!['open_time'] as String) < 0) {
+        return "Opens at ${_formatTimeString(_scheduleInfo!['open_time'] as String)}";
+      } else {
+        return "Closed for the day";
+      }
     }
 
-    if (openTime != null && closeTime != null && !isWithinBusinessHours()) {
-      return 'Outside business hours';
+    // Original logic for custom schedules
+    if (!isOpen) return "Closed per schedule";
+    if (openTime != null && closeTime != null) {
+      final now = TimeOfDay.now();
+      final currentMinutes = now.hour * 60 + now.minute;
+      final openMinutes = openTime!.hour * 60 + openTime!.minute;
+
+      if (currentMinutes < openMinutes) {
+        return "Opens at ${_formatTimeOfDay(openTime!)}";
+      } else {
+        return "Closed for the day";
+      }
     }
-
-    return null; // Stall is open
+    return "Closed";
   }
 
-  // Updated method to check if stall is available for orders
-  bool isCurrentlyOpen() {
-    // If manually closed, always return false
-    if (!isOpen) return false;
-
-    // If no hours set, assume always open during business hours
-    if (openTime == null || closeTime == null) return true;
-
-    // Otherwise check if current time is within business hours
-    return isWithinBusinessHours();
+  // Helper method to format TimeOfDay
+  String _formatTimeOfDay(TimeOfDay time) {
+    final hour = time.hourOfPeriod == 0 ? 12 : time.hourOfPeriod;
+    final period = time.period == DayPeriod.am ? 'AM' : 'PM';
+    return '$hour:${time.minute.toString().padLeft(2, '0')} $period';
   }
 
+  // Helper format time string for default schedule
+  String _formatTimeString(String time) {
+    try {
+      final parts = time.split(':');
+      if (parts.length < 2) return time;
+
+      int hour = int.parse(parts[0]);
+      int minute = int.parse(parts[1]);
+      String period = hour >= 12 ? 'PM' : 'AM';
+
+      hour = hour > 12 ? hour - 12 : hour;
+      hour = hour == 0 ? 12 : hour;
+
+      return '$hour:${minute.toString().padLeft(2, '0')} $period';
+    } catch (e) {
+      return time;
+    }
+  }
+
+  // Improve the hasActivePromotions method
   bool hasActivePromotions() {
-    return activeDiscounts != null && activeDiscounts!.isNotEmpty;
+    // Check if activeDiscounts is loaded and has items
+    if (activeDiscounts != null && activeDiscounts!.isNotEmpty) {
+      print('Stan has ${activeDiscounts!.length} active discounts');
+      return true;
+    }
+
+    // If we haven't checked for Schedule info yet, return false
+    if (_scheduleInfo == null) {
+      print('Stan schedule info not loaded yet, defaulting to no promotions');
+      return false;
+    }
+
+    // Check if there are any discounts in the scheduleInfo
+    final hasDiscounts = _scheduleInfo!['has_promotions'] == true;
+    print('Stan promotion check from scheduleInfo: $hasDiscounts');
+    return hasDiscounts;
   }
 }

@@ -80,6 +80,7 @@ class Menu {
       // Process menu_discounts with null safety
       if (map['menu_discounts'] != null && map['menu_discounts'] is List) {
         final discounts = map['menu_discounts'] as List;
+        print('Found ${discounts.length} discounts for menu');
 
         for (final discount in discounts) {
           if (discount == null) continue;
@@ -88,41 +89,20 @@ class Menu {
           final isActive = discount['is_active'] == true;
           if (!isActive) continue;
 
-          // First try to get effective_price directly
-          if (discount['effective_price'] != null) {
-            final effectivePrice =
-                (discount['effective_price'] as num?)?.toDouble();
-            if (effectivePrice != null && effectivePrice > 0) {
-              discountPrice = effectivePrice;
-              // Calculate percentage from effective price
-              discountPercentage =
-                  ((basePrice - effectivePrice) / basePrice * 100)
-                      .roundToDouble();
-              break;
-            }
-          }
-
-          // Try to get discount_percentage if no effective price
-          if (discount['discount_percentage'] != null) {
+          // Check discount object
+          final discountInfo = discount['discounts'];
+          if (discountInfo != null && discountInfo['is_active'] == true) {
+            // Get discount percentage from the discount record
             final percentage =
-                (discount['discount_percentage'] as num?)?.toDouble();
-            if (percentage != null && percentage > 0) {
-              discountPercentage = percentage;
-              discountPrice = basePrice * (1 - (percentage / 100));
-              break;
-            }
-          }
+                (discountInfo['discount_percentage'] as num).toDouble();
 
-          // Try to get from nested discount object
-          final discountObj = discount['discount'];
-          if (discountObj != null && discountObj is Map<String, dynamic>) {
-            final percentage =
-                (discountObj['discount_percentage'] as num?)?.toDouble();
-            if (percentage != null && percentage > 0) {
-              discountPercentage = percentage;
-              discountPrice = basePrice * (1 - (percentage / 100));
-              break;
-            }
+            // Calculate discounted price
+            discountPrice = basePrice * (1 - (percentage / 100));
+            discountPercentage = percentage;
+
+            print(
+                'Applied discount: $percentage% to $basePrice = $discountPrice');
+            break; // Apply first active discount only
           }
         }
       }
@@ -158,8 +138,12 @@ class Menu {
       isVegetarian: map['is_vegetarian'] ?? false,
       isSpicy: map['is_spicy'] ?? false,
       tags: List<String>.from(map['tags'] ?? []),
-      discountedPrice: discountPrice,
-      originalPrice: basePrice,
+      discountedPrice: map.containsKey('discounted_price')
+          ? (map['discounted_price'] as num?)?.toDouble()
+          : null,
+      originalPrice: map.containsKey('original_price')
+          ? (map['original_price'] as num?)?.toDouble()
+          : null,
     );
   }
 
@@ -518,6 +502,24 @@ class Menu {
       return [];
     }
     return _discounts!;
+  }
+
+  // Add this method to the Menu class
+  void setDiscountValues({
+    required bool hasDiscount,
+    required double discountPercentage,
+    required double discountedPrice,
+  }) {
+    _discountChecked = true;
+    _cachedHasDiscount = hasDiscount;
+    _cachedDiscountPercent = discountPercentage;
+    _cachedEffectivePrice = discountedPrice;
+    this.discountedPrice = discountedPrice;
+
+    print('Manually set discount values:');
+    print('Has discount: $hasDiscount');
+    print('Discount percentage: $discountPercentage%');
+    print('Discounted price: $discountedPrice');
   }
 
   @override

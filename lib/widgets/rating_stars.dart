@@ -10,7 +10,7 @@ class RatingStars extends StatelessWidget {
   final TextStyle? countStyle;
 
   const RatingStars({
-    Key? key,
+    super.key,
     required this.rating,
     this.size = 16.0,
     this.count,
@@ -18,7 +18,7 @@ class RatingStars extends StatelessWidget {
     this.inactiveColor = Colors.grey,
     this.showCount = true,
     this.countStyle,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -49,21 +49,22 @@ class RatingStars extends StatelessWidget {
             }
 
             return Icon(
-              Icons.star, 
-              size: size, 
+              Icons.star,
+              size: size,
               color: isFull ? activeColor : inactiveColor,
             );
           }),
         ),
-        if (showCount && count != null) 
+        if (showCount && count != null)
           Padding(
             padding: const EdgeInsets.only(left: 4.0),
             child: Text(
               '($count)',
-              style: countStyle ?? TextStyle(
-                color: Colors.grey[600],
-                fontSize: size * 0.75,
-              ),
+              style: countStyle ??
+                  TextStyle(
+                    color: Colors.grey[600],
+                    fontSize: size * 0.75,
+                  ),
             ),
           ),
       ],

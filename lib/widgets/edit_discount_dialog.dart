@@ -6,11 +6,13 @@ import 'package:intl/intl.dart';
 class EditDiscountDialog extends StatefulWidget {
   final Discount discount;
   final Function(Discount) onSave;
+  final bool isExpiredUpdate;
 
   const EditDiscountDialog({
     super.key,
     required this.discount,
     required this.onSave,
+    this.isExpiredUpdate = false,
   });
 
   @override
@@ -25,6 +27,7 @@ class _EditDiscountDialogState extends State<EditDiscountDialog> {
   late DiscountType _selectedType;
   late bool _isActive;
   final _formKey = GlobalKey<FormState>();
+  bool _hasShownDateWarning = false;
 
   @override
   void initState() {
@@ -41,13 +44,37 @@ class _EditDiscountDialogState extends State<EditDiscountDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Edit Discount'),
+      title: Text(
+          widget.isExpiredUpdate ? 'Update Expired Discount' : 'Edit Discount'),
       content: Form(
         key: _formKey,
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (widget.isExpiredUpdate)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.amber.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.warning_amber_rounded,
+                          color: Colors.amber),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'This discount has expired. Update the dates to reactivate it.',
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               TextFormField(
                 controller: _nameController,
                 decoration: const InputDecoration(labelText: 'Discount Name'),
@@ -132,17 +159,53 @@ class _EditDiscountDialogState extends State<EditDiscountDialog> {
   }
 
   Future<void> _selectDate(bool isStart) async {
+    final now = DateTime.now();
+
+    // Determine if the discount is expired
+    final isExpired = widget.discount.isExpired;
+
+    // For expired discounts, use today as the initialDate
+    final initialDate = isStart
+        ? (_startDate.isBefore(now) ? now : _startDate)
+        : (_endDate.isBefore(now)
+            ? now.add(const Duration(days: 1))
+            : _endDate);
+
+    // First date is always today for start date, or start date for end date
+    final firstDate = isStart
+        ? now
+        : (_startDate.isBefore(now)
+            ? now.add(const Duration(days: 1))
+            : _startDate);
+
+    // Show warning if dates are being adjusted
+    if (isExpired && !_hasShownDateWarning) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+              'The discount dates have been adjusted because the original dates were in the past.'),
+          duration: Duration(seconds: 5),
+        ),
+      );
+      _hasShownDateWarning = true;
+    }
+
     final DateTime? picked = await showDatePicker(
       context: context,
-      initialDate: isStart ? _startDate : _endDate,
-      firstDate: isStart ? DateTime.now() : _startDate,
-      lastDate: DateTime.now().add(const Duration(days: 365)),
+      initialDate: initialDate,
+      firstDate: firstDate,
+      lastDate: now.add(const Duration(days: 365)),
     );
 
     if (picked != null) {
       setState(() {
         if (isStart) {
           _startDate = picked;
+
+          // If end date is now before start date, adjust it
+          if (_endDate.isBefore(_startDate)) {
+            _endDate = _startDate.add(const Duration(days: 7));
+          }
         } else {
           _endDate = picked;
         }

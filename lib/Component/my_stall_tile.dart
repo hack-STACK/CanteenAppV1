@@ -1,18 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:kantin/Models/Stan_model.dart';
+import 'package:kantin/Models/discount.dart';
+import 'package:kantin/Services/Database/Stan_service.dart'; // Add this import
 import 'package:kantin/Services/rating_service.dart';
 import 'package:kantin/utils/avatar_generator.dart';
+import 'dart:async'; // Add this import for Timer
 
 class AnimatedStallTile extends StatefulWidget {
+  // Keep existing properties
   final Stan stall;
   final VoidCallback onTap;
   final bool useHero;
+  final String? openingHours;
+  final bool? isCurrentlyOpenBySchedule;
+  // Add optional refresh interval
+  final Duration? refreshInterval;
 
   const AnimatedStallTile({
     super.key,
     required this.stall,
     required this.onTap,
-    this.useHero = false, // Make Hero optional
+    this.useHero = false,
+    this.openingHours,
+    this.isCurrentlyOpenBySchedule,
+    this.refreshInterval, // Add this parameter
   });
 
   @override
@@ -22,9 +33,19 @@ class AnimatedStallTile extends StatefulWidget {
 class _AnimatedStallTileState extends State<AnimatedStallTile>
     with SingleTickerProviderStateMixin {
   final _ratingService = RatingService();
+  final _stallService = StanService(); // Add service instance
   late AnimationController _controller;
   late Animation<double> _scaleAnimation;
   bool _isPressed = false;
+
+  // Add variables for database status
+  bool _isDbStatusLoaded = false;
+  bool? _dbStallStatus;
+  Timer? _refreshTimer;
+  String? _nextOpeningInfo;
+
+  // Add this as a new field in the _AnimatedStallTileState class
+  List<Discount>? _activeDiscounts;
 
   @override
   void initState() {
@@ -36,16 +57,103 @@ class _AnimatedStallTileState extends State<AnimatedStallTile>
     _scaleAnimation = Tween<double>(begin: 1.0, end: 0.98).animate(
       CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
     );
+
+    // Fetch initial status
+    _fetchStallStatus();
+    
+    // Add this line to fetch promotion info
+    _fetchPromotionInfo();
+
+    // Setup timer for periodic refresh if interval is provided
+    if (widget.refreshInterval != null) {
+      _refreshTimer = Timer.periodic(widget.refreshInterval!, (_) {
+        if (mounted) {
+          _fetchStallStatus();
+          _fetchPromotionInfo(); // Add this line to periodically refresh promotions
+        }
+      });
+    }
+  }
+
+  // Add method to fetch stall status from database
+  Future<void> _fetchStallStatus() async {
+    try {
+      final isOpen = await _stallService.checkIfStoreIsOpenNow(widget.stall.id);
+
+      // If the stall is closed, also fetch the next opening time
+      String nextOpening = '';
+      if (!isOpen) {
+        nextOpening = await _stallService.getNextOpeningInfo(widget.stall.id);
+      }
+
+      if (mounted) {
+        setState(() {
+          _dbStallStatus = isOpen;
+          _isDbStatusLoaded = true;
+          if (!isOpen) {
+            _nextOpeningInfo = nextOpening;
+          }
+        });
+      }
+    } catch (e) {
+      print('Error fetching stall status: $e');
+      // On error, fall back to local calculation
+      if (mounted) {
+        setState(() {
+          _isDbStatusLoaded = false;
+        });
+      }
+    }
+  }
+
+  // Add this new method after _fetchStallStatus()
+  Future<void> _fetchPromotionInfo() async {
+    try {
+      // Check for active promotions for this stall
+      final discounts = await _stallService.getActiveDiscounts(widget.stall.id);
+      
+      if (mounted) {
+        setState(() {
+          // Store discounts in local state instead of trying to modify the Stan object
+          _activeDiscounts = discounts;
+        });
+      }
+      
+      print('Fetched ${discounts.length} active promotions for stall ${widget.stall.id}');
+    } catch (e) {
+      print('Error fetching promotion info: $e');
+    }
   }
 
   @override
   void dispose() {
+    _refreshTimer?.cancel();
     _controller.dispose();
     super.dispose();
   }
 
+  // Add this method to determine the actual status, considering database status first
+  bool _getStallOpenStatus() {
+    // First priority: Use database status if available
+    if (_isDbStatusLoaded && _dbStallStatus != null) {
+      return _dbStallStatus!;
+    }
+    // Second priority: Use provided schedule status
+    else if (widget.isCurrentlyOpenBySchedule != null) {
+      return widget.isCurrentlyOpenBySchedule!;
+    }
+    // Fallback: Calculate locally
+    else {
+      return widget.stall.isScheduleOpen();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Use the new method to determine open status
+    final bool isOpen = _getStallOpenStatus();
+
+    // Rest of the build method...
     return AnimatedBuilder(
       animation: _scaleAnimation,
       builder: (context, child) => Transform.scale(
@@ -56,6 +164,7 @@ class _AnimatedStallTileState extends State<AnimatedStallTile>
             final imageWidth = maxWidth * 0.28;
 
             return GestureDetector(
+              // Existing gesture detector code...
               onTapDown: (_) {
                 setState(() => _isPressed = true);
                 _controller.forward();
@@ -103,14 +212,63 @@ class _AnimatedStallTileState extends State<AnimatedStallTile>
                                   _buildRatingSection(),
                                   const SizedBox(height: 8),
                                   _buildInfoSection(),
+                                  if (widget.openingHours != null)
+                                    Text(
+                                      widget.openingHours!,
+                                      style: TextStyle(
+                                        color: Colors.grey[600],
+                                        fontSize: 12,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  // Add next opening info if available
+                                  if (!isOpen &&
+                                      _nextOpeningInfo != null &&
+                                      _nextOpeningInfo!.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 4.0),
+                                      child: Row(
+                                        children: [
+                                          Icon(Icons.update,
+                                              size: 12, color: Colors.orange),
+                                          SizedBox(width: 4),
+                                          Expanded(
+                                            child: Text(
+                                              'Opens $_nextOpeningInfo',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: Colors.orange[700],
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
                                 ],
                               ),
                             ),
                           ],
                         ),
                       ),
-                      if (!widget.stall.isCurrentlyOpen())
-                        _buildClosedOverlay(),
+                      if (!isOpen) _buildClosedOverlay(),
+                      // Add database status indicator if available
+                      if (_isDbStatusLoaded)
+                        Positioned(
+                          top: 8,
+                          right: 8,
+                          child: Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.blue,
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -122,6 +280,7 @@ class _AnimatedStallTileState extends State<AnimatedStallTile>
     );
   }
 
+  // Keep existing widget methods
   Widget _buildImageSection(double width) {
     return SizedBox(
       width: width,
@@ -222,10 +381,13 @@ class _AnimatedStallTileState extends State<AnimatedStallTile>
   }
 
   Widget _buildStatusBadges() {
+    // Modify to consider database status
+    final bool isOpen = _getStallOpenStatus();
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (widget.stall.isCurrentlyOpen())
+        if (isOpen)
           Container(
             padding: const EdgeInsets.symmetric(
               horizontal: 6,
@@ -403,6 +565,10 @@ class _AnimatedStallTileState extends State<AnimatedStallTile>
   }
 
   Widget _buildInfoSection() {
+    // Check if using default schedule
+    bool isUsingDefaultSchedule = widget.openingHours != null &&
+        widget.openingHours!.contains('(Default)');
+
     return Wrap(
       spacing: 8,
       runSpacing: 8,
@@ -421,6 +587,15 @@ class _AnimatedStallTileState extends State<AnimatedStallTile>
             colors: [Colors.green[100]!, Colors.green[50]!],
           ),
         ),
+        // Add indicator for default schedule if applicable
+        if (isUsingDefaultSchedule)
+          _buildInfoChip(
+            icon: Icons.schedule,
+            text: 'Default Hours',
+            gradient: LinearGradient(
+              colors: [Colors.orange[100]!, Colors.orange[50]!],
+            ),
+          ),
       ],
     );
   }
@@ -543,5 +718,37 @@ class _AnimatedStallTileState extends State<AnimatedStallTile>
     final hour = time.hour.toString().padLeft(2, '0');
     final minute = time.minute.toString().padLeft(2, '0');
     return '$hour:$minute';
+  }
+
+  // Add this static method for easy creation of next opening info widget
+  static Widget nextOpeningInfo(Stan stall, String nextOpeningTime) {
+    if (nextOpeningTime.isEmpty) return SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 4.0),
+      child: Row(
+        children: [
+          Icon(Icons.update, size: 12, color: Colors.orange[700]),
+          SizedBox(width: 4),
+          Expanded(
+            child: Text(
+              'Opens $nextOpeningTime',
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.orange[700],
+                fontWeight: FontWeight.w500,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Add this method to manually refresh stall status
+  Future<void> refreshStatus() async {
+    await _fetchStallStatus();
   }
 }

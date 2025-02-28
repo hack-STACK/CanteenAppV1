@@ -99,4 +99,13 @@ class Discount {
       stallId: stallId ?? this.stallId,
     );
   }
+
+  bool get isExpired {
+    final now = DateTime.now();
+    return now.isAfter(endDate);
+  }
+
+  bool get isActiveAndValid {
+    return isActive && !isExpired;
+  }
 }

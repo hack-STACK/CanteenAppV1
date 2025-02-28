@@ -10,7 +10,6 @@ import 'package:kantin/Models/menus.dart';
 import 'package:kantin/Services/Database/foodService.dart';
 import 'package:kantin/Models/menus_addon.dart'; // Add this import
 import 'package:kantin/pages/StudentState/OrderPage.dart';
-import 'package:kantin/utils/time_utils.dart';
 import 'package:provider/provider.dart';
 import 'package:kantin/Models/Restaurant.dart';
 import 'package:kantin/pages/StudentState/food_cart.dart';
@@ -198,8 +197,8 @@ class _StallDetailPageState extends State<StallDetailPage>
     int ratingsCount = 0;
 
     for (var menu in _menus) {
-      if (menu.rating != null && menu.rating! > 0) {
-        ratingSum += menu.rating!;
+      if (menu.rating > 0) {
+        ratingSum += menu.rating;
         totalRatedMenus++;
         // Add the number of ratings for this menu (if available)
         ratingsCount += menu.totalRatings ?? 1;
@@ -368,21 +367,6 @@ class _StallDetailPageState extends State<StallDetailPage>
     String? note,
     double? price,
   }) async {
-    // Update this section to provide clearer messaging about closure reasons
-    if (!widget.stall.isCurrentlyOpen()) {
-      final isManualClosure = !widget.stall.isManuallyOpen;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(isManualClosure
-              ? 'This stall is closed by the vendor today. You cannot place orders.'
-              : 'This stall is currently closed due to business hours. You cannot place orders.'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
-
     print('\n=== Adding to Cart ===');
     print('Menu: ${menu.foodName}');
     print('Original Price: ${menu.price}');
@@ -981,9 +965,6 @@ class _StallDetailPageState extends State<StallDetailPage>
   }
 
   void _showMenuDetail(Menu menu) async {
-    // Check if stall is closed first
-    final stallClosed = !widget.stall.isCurrentlyOpen();
-
     // Fetch discount at the start
     await menu.fetchDiscount();
 
@@ -1363,7 +1344,7 @@ class _StallDetailPageState extends State<StallDetailPage>
                       const SizedBox(width: 16),
                       Expanded(
                         child: ElevatedButton(
-                          onPressed: (menu.isAvailable ?? false) && !stallClosed
+                          onPressed: (menu.isAvailable ?? false)
                               ? () {
                                   _addToCart(
                                     menu,
@@ -1378,14 +1359,11 @@ class _StallDetailPageState extends State<StallDetailPage>
                             padding: const EdgeInsets.symmetric(vertical: 16),
                             backgroundColor:
                                 hasDiscount ? Colors.red.shade600 : null,
-                            disabledBackgroundColor: Colors.grey[300],
                           ),
                           child: Text(
-                            stallClosed
-                                ? 'Stall Closed'
-                                : (menu.isAvailable ?? false)
-                                    ? 'Add to Cart'
-                                    : 'Out of Stock',
+                            (menu.isAvailable ?? false)
+                                ? 'Add to Cart'
+                                : 'Out of Stock',
                             style: const TextStyle(fontSize: 16),
                           ),
                         ),
@@ -1509,10 +1487,25 @@ class _StallDetailPageState extends State<StallDetailPage>
     }
   }
 
+  // Add this debug method before building menu cards
+  void _debugCheckDiscount(Menu menu) {
+    print('\n=== Menu Discount Debug ===');
+    print('Item: ${menu.foodName}');
+    print('Original Price: ${menu.price}');
+    print('Has Discount: ${menu.hasDiscount}');
+    print('Discount %: ${menu.discountPercent}');
+    print('Effective Price: ${menu.effectivePrice}');
+
+    if (menu.hasDiscount) {
+      final savings = menu.price - menu.effectivePrice;
+      print('You save: $savings');
+      print('Discount: ${menu.discountPercent}%');
+    }
+    print('===========================\n');
+  }
+
   @override
   Widget build(BuildContext context) {
-    final bool isStallClosed = !widget.stall.isCurrentlyOpen();
-
     return Scaffold(
       key: _scaffoldKey,
       body: Stack(
@@ -1529,42 +1522,6 @@ class _StallDetailPageState extends State<StallDetailPage>
                   onCartTap: _showCart,
                   cartItemCount: _cartItemCount,
                 ),
-                // Add stall closed notification
-                if (isStallClosed)
-                  SliverToBoxAdapter(
-                    child: Container(
-                      color: Colors.red.shade50,
-                      padding: const EdgeInsets.all(12),
-                      child: Row(
-                        children: [
-                          Icon(Icons.access_time, color: Colors.red.shade700),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'This stall is currently CLOSED',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.red.shade700,
-                                  ),
-                                ),
-                                if (widget.stall.openTime != null)
-                                  Text(
-                                    'Opens again at ${_formatTime(widget.stall.openTime)}',
-                                    style: TextStyle(
-                                      color: Colors.red.shade700,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
                 SliverToBoxAdapter(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1600,7 +1557,6 @@ class _StallDetailPageState extends State<StallDetailPage>
                         menuAddons: _menuAddons,
                         favoriteMenus: _favoriteMenus,
                         onToggleFavorite: _toggleFavorite,
-                        isStallClosed: isStallClosed, // Pass this new parameter
                       ),
                       // Add some bottom padding to ensure content isn't hidden by the cart bar
                       SizedBox(height: 80),
@@ -1613,8 +1569,7 @@ class _StallDetailPageState extends State<StallDetailPage>
           if (_loadingState == LoadingState.loading) _buildLoadingOverlay(),
         ],
       ),
-      bottomNavigationBar:
-          isStallClosed ? _buildStallClosedBar() : _buildCartBar(),
+      bottomNavigationBar: _buildCartBar(),
     );
   }
 
@@ -1962,67 +1917,6 @@ class _StallDetailPageState extends State<StallDetailPage>
           ),
         );
       },
-    );
-  }
-
-  // Add a new method to show a "Stall Closed" bar
-  Widget _buildStallClosedBar() {
-    final isManualClosure = !widget.stall.isManuallyOpen;
-    final nextOpeningInfo = TimeUtils.getNextOpeningTime(widget.stall);
-
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        child: Material(
-          color: Colors.red.shade100,
-          borderRadius: BorderRadius.circular(16),
-          elevation: 4,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-            child: Row(
-              children: [
-                Icon(
-                    isManualClosure
-                        ? Icons.store_mall_directory_outlined
-                        : Icons.access_time,
-                    color: Colors.red.shade700),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'This stall is currently CLOSED',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.red.shade700,
-                        ),
-                      ),
-                      if (isManualClosure)
-                        Text(
-                          'The vendor has closed this stall for today',
-                          style: TextStyle(
-                            color: Colors.red.shade700,
-                          ),
-                        )
-                      else if (widget.stall.openTime != null &&
-                          nextOpeningInfo != null)
-                        Text(
-                          'Opens ${nextOpeningInfo.timeDescription}',
-                          style: TextStyle(
-                            color: Colors.red.shade700,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 

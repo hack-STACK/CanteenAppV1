@@ -9,8 +9,9 @@ class BalanceCardWidget extends StatefulWidget {
   final Color primaryColor;
   final Color backgroundColor;
   final VoidCallback? onCardTap;
+  final bool isLoading;
 
-  const BalanceCardWidget({
+  BalanceCardWidget({
     super.key,
     required this.currentBalance,
     this.currencyCode = 'IDR',
@@ -18,7 +19,16 @@ class BalanceCardWidget extends StatefulWidget {
     this.primaryColor = const Color(0xFFFF542D),
     this.backgroundColor = Colors.white,
     this.onCardTap,
-  });
+    this.isLoading = false,
+  }) {
+    // Ensure each list has at least 7 items for chart display
+    historicalData.forEach((key, value) {
+      if (value.length < 7) {
+        final padLength = 7 - value.length;
+        historicalData[key] = List.filled(padLength, 0.0) + value;
+      }
+    });
+  }
 
   @override
   _BalanceCardWidgetState createState() => _BalanceCardWidgetState();
@@ -62,7 +72,17 @@ class _BalanceCardWidgetState extends State<BalanceCardWidget>
         data.length,
         (index) => FlSpot(index.toDouble(), data[index]),
       );
-      _maxY = data.reduce((curr, next) => curr > next ? curr : next) * 1.2;
+
+      // Check if the data is not empty
+      if (data.isNotEmpty) {
+        // Find the maximum value and ensure it's not zero
+        final maxValue = data.reduce((curr, next) => curr > next ? curr : next);
+        // If maxValue is zero, set _maxY to a minimum default value (like 100)
+        _maxY = maxValue > 0 ? maxValue * 1.2 : 100.0;
+      } else {
+        // If data is empty, use default value
+        _maxY = 100.0;
+      }
     });
   }
 
@@ -119,7 +139,7 @@ class _BalanceCardWidgetState extends State<BalanceCardWidget>
           gridData: FlGridData(
             show: true,
             drawVerticalLine: false,
-            horizontalInterval: _maxY / 5,
+            horizontalInterval: _maxY / 5, // This will now never be zero
             getDrawingHorizontalLine: (value) {
               return FlLine(
                 color: Colors.grey.withOpacity(0.1),
@@ -219,75 +239,80 @@ class _BalanceCardWidgetState extends State<BalanceCardWidget>
               width: 1,
             ),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Total Balance',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.grey[600],
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        _formatCurrency(widget.currentBalance),
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: Theme.of(context).textTheme.bodyLarge?.color,
-                        ),
-                      ),
-                    ],
-                  ),
-                  _buildTimeframeDropdown(),
-                ],
-              ),
-              _buildChart(),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: widget.primaryColor.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
+          child: widget.isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Icon(
-                          Icons.calendar_today,
-                          size: 16,
-                          color: widget.primaryColor,
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Total Balance',
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.grey[600],
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _formatCurrency(widget.currentBalance),
+                              style: TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                                color: Theme.of(context)
+                                    .textTheme
+                                    .bodyLarge
+                                    ?.color,
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 6),
-                        Text(
-                          DateTime.now().year.toString(),
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: widget.primaryColor,
-                            fontWeight: FontWeight.w500,
+                        _buildTimeframeDropdown(),
+                      ],
+                    ),
+                    _buildChart(),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: widget.primaryColor.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.calendar_today,
+                                size: 16,
+                                color: widget.primaryColor,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                DateTime.now().year.toString(),
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: widget.primaryColor,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
                     ),
-                  ),
-                ],
-              ),
-            ],
-          ),
+                  ],
+                ),
         ),
       ),
     );

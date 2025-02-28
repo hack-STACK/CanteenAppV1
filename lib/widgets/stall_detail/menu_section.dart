@@ -33,7 +33,6 @@ class MenuSection extends StatefulWidget {
   final Map<int, List<FoodAddon>> menuAddons;
   final Set<String> favoriteMenus;
   final Function(Menu) onToggleFavorite;
-  final bool isStallClosed; // Add this new parameter
 
   const MenuSection({
     super.key,
@@ -48,7 +47,6 @@ class MenuSection extends StatefulWidget {
     required this.menuAddons,
     required this.favoriteMenus,
     required this.onToggleFavorite,
-    this.isStallClosed = false, // Default to false
   });
 
   @override
@@ -939,11 +937,17 @@ class _MenuSectionState extends State<MenuSection>
     return FutureBuilder<double>(
       future: MenuService().getDiscountedPrice(menu.id, menu.price),
       builder: (context, snapshot) {
+        // Add debug print to see what's happening
         final discountedPrice = snapshot.data ?? menu.price;
         final discountPercentage = menu.price > 0
             ? ((menu.price - discountedPrice) / menu.price * 100).round()
             : 0;
 
+        // Debug output to check values
+        print(
+            'Menu: ${menu.foodName}, Original: ${menu.price}, Discounted: $discountedPrice, Percent: $discountPercentage%');
+
+        // Rest of the code remains the same
         return Hero(
           tag: heroTag,
           child: Container(
@@ -1438,75 +1442,84 @@ class _MenuSectionState extends State<MenuSection>
   }
 
   Widget _buildPriceActionRow(Menu menu) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        // Price Column
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                _formatPrice(menu.price),
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: Theme.of(context).primaryColor,
-                  letterSpacing: -0.5,
-                ),
-              ),
-              if (menu.originalPrice != null &&
-                  menu.originalPrice! > menu.price) ...[
-                SizedBox(height: 2),
-                Text(
-                  _formatPrice(menu.originalPrice!),
-                  style: TextStyle(
-                    fontSize: 12,
-                    decoration: TextDecoration.lineThrough,
-                    color: Colors.grey.shade500,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-        // Add to Cart Button
-        if (menu.isAvailable)
-          Material(
-            color: Theme.of(context).primaryColor,
-            borderRadius: BorderRadius.circular(12),
-            child: InkWell(
-              onTap: () => widget.onAddToCart(menu),
-              borderRadius: BorderRadius.circular(12),
-              child: Container(
-                padding: EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.add_shopping_cart_rounded,
-                      color: Colors.white,
-                      size: 18,
+    return FutureBuilder<double>(
+      future: MenuService().getDiscountedPrice(menu.id, menu.price),
+      builder: (context, snapshot) {
+        final discountedPrice = snapshot.data ?? menu.price;
+        final hasDiscount = discountedPrice < menu.price;
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // Price Column
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _formatPrice(discountedPrice), // Use discounted price here
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: hasDiscount
+                          ? Theme.of(context).colorScheme.error
+                          : Theme.of(context).primaryColor,
+                      letterSpacing: -0.5,
                     ),
-                    SizedBox(width: 4),
+                  ),
+                  if (hasDiscount) ...[
+                    SizedBox(height: 2),
                     Text(
-                      'Add',
+                      _formatPrice(menu.price),
                       style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                        decoration: TextDecoration.lineThrough,
+                        color: Colors.grey.shade500,
                       ),
                     ),
                   ],
-                ),
+                ],
               ),
             ),
-          ),
-      ],
+            // Add to Cart Button
+            if (menu.isAvailable)
+              Material(
+                color: Theme.of(context).primaryColor,
+                borderRadius: BorderRadius.circular(12),
+                child: InkWell(
+                  onTap: () => widget.onAddToCart(menu),
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.add_shopping_cart_rounded,
+                          color: Colors.white,
+                          size: 18,
+                        ),
+                        SizedBox(width: 4),
+                        Text(
+                          'Add',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 

@@ -21,8 +21,6 @@ import 'package:kantin/utils/image_helper.dart';
 import 'package:kantin/models/enums/payment_method_extension.dart';
 import 'package:kantin/models/enums/order_type_extension.dart';
 import 'package:kantin/widgets/badges/discount_badge.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 
 class PaymentPage extends StatefulWidget {
   final int StudentId; // Make this non-nullable

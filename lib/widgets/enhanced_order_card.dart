@@ -1,13 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:kantin/utils/price_formatter.dart';
 import 'package:kantin/widgets/order_details_sheet.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:shimmer/shimmer.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:kantin/Services/rating_service.dart';
-import 'dart:ui';
 
 class EnhancedOrderCard extends StatefulWidget {
   final Map<String, dynamic> item;

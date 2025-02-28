@@ -1,3 +1,4 @@
+import 'package:kantin/Models/menus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:kantin/models/menu_discount.dart';
 import 'package:kantin/models/discount.dart';
@@ -23,17 +24,55 @@ class MenuService {
     }
   }
 
-  Future<double> getDiscountedPrice(
-    int menuId,
-    double originalPrice, {
-    int? transactionId,
-  }) async {
-    final (discountedPrice, _) = await getDiscountedPriceWithTransaction(
-      menuId,
-      originalPrice,
-      transactionId,
-    );
-    return discountedPrice;
+  Future<double> getDiscountedPrice(int menuId, double originalPrice) async {
+    try {
+      print(
+          'Getting discounted price for menu $menuId with original price $originalPrice');
+
+      // DATE OPERATORS WERE REVERSED - FIX THEM!
+      final response = await _supabase
+          .from('menu_discounts')
+          .select('''
+            *,
+            discounts!inner (
+              id,
+              discount_name,
+              discount_percentage,
+              is_active,
+              start_date,
+              end_date
+            )
+          ''')
+          .eq('id_menu', menuId)
+          .eq('is_active', true)
+          .eq('discounts.is_active', true)
+          .lte('discounts.start_date',
+              DateTime.now().toIso8601String()) // CORRECTED: start_date <= now
+          .gte('discounts.end_date',
+              DateTime.now().toIso8601String()) // CORRECTED: end_date >= now
+          .order('discount_percentage', ascending: false)
+          .limit(1)
+          .maybeSingle();
+
+      print('Discount response: $response');
+
+      if (response != null) {
+        final discountObj = response['discounts'];
+        final discountPercentage =
+            (discountObj['discount_percentage'] as num).toDouble();
+        final discountedPrice =
+            originalPrice * (1 - (discountPercentage / 100));
+
+        print(
+            'Applying discount of $discountPercentage% to $originalPrice = $discountedPrice');
+        return discountedPrice;
+      }
+
+      return originalPrice;
+    } catch (e) {
+      print('Error getting discounted price: $e');
+      return originalPrice;
+    }
   }
 
   Future<(double, double?)> getDiscountedPriceWithPercentage(
@@ -298,6 +337,77 @@ class MenuService {
     } catch (e) {
       print('Error fetching menu discounts: $e');
       return {};
+    }
+  }
+
+  Future<Menu> getMenuWithDiscount(int menuId) async {
+    try {
+      print('Fetching menu with discount for menu ID: $menuId');
+
+      // Get the base menu item first
+      final response =
+          await _supabase.from('menu').select().eq('id', menuId).single();
+
+      Menu menu = Menu.fromMap(response);
+
+      // Get any active discounts for this menu
+      final discountResponse = await _supabase
+          .from('menu_discounts')
+          .select('''
+            *,
+            discounts!inner (
+              id,
+              discount_name,
+              discount_percentage,
+              is_active,
+              start_date,
+              end_date
+            )
+          ''')
+          .eq('id_menu', menuId)
+          .eq('is_active', true)
+          .eq('discounts.is_active', true)
+          .lte('discounts.start_date', DateTime.now().toIso8601String())
+          .gte('discounts.end_date', DateTime.now().toIso8601String())
+          .order('discount_percentage', ascending: false)
+          .limit(1)
+          .maybeSingle();
+
+      if (discountResponse != null) {
+        print('Found active discount for menu: $discountResponse');
+
+        // Get discount percentage and calculate discounted price
+        final discountPercentage =
+            (discountResponse['discounts']['discount_percentage'] as num)
+                .toDouble();
+
+        // Calculate new price with the discount
+        final originalPrice = menu.price;
+        final discountedPrice =
+            originalPrice * (1 - (discountPercentage / 100));
+
+        print('Original price: $originalPrice');
+        print('Discount percentage: $discountPercentage%');
+        print('Calculated discounted price: $discountedPrice');
+
+        // Update menu object with discount info
+        menu = menu.copyWith(
+          originalPrice: originalPrice,
+          discountedPrice: discountedPrice,
+        );
+
+        // Force update the internal cache values
+        menu.setDiscountValues(
+          hasDiscount: true,
+          discountPercentage: discountPercentage,
+          discountedPrice: discountedPrice,
+        );
+      }
+
+      return menu;
+    } catch (e) {
+      print('Error fetching menu with discount: $e');
+      rethrow;
     }
   }
 }

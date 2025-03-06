@@ -1,5 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:kantin/Models/discount_model.dart';
+import 'package:kantin/Models/stall_schedule.dart';
+
+// Add this extension near the top of your file, after imports
+extension ListExtension<T> on List<T> {
+  T? firstWhereOrNull(bool Function(T) test) {
+    for (final element in this) {
+      if (test(element)) {
+        return element;
+      }
+    }
+    return null;
+  }
+}
 
 class Stan {
   final int id;
@@ -25,6 +38,9 @@ class Stan {
 
   // Add map to store schedule information
   Map<String, dynamic>? _scheduleInfo;
+
+  // Add a list to store schedule data
+  List<StallSchedule>? _schedules;
 
   // Default schedule constants
   static const Map<String, dynamic> DEFAULT_SCHEDULE = {
@@ -60,34 +76,159 @@ class Stan {
     this.category, // Include category in constructor
   });
 
-  // Add this method to set schedule information
-  void setScheduleInfo(Map<String, dynamic>? scheduleInfo) {
-    // If no schedule provided, use default schedule
-    if (scheduleInfo == null || scheduleInfo.isEmpty) {
-      // Check if today is a default business day
-      final now = DateTime.now();
-      final isBusinessDay = DEFAULT_BUSINESS_DAYS.contains(now.weekday);
-
-      if (isBusinessDay) {
-        _scheduleInfo = Map<String, dynamic>.from(DEFAULT_SCHEDULE);
-        // Update open status based on current time and default hours
-        _updateOpenStatusWithDefaultSchedule();
-      } else {
-        // Weekend or non-business day - closed by default
-        _scheduleInfo = {
-          'is_open': false,
-          'is_default': true,
-          'reason': 'Closed on weekends'
-        };
-      }
-    } else {
-      _scheduleInfo = scheduleInfo;
+  // Update the setScheduleInfo method to properly handle custom schedules
+  void setScheduleInfo(Map<String, dynamic>? scheduleInfo, {List<StallSchedule>? schedules}) {
+    // Store schedules if provided
+    if (schedules != null) {
+      _schedules = schedules;
     }
+    
+    // If we have schedules, use them to determine if stall is open
+    if (_schedules != null && _schedules!.isNotEmpty) {
+      print('Setting schedule from ${_schedules!.length} custom schedules');
+      final now = DateTime.now();
+      final today = _getDayNameFromWeekday(now.weekday);
+      final currentTime = TimeOfDay.now();
+      
+      // First check for any specific date schedule for today
+      final specificSchedule = _schedules!.firstWhereOrNull(
+        (s) => s.specificDate != null && 
+               _isSameDate(s.specificDate!, now)
+      );
+      
+      if (specificSchedule != null && specificSchedule.openTime != null && specificSchedule.closeTime != null) {
+        print('Found specific schedule for today: ${specificSchedule.openTime} - ${specificSchedule.closeTime}');
+        _setScheduleFromData(specificSchedule, currentTime);
+        _isUsingDefaultSchedule = false; // IMPORTANT: Set this to false when using custom schedule
+        return;
+      }
+      
+      // Otherwise check for day of week schedule
+      final daySchedule = _schedules!.firstWhereOrNull(
+        (s) => s.dayOfWeek == today && s.specificDate == null
+      );
+      
+      if (daySchedule != null && daySchedule.openTime != null && daySchedule.closeTime != null) {
+        print('Found day schedule for $today: ${daySchedule.openTime} - ${daySchedule.closeTime}');
+        _setScheduleFromData(daySchedule, currentTime);
+        _isUsingDefaultSchedule = false; // IMPORTANT: Set this to false when using custom schedule
+        return;
+      }
+      
+      // If no specific schedule for today, fall back to default
+      print('No custom schedule found for today, using default');
+    }
+    
+    // If no schedules provided, use the scheduleInfo map
+    if (scheduleInfo != null) {
+      _scheduleInfo = scheduleInfo;
+      _isUsingDefaultSchedule = scheduleInfo['is_default'] == true;
+    } else {
+      // Apply default schedule
+      _applyDefaultSchedule();
+    }
+  }
 
-    // Update isOpen based on schedule info
+  // Update _applyDefaultSchedule to explicitly set the flag
+  void _applyDefaultSchedule() {
+    final now = DateTime.now();
+    // Check if today is a business day (Monday to Friday)
+    if (Stan.DEFAULT_BUSINESS_DAYS.contains(now.weekday)) {
+      _scheduleInfo = Map<String, dynamic>.from(Stan.DEFAULT_SCHEDULE);
+      _isUsingDefaultSchedule = true; // Explicitly mark as using default
+      // Check if time is within the default hours
+      _updateOpenStatusWithDefaultSchedule();
+    } else {
+      _scheduleInfo = {
+        'is_open': false,
+        'is_default': true,
+        'reason': 'Closed on weekends'
+      };
+      _isUsingDefaultSchedule = true; // Explicitly mark as using default
+    }
+    
     isOpen = _scheduleInfo!.containsKey('is_open')
-        ? _scheduleInfo!['is_open'] as bool
-        : false;
+      ? _scheduleInfo!['is_open'] as bool
+      : false;
+  }
+
+  // Helper method to set schedule from StallSchedule data
+  void _setScheduleFromData(StallSchedule schedule, TimeOfDay currentTime) {
+    bool isWithinHours = false;
+    
+    // Only check time range if both openTime and closeTime are available
+    if (schedule.openTime != null && schedule.closeTime != null) {
+      isWithinHours = _isTimeInRange(
+        currentTime, 
+        schedule.openTime!, 
+        schedule.closeTime!
+      );
+    }
+    
+    // Format time strings properly
+    String openTimeStr = schedule.openTime != null ? 
+      _timeOfDayToString(schedule.openTime!) : '08:00:00';
+    String closeTimeStr = schedule.closeTime != null ? 
+      _timeOfDayToString(schedule.closeTime!) : '17:00:00';
+    
+    print('Setting schedule for stall: ${stanName} with times ${openTimeStr} - ${closeTimeStr}');
+    
+    _scheduleInfo = {
+      'is_open': schedule.isOpen && isWithinHours,
+      'open_time': openTimeStr,
+      'close_time': closeTimeStr,
+      'is_default': false, // Mark as NOT default
+      'day': schedule.dayOfWeek,
+      'schedule_id': schedule.id
+    };
+    
+    // Update the stall's open status
+    isOpen = _scheduleInfo!['is_open'] as bool;
+    _isUsingDefaultSchedule = false; // CRITICAL: Explicitly set to false for custom schedules
+    
+    // Debug output to verify
+    print('Schedule set for ${stanName}: isUsingDefault=${_isUsingDefaultSchedule}, times: ${openTimeStr} - ${closeTimeStr}');
+  }
+  
+  // Helper to convert TimeOfDay to string
+  String _timeOfDayToString(TimeOfDay time) {
+    return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}:00';
+  }
+  
+  // Helper to check if time is within range
+  bool _isTimeInRange(TimeOfDay time, TimeOfDay start, TimeOfDay end) {
+    final timeMinutes = time.hour * 60 + time.minute;
+    final startMinutes = start.hour * 60 + start.minute;
+    final endMinutes = end.hour * 60 + end.minute;
+    
+    if (endMinutes > startMinutes) {
+      // Normal case: e.g., 8:00 - 17:00
+      return timeMinutes >= startMinutes && timeMinutes <= endMinutes;
+    } else {
+      // Overnight case: e.g., 22:00 - 6:00
+      return timeMinutes >= startMinutes || timeMinutes <= endMinutes;
+    }
+  }
+  
+  // Helper to get day name from weekday number
+  String _getDayNameFromWeekday(int weekday) {
+    switch (weekday) {
+      case 1: return 'Mon';
+      case 2: return 'Tue';
+      case 3: return 'Wed';
+      case 4: return 'Thu';
+      case 5: return 'Fri';
+      case 6: return 'Sat';
+      case 7: return 'Sun';
+      default: return 'Mon';
+    }
+  }
+  
+  // Helper to check if two dates are the same day
+  bool _isSameDate(DateTime date1, DateTime date2) {
+    return date1.year == date2.year && 
+           date1.month == date2.month && 
+           date1.day == date2.day;
   }
 
   // Helper method to update open status based on default schedule
@@ -120,7 +261,6 @@ class Stan {
 
   String? get openTimeString => _scheduleInfo?['open_time'] as String?;
   String? get closeTimeString => _scheduleInfo?['close_time'] as String?;
-  bool get isUsingDefaultSchedule => _scheduleInfo?['is_default'] == true;
 
   factory Stan.fromMap(Map<String, dynamic> map) {
     String? openTimeStr = map['open_time'];
@@ -283,6 +423,33 @@ class Stan {
     if (isManuallyOpen) return isOpen;
 
     // For schedule-based determination:
+    if (_schedules != null && _schedules!.isNotEmpty) {
+      final now = DateTime.now();
+      final today = _getDayNameFromWeekday(now.weekday);
+      final currentTime = TimeOfDay.now();
+      
+      // First check specific date schedules
+      final specificSchedule = _schedules!.firstWhereOrNull(
+        (s) => s.specificDate != null && 
+               _isSameDate(s.specificDate!, now)
+      );
+      
+      if (specificSchedule != null) {
+        return specificSchedule.isOpen && 
+               _isTimeInRange(currentTime, specificSchedule.openTime!, specificSchedule.closeTime!);
+      }
+      
+      // Then check day of week schedule
+      final daySchedule = _schedules!.firstWhereOrNull(
+        (s) => s.dayOfWeek == today
+      );
+      
+      if (daySchedule != null) {
+        return daySchedule.isOpen && 
+               _isTimeInRange(currentTime, daySchedule.openTime!, daySchedule.closeTime!);
+      }
+    }
+
     if (openTime == null || closeTime == null) {
       return false; // If no times set, assume closed
     }
@@ -383,5 +550,15 @@ class Stan {
     final hasDiscounts = _scheduleInfo!['has_promotions'] == true;
     print('Stan promotion check from scheduleInfo: $hasDiscounts');
     return hasDiscounts;
+  }
+
+  // Getter for schedules
+  List<StallSchedule>? get schedules => _schedules;
+
+  // Helper to determine if the stall is using a default schedule
+  bool _isUsingDefaultSchedule = true;
+  bool get isUsingDefaultSchedule => _isUsingDefaultSchedule;
+  set isUsingDefaultSchedule(bool value) {
+    _isUsingDefaultSchedule = value;
   }
 }

@@ -30,10 +30,14 @@ class FoodService {
         return Menu.fromMap(
             response ?? existingMenu); // Change fromJson to fromMap
       } else {
-        // Insert new menu
+        // Create a map without the ID field for new menu insertion
+        final Map<String, dynamic> insertData = Map.from(menu.toMap());
+        insertData.remove('id'); // Remove ID to let database auto-generate it
+        
+        // Insert new menu with the modified map
         final response = await _client
             .from('menu')
-            .insert(menu.toMap()) // Change toJson to toMap
+            .insert(insertData)
             .select()
             .single();
 

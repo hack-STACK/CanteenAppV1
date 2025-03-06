@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:kantin/Models/Stan_model.dart';
 import 'package:kantin/Models/discount.dart';
+import 'package:kantin/Models/stall_schedule.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class StanService {
@@ -970,4 +971,42 @@ class StanService {
       return []; // Return empty list on error
     }
   }
+Future<List<StallSchedule>> getStallScheduleObjects(int stallId) async {
+  try {
+    final response = await _client
+        .from('stall_schedules')
+        .select()
+        .eq('stall_id', stallId);
+        
+    return (response as List)
+        .map((json) => StallSchedule.fromMap(json))
+        .toList();
+  } catch (e) {
+    print('Error fetching stall schedules: $e');
+    return [];
+  }
+}
+
+// Update the fetchStallDetails method to use the renamed method
+Future<Stan?> fetchStallDetails(int stallId) async {
+  try {
+    final response = await _client
+        .from('stalls')
+        .select()
+        .eq('id', stallId)
+        .single();
+        
+    final stan = Stan.fromMap(response);
+    
+    // Fetch schedules as StallSchedule objects
+    final schedules = await getStallScheduleObjects(stallId);
+    stan.setScheduleInfo(null, schedules: schedules);
+    
+    return stan;
+  } catch (e) {
+    print('Error fetching stall details: $e');
+    return null;
+  }
+}
+
 }

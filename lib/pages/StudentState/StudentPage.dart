@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:kantin/Component/my_drawer.dart';
 import 'package:kantin/Component/my_stall_tile.dart';
 import 'package:kantin/Models/Stan_model.dart';
+import 'package:kantin/Models/stall_schedule.dart';
 import 'package:kantin/Models/student_models.dart';
 import 'package:kantin/Services/Auth/auth_Service.dart';
 import 'package:kantin/Services/Database/Stan_service.dart';
@@ -19,6 +20,7 @@ import 'package:kantin/widgets/search_bar_delegate.dart';
 import 'package:kantin/widgets/shimmer/shimmer_loading.dart'; // Add this import
 import 'package:intl/intl.dart'; // Add this for date formatting
 import 'package:kantin/widgets/stall_status_indicator.dart';
+import 'package:collection/collection.dart';
 
 class StudentPage extends StatefulWidget {
   const StudentPage({super.key});
@@ -284,58 +286,43 @@ class _HomepageState extends State<StudentPage>
         _errorMessage = null;
       });
 
-      // First fetch stall schedules
-      final stallSchedules = await _fetchStallSchedules();
-
-      // Then get all stalls
+      // First get all stalls
       final stalls = await _stanService.getAllStans();
+      
+      // Create a map to store StallSchedule objects by stall ID
+      Map<int, List<StallSchedule>> stallScheduleObjects = {};
+      
+      // Fetch schedule objects for all stalls in one batch
+      for (var stall in stalls) {
+        // Get actual StallSchedule objects instead of just schedule info
+        final schedules = await _stanService.getStallScheduleObjects(stall.id);
+        if (schedules.isNotEmpty) {
+          stallScheduleObjects[stall.id] = schedules;
+        }
+      }
 
       // Store next opening times for stalls that are closed
       Map<int, String> nextOpeningTimes = {};
 
       // Update stalls with schedule information
       for (var stall in stalls) {
-        if (stallSchedules.containsKey(stall.id)) {
-          // Stall has custom schedule
-          stall.setScheduleInfo(stallSchedules[stall.id]);
-
-          // Make sure the isOpen property is correctly set
-          final isOpen = stallSchedules[stall.id]?['is_open'] ?? false;
-          stall.isOpen = isOpen;
+        if (stallScheduleObjects.containsKey(stall.id)) {
+          // Important: Pass actual StallSchedule objects, not just a map
+          stall.setScheduleInfo(null, schedules: stallScheduleObjects[stall.id]);
+          
+          // The isOpen property should now be correctly set by the setScheduleInfo method
+          // We don't need to override it here
         } else {
-          // Stall has no custom schedule - use built-in isCurrentlyOpen method
-          // from the stall model instead of assuming closed
+          // Stall has no custom schedule - use default
           stall.setScheduleInfo(null);
-
-          // Try to determine if the stall should be open based on default schedule
-          final now = DateTime.now();
-          final currentTimeMinutes = now.hour * 60 + now.minute;
-
-          if (stall.openTime != null && stall.closeTime != null) {
-            final openMinutes =
-                stall.openTime!.hour * 60 + stall.openTime!.minute;
-            final closeMinutes =
-                stall.closeTime!.hour * 60 + stall.closeTime!.minute;
-
-            // Standard case: open time is before close time (e.g., 9:00 - 17:00)
-            if (closeMinutes > openMinutes) {
-              stall.isOpen = currentTimeMinutes >= openMinutes &&
-                  currentTimeMinutes <= closeMinutes;
-            } else {
-              // Special case: close time is on next day (e.g., 22:00 - 02:00)
-              stall.isOpen = currentTimeMinutes >= openMinutes ||
-                  currentTimeMinutes <= closeMinutes;
-            }
-          }
         }
 
-        // Print current stall status for debugging
-        print('Stall ${stall.stanName}: isOpen=${stall.isOpen}');
+        // Print debug information
+        print('Stall ${stall.stanName}: isOpen=${stall.isOpen}, isUsingDefault=${stall.isUsingDefaultSchedule}');
 
         // If stall is closed, get next opening time
         if (!stall.isOpen) {
-          final nextOpeningInfo =
-              await _stanService.getNextOpeningInfo(stall.id);
+          final nextOpeningInfo = await _stanService.getNextOpeningInfo(stall.id);
           nextOpeningTimes[stall.id] = nextOpeningInfo;
         }
       }
@@ -347,7 +334,7 @@ class _HomepageState extends State<StudentPage>
       if (!_isDisposed) {
         setState(() {
           _stalls = stalls;
-          _stallSchedules = stallSchedules;
+          _stallSchedules = {}; // Clear old schedule info since we're using StallSchedule objects now
           _popularStalls = popularStalls.take(5).toList();
           _isLoading = false;
           _nextOpeningTimes = nextOpeningTimes;
@@ -384,32 +371,51 @@ class _HomepageState extends State<StudentPage>
     return stall.isOpen;
   }
 
-  // Update the getStallHours method to handle default schedule
+  // Replace your existing getStallHours method with this new implementation
   String getStallHours(Stan stall) {
-    // First check if we have custom schedule from the database
-    if (_stallSchedules.containsKey(stall.id)) {
-      final schedule = _stallSchedules[stall.id]!;
-      final openTime = schedule['open_time'] ?? 'N/A';
-      final closeTime = schedule['close_time'] ?? 'N/A';
-
-      // Format the times for better display
-      return '${_formatTimeString(openTime)} - ${_formatTimeString(closeTime)}';
+    print("Stall ${stall.stanName} isUsingDefault: ${stall.isUsingDefaultSchedule}");
+    
+    // First check if stall has custom schedules
+    if (!stall.isUsingDefaultSchedule && stall.schedules != null && stall.schedules!.isNotEmpty) {
+      // Get today's schedule
+      final now = DateTime.now();
+      final today = _getDayNameFromWeekday(now.weekday);
+      
+      // Check for specific date schedule first
+      final specificSchedule = stall.schedules!.firstWhereOrNull(
+        (s) => s.specificDate != null && s.specificDate!.day == now.day && 
+               s.specificDate!.month == now.month && s.specificDate!.year == now.year
+      );
+      
+      if (specificSchedule?.openTime != null && specificSchedule?.closeTime != null) {
+        return '${_formatTimeOfDay(specificSchedule!.openTime!)} - ${_formatTimeOfDay(specificSchedule.closeTime!)}';
+      }
+      
+      // Then check for day of week schedule
+      final todaySchedule = stall.schedules!.firstWhereOrNull(
+        (s) => s.dayOfWeek == today && s.specificDate == null
+      );
+      
+      if (todaySchedule?.openTime != null && todaySchedule?.closeTime != null) {
+        return '${_formatTimeOfDay(todaySchedule!.openTime!)} - ${_formatTimeOfDay(todaySchedule.closeTime!)}';
+      }
     }
-
-    // No custom schedule in database, check if there's default schedule info in the stall object
-    if (stall.scheduleInfo != null &&
-        stall.openTimeString != null &&
-        stall.closeTimeString != null) {
-      final openTime = stall.openTimeString!;
-      final closeTime = stall.closeTimeString!;
-
-      return '${_formatTimeString(openTime)} - ${_formatTimeString(closeTime)} ${stall.isUsingDefaultSchedule ? "(Default)" : ""}';
+    
+    // Fall back to using scheduleInfo for compatibility
+    if (stall.scheduleInfo != null && 
+        stall.scheduleInfo!['open_time'] != null && 
+        stall.scheduleInfo!['close_time'] != null) {
+        
+      final openTime = stall.scheduleInfo!['open_time'] as String;
+      final closeTime = stall.scheduleInfo!['close_time'] as String;
+      
+      return '${_formatTimeString(openTime)} - ${_formatTimeString(closeTime)}${stall.isUsingDefaultSchedule ? " (Default)" : ""}';
     }
-
+    
     return 'Hours not set';
   }
 
-  // Format time string for display
+  // Add the formatTimeString method here if it doesn't exist already
   String _formatTimeString(String time) {
     try {
       final parts = time.split(':');
@@ -426,6 +432,26 @@ class _HomepageState extends State<StudentPage>
     } catch (e) {
       return time;
     }
+  }
+
+  // Add these new helper methods after _formatTimeString
+  String _getDayNameFromWeekday(int weekday) {
+    switch (weekday) {
+      case 1: return 'Mon';
+      case 2: return 'Tue';
+      case 3: return 'Wed';
+      case 4: return 'Thu';
+      case 5: return 'Fri';
+      case 6: return 'Sat';
+      case 7: return 'Sun';
+      default: return 'Mon';
+    }
+  }
+
+  String _formatTimeOfDay(TimeOfDay time) {
+    final hour = time.hourOfPeriod == 0 ? 12 : time.hourOfPeriod;
+    final period = time.period == DayPeriod.am ? 'AM' : 'PM';
+    return '$hour:${time.minute.toString().padLeft(2, '0')} $period';
   }
 
   Future<void> _handleRefresh() async {
@@ -1309,7 +1335,8 @@ class _HomepageState extends State<StudentPage>
                                 getStallHours(stall),
                                 style: TextStyle(
                                   fontSize: 9,
-                                  color: Colors.grey[600],
+                                  color: stall.isUsingDefaultSchedule ? Colors.orange[600] : Colors.grey[600],
+                                  fontStyle: stall.isUsingDefaultSchedule ? FontStyle.italic : FontStyle.normal,
                                 ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,

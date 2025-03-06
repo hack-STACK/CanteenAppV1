@@ -147,6 +147,7 @@ class Menu {
     );
   }
 
+  // Fix the toMap() method to only include fields that exist in your database schema
   Map<String, dynamic> toMap() {
     return {
       'id': id,
@@ -160,15 +161,11 @@ class Menu {
       'category': category,
       'rating': rating,
       'total_ratings': totalRatings,
-      'is_popular': isPopular,
-      'is_recommended': isRecommended,
-      'review_count': reviewCount,
-      'is_vegetarian': isVegetarian,
-      'is_spicy': isSpicy,
-      'tags': tags,
-      'preparation_time': preparationTime,
-      'original_price': originalPrice,
-      'discounted_price': discountedPrice, // Add this line
+      // 'is_popular': isPopular,
+      // 'is_recommended': isRecommended,
+      // Remove fields that don't exist in the database schema:
+      // 'original_price': originalPrice,
+      // 'discounted_price': discountedPrice,
     };
   }
 

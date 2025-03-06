@@ -5,7 +5,6 @@ import 'package:kantin/Models/transaction_model.dart';
 import 'package:kantin/Services/Database/transaction_service.dart';
 import 'package:kantin/models/enums/transaction_enums.dart';
 import 'package:kantin/services/Database/order_service.dart';
-import 'package:kantin/services/notification_service.dart';
 import 'package:intl/intl.dart';
 import 'package:kantin/widgets/OrderCard.dart'; // Add this import
 import 'package:kantin/widgets/shimmer_loading.dart'; // Add this new import
@@ -27,7 +26,6 @@ class _OrdersScreenState extends State<OrdersScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final OrderService _orderService = OrderService(); // Add this line
-  final NotificationService _notificationService = NotificationService();
 
   final tabs = [
     (status: TransactionStatus.pending, label: 'Pending', icon: Icons.schedule),
@@ -67,7 +65,6 @@ class _OrdersScreenState extends State<OrdersScreen>
     super.initState();
     _tabController =
         TabController(length: tabs.length + 1, vsync: this); // +1 for "All" tab
-    _notificationService.initialize();
     _setupOrderListener();
   }
 
@@ -91,13 +88,13 @@ class _OrdersScreenState extends State<OrdersScreen>
         !_orderCounts.containsKey(order.id));
 
     // Show notifications for new orders
-    for (final order in pendingOrders) {
-      _notificationService.showOrderNotification(
-        orderId: order.id,
-        title: 'New Order #${order.id}',
-        body: 'You have a new order waiting for confirmation',
-      );
-    }
+    // for (final order in pendingOrders) {
+    //   _notificationService.showOrderNotification(
+    //     orderId: order.id,
+    //     title: 'New Order #${order.id}',
+    //     body: 'You have a new order waiting for confirmation',
+    //   );
+    // }
 
     setState(() {
       _updateOrderCounts(newOrders);

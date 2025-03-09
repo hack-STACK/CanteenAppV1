@@ -30,12 +30,11 @@ class FoodService {
         return Menu.fromMap(
             response ?? existingMenu); // Change fromJson to fromMap
       } else {
-        // Insert new menu
-        final response = await _client
-            .from('menu')
-            .insert(menu.toMap()) // Change toJson to toMap
-            .select()
-            .single();
+        // Insert new menu - exclude ID to let database generate it
+        final menuData = menu.toMap()..remove('id');
+
+        final response =
+            await _client.from('menu').insert(menuData).select().single();
 
         return Menu.fromMap(response); // Change fromJson to fromMap
       }
@@ -166,6 +165,31 @@ class FoodService {
           .select()
           .maybeSingle(); // Mengembalikan data yang diperbarui
     } catch (e) {
+      throw Exception('Failed to update menu: $e');
+    }
+  }
+
+  /// Update a menu item using a map of properties
+  Future<void> updateMenuWithMap(Map<String, dynamic> menuData) async {
+    try {
+      if (!menuData.containsKey('id')) {
+        throw Exception('Menu ID is required for update');
+      }
+
+      final menuId = menuData['id'];
+
+      // Create a clean copy of the data for the update
+      final updateData = Map<String, dynamic>.from(menuData);
+
+      // Remove any fields that don't exist in the database
+      updateData
+          .removeWhere((key, value) => ['id', 'is_popular'].contains(key));
+
+      print('Updating menu with data: $updateData');
+
+      await _client.from('menu').update(updateData).eq('id', menuId);
+    } catch (e) {
+      print('Error updating menu with map: $e');
       throw Exception('Failed to update menu: $e');
     }
   }

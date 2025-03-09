@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:kantin/Models/menus.dart';
 import 'package:kantin/Services/Database/foodService.dart';
-import 'package:kantin/pages/AdminState/dashboard/TrackerPage.dart';
 import 'widgets/balance_card.dart';
 import 'widgets/category_scroll.dart';
 import 'widgets/profile_header.dart';
@@ -128,12 +127,38 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   /// Fetch revenue data for a specific period
   Future<List<double>> _fetchRevenueData(String period, int limit) async {
+    // Calculate proper date range based on period
+    DateTime endDate = DateTime.now();
+    DateTime startDate;
+
+    switch (period) {
+      case '1 day':
+        startDate = DateTime(endDate.year, endDate.month, endDate.day)
+            .subtract(const Duration(hours: 24));
+        break;
+      case '7 days':
+        startDate = endDate.subtract(const Duration(days: 7));
+        break;
+      case '1 month':
+        startDate = DateTime(endDate.year, endDate.month - 1, endDate.day);
+        break;
+      case '1 year':
+        startDate = DateTime(endDate.year - 1, endDate.month, endDate.day);
+        break;
+      default:
+        startDate = endDate.subtract(const Duration(days: 30));
+    }
+
+    final startDateStr = DateFormat('yyyy-MM-dd').format(startDate);
+    final endDateStr = DateFormat('yyyy-MM-dd').format(endDate);
+
+    print('Fetching $period data from $startDateStr to $endDateStr');
+
     final response = await _supabase.rpc(
       'get_orders_revenue_by_period',
       params: {
-        'p_start_date': DateFormat('yyyy-MM-dd')
-            .format(DateTime.now().subtract(Duration(days: 30))),
-        'p_end_date': DateFormat('yyyy-MM-dd').format(DateTime.now()),
+        'p_start_date': startDateStr,
+        'p_end_date': endDateStr,
         'p_stall_id': widget.standId.toString(),
         'p_period': period,
       },
@@ -142,13 +167,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final List<double> result = [];
     if (response != null) {
       for (var item in response) {
-        result.add((item['revenue'] as num).toDouble());
+        // Add a small baseline value to prevent flat charts when values are very small
+        double value = (item['revenue'] as num).toDouble();
+        // Ensure value is at least 1% of the max value in monthly/yearly views
+        if (period == '1 month' || period == '1 year') {
+          result.add(value > 0 ? value : 1.0);
+        } else {
+          result.add(value);
+        }
       }
     }
 
-    // Ensure we have at least 7 data points
-    while (result.length < 7) {
-      result.insert(0, 0.0);
+    // Ensure we have at least the required data points by adding baseline values
+    while (result.length < limit) {
+      // Add small values instead of zeros to prevent flat charts
+      result.insert(0, period == '1 day' ? 0.0 : 1.0);
     }
 
     // Limit to the most recent data points if we have more than needed

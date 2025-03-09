@@ -19,6 +19,31 @@ import 'dart:async';
 import 'package:rxdart/rxdart.dart';
 import 'package:kantin/utils/debouncer.dart';
 
+// At the top of your file, add this extension method
+extension FoodServiceExtension on FoodService {
+  // This is a temporary workaround
+  Future<void> updateMenuWithMap(Map<String, dynamic> menuData) async {
+    try {
+      if (!menuData.containsKey('id')) {
+        throw Exception('Menu ID is required for update');
+      }
+
+      final menuId = menuData['id'];
+      final updateData = Map<String, dynamic>.from(menuData);
+      updateData
+          .removeWhere((key, value) => ['id', 'is_popular'].contains(key));
+
+      await Supabase.instance.client
+          .from('menu')
+          .update(updateData)
+          .eq('id', menuId);
+    } catch (e) {
+      print('Error updating menu with map: $e');
+      throw Exception('Failed to update menu: $e');
+    }
+  }
+}
+
 class MenuDetailsScreen extends StatefulWidget {
   final Menu menu;
   final List<FoodAddon> addons;
@@ -69,12 +94,17 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
   final _addonsSubject = BehaviorSubject<List<FoodAddon>>();
   final _discountsSubject = BehaviorSubject<List<Discount>>();
   bool _needsSync = false;
+  bool _updatingMenu = false;
 
   // Add new properties for discount handling
   final Map<int, bool> _discountLoadingStates = {};
   final ValueNotifier<Set<int>> _activeDiscountIds = ValueNotifier({});
   final Map<int, String> _discountErrors = {};
   int? _stallId;
+
+  // Add these properties to track subscriptions
+  late StreamSubscription _menuSubscription;
+  late StreamSubscription _addonsSubscription;
 
   // Add this method to track form changes
   void _onFormChanged() {
@@ -116,28 +146,49 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
 
     // Load initial data
     _initializeData();
+
+    // Wait until data is loaded before enabling sync
+    Future.delayed(Duration(seconds: 1), () {
+      _needsSync = true;
+    });
   }
 
   void _setupStreams() {
     // Menu changes stream
-    _menuSubject
-        .debounceTime(const Duration(milliseconds: 500))
+    _menuSubscription = _menuSubject
+        .debounceTime(const Duration(milliseconds: 1000))
         .distinct()
-        .listen((menu) {
-      if (_needsSync) {
-        _syncMenu(menu);
-      }
-    });
+        .listen(
+      (menu) {
+        if (_needsSync && mounted && !_updatingMenu) {
+          _syncMenu(menu);
+        }
+      },
+      onError: (e) {
+        print('Error in menu stream: $e');
+        if (mounted) {
+          _showError('Sync error: $e');
+        }
+      },
+    );
 
     // Addons changes stream
-    _addonsSubject
-        .debounceTime(const Duration(milliseconds: 500))
+    _addonsSubscription = _addonsSubject
+        .debounceTime(const Duration(milliseconds: 1000))
         .distinct()
-        .listen((addons) {
-      if (_needsSync) {
-        _syncAddons(addons);
-      }
-    });
+        .listen(
+      (addons) {
+        if (_needsSync && mounted) {
+          _syncAddons(addons);
+        }
+      },
+      onError: (e) {
+        print('Error in addons stream: $e');
+        if (mounted) {
+          _showError('Sync error: $e');
+        }
+      },
+    );
   }
 
   Future<void> _initializeData() async {
@@ -170,22 +221,62 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
   }
 
   Future<void> _syncMenu(Menu menu) async {
+    if (!mounted || _updatingMenu) return;
+
     try {
-      await _foodService.updateMenu(menu);
-      _showSuccess('Menu synchronized');
+      setState(() => _updatingMenu = true);
+
+      // Log before update for debugging
+      print('Syncing menu: ${menu.id} - ${menu.foodName} - ${menu.price}');
+
+      // Create a map of the menu properties and explicitly remove isPopular
+      final Map<String, dynamic> menuData = {
+        'id': menu.id,
+        'food_name': menu.foodName,
+        'description': menu.description,
+        'price': menu.price,
+        'stall_id': menu.stallId,
+        'photo': menu.photo,
+        'is_available': menu.isAvailable,
+        'type': menu.type,
+        // Explicitly exclude isPopular field
+      };
+
+      // Make sure to await the update
+      await _foodService.updateMenuWithMap(menuData);
+
+      if (mounted) {
+        setState(() {
+          _hasUnsavedChanges = false;
+          _updatingMenu = false;
+        });
+        _showSuccess('Menu updated');
+      }
     } catch (e) {
-      _showError('Failed to sync menu: $e');
+      print('Menu sync error: $e');
+      if (mounted) {
+        setState(() => _updatingMenu = false);
+        _showError('Failed to sync menu: $e');
+      }
     }
   }
 
   Future<void> _syncAddons(List<FoodAddon> addons) async {
+    if (!mounted) return; // Early return if not mounted
+
     try {
       await Future.wait(
         addons.map((addon) => _foodService.updateFoodAddon(addon)),
       );
-      _showSuccess('Add-ons synchronized');
+      if (mounted) {
+        // Check mounted before showing success
+        _showSuccess('Add-ons synchronized');
+      }
     } catch (e) {
-      _showError('Failed to sync add-ons: $e');
+      if (mounted) {
+        // Check mounted before showing error
+        _showError('Failed to sync add-ons: $e');
+      }
     }
   }
 
@@ -193,6 +284,10 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
   void dispose() {
     _saveDebouncer?.cancel();
     _scrollController.dispose(); // Dispose the controller
+
+    // Cancel stream subscriptions
+    _menuSubscription.cancel();
+    _addonsSubscription.cancel();
 
     // Clean up streams
     _menuSubject.close();
@@ -250,6 +345,8 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
 
   // Improve error handling
   void _showError(String message, {bool persistent = false}) {
+    if (!mounted) return; // Early return if not mounted
+
     setState(() => _errorMessage = message);
 
     final snackBar = SnackBar(
@@ -272,6 +369,8 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
   }
 
   void _showSuccess(String message) {
+    if (!mounted) return; // Early return if not mounted
+
     final snackBar = SnackBar(
       content: Row(
         children: [
@@ -292,12 +391,26 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
     if (!_hasUnsavedChanges || _isSaving) return;
 
     try {
+      setState(() => _isSaving = true);
+
+      // Save form values to menu object
       _formKey.currentState?.save();
-      await _foodService.updateMenu(_currentMenu);
-      setState(() => _hasUnsavedChanges = false);
-      _showSuccess('Changes auto-saved');
+
+      // Trigger sync through subject
+      _menuSubject.add(_currentMenu);
+
+      // Wait a moment before showing success
+      await Future.delayed(Duration(milliseconds: 500));
+
+      if (mounted) {
+        setState(() => _isSaving = false);
+        _showSuccess('Changes auto-saved');
+      }
     } catch (e) {
-      _showError('Auto-save failed: $e');
+      if (mounted) {
+        setState(() => _isSaving = false);
+        _showError('Auto-save failed: $e');
+      }
     }
   }
 
@@ -310,24 +423,49 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
     try {
       setState(() => _isSaving = true);
 
+      // Log values before saving
+      print(
+          'Before save - Type: ${_currentMenu.type}, Price: ${_currentMenu.price}');
+
+      // Save form values to current menu object
       _formKey.currentState!.save();
 
-      // Update streams with latest data
-      _menuSubject.add(_currentMenu);
-      _addonsSubject.add(_addons);
+      // Log values after saving
+      print(
+          'After save - Type: ${_currentMenu.type}, Price: ${_currentMenu.price}');
 
-      // Wait for all pending syncs
-      await Future.wait([
-        _syncMenu(_currentMenu),
-        _syncAddons(_addons),
-      ]);
+      // Create a clean map of the menu properties without isPopular
+      final Map<String, dynamic> menuData = {
+        'id': _currentMenu.id,
+        'food_name': _currentMenu.foodName,
+        'description': _currentMenu.description,
+        'price': _currentMenu.price,
+        'stall_id': _currentMenu.stallId,
+        'photo': _currentMenu.photo,
+        'is_available': _currentMenu.isAvailable,
+        'type': _currentMenu.type,
+        // Exclude isPopular field
+      };
 
-      setState(() {
-        _hasUnsavedChanges = false;
-        _isSaving = false;
-      });
+      // Log the actual data being sent
+      print('Updating menu with data: $menuData');
 
-      _showSuccess('Changes saved successfully');
+      // Use your extension method instead of updateMenu
+      await _foodService.updateMenuWithMap(menuData);
+
+      // Also sync addons if needed
+      if (_addons.isNotEmpty) {
+        await Future.wait(
+            _addons.map((addon) => _foodService.updateFoodAddon(addon)));
+      }
+
+      if (mounted) {
+        setState(() {
+          _hasUnsavedChanges = false;
+          _isSaving = false;
+        });
+        _showSuccess('Changes saved successfully');
+      }
 
       // Vibrate for feedback
       HapticFeedback.mediumImpact();
@@ -337,8 +475,10 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
         Navigator.pop(context, true);
       }
     } catch (e) {
-      setState(() => _isSaving = false);
-      _showError('Failed to save changes: $e');
+      if (mounted) {
+        setState(() => _isSaving = false);
+        _showError('Failed to save changes: $e');
+      }
     }
   }
 
@@ -707,6 +847,7 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
     }
   }
 
+  // 6. Improve the bottom bar UI
   @override
   Widget build(BuildContext context) {
     return WillPopScope(
@@ -715,46 +856,67 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
         key: _scaffoldKey,
         child: Scaffold(
           appBar: AppBar(
-            title: Text(_currentMenu.foodName),
+            title: Text(_currentMenu.foodName,
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            elevation: 0,
             actions: [
               if (_hasUnsavedChanges)
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: Center(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .primary
-                            .withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12),
+                Container(
+                  margin: EdgeInsets.only(right: 8),
+                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color:
+                        Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.edit,
+                        size: 14,
+                        color: Theme.of(context).colorScheme.primary,
                       ),
-                      child: Text(
+                      SizedBox(width: 4),
+                      Text(
                         'Unsaved',
                         style: TextStyle(
                           color: Theme.of(context).colorScheme.primary,
+                          fontWeight: FontWeight.w500,
                           fontSize: 12,
                         ),
                       ),
-                    ),
+                    ],
                   ),
                 ),
               IconButton(
                 icon: const Icon(Icons.qr_code),
+                tooltip: 'Show QR Code',
                 onPressed: _showQRCode,
               ),
               PopupMenuButton(
+                icon: Icon(Icons.more_vert),
+                tooltip: 'More options',
                 itemBuilder: (context) => [
-                  const PopupMenuItem(
+                  PopupMenuItem(
                     value: 'duplicate',
-                    child: Text('Duplicate Menu'),
+                    child: Row(
+                      children: [
+                        Icon(Icons.content_copy, size: 18),
+                        SizedBox(width: 8),
+                        Text('Duplicate Menu'),
+                      ],
+                    ),
                   ),
-                  const PopupMenuItem(
+                  PopupMenuItem(
                     value: 'delete',
-                    child: Text('Delete Menu',
-                        style: TextStyle(color: Colors.red)),
+                    child: Row(
+                      children: [
+                        Icon(Icons.delete_outline, size: 18, color: Colors.red),
+                        SizedBox(width: 8),
+                        Text('Delete Menu',
+                            style: TextStyle(color: Colors.red)),
+                      ],
+                    ),
                   ),
                 ],
                 onSelected: (value) {
@@ -764,11 +926,22 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
               ),
             ],
           ),
-          body: GestureDetector(
-            onTap: () => FocusScope.of(context).unfocus(),
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : SingleChildScrollView(
+          body: _isLoading
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CircularProgressIndicator(
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                      SizedBox(height: 16),
+                      Text('Loading menu details...'),
+                    ],
+                  ),
+                )
+              : GestureDetector(
+                  onTap: () => FocusScope.of(context).unfocus(),
+                  child: SingleChildScrollView(
                     controller: _scrollController,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -779,35 +952,48 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
                           onImageRemoved: _removeImage,
                           isLoading: _isLoading,
                         ),
-                        if (_hasUnsavedChanges &&
-                            MediaQuery.of(context).size.width >= 600)
-                          Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Card(
+                        if (_hasUnsavedChanges)
+                          Container(
+                            margin: EdgeInsets.all(16),
+                            padding: EdgeInsets.all(12),
+                            decoration: BoxDecoration(
                               color: Theme.of(context)
                                   .colorScheme
                                   .primary
                                   .withOpacity(0.1),
-                              child: Padding(
-                                padding: const EdgeInsets.all(16),
-                                child: Row(
-                                  children: [
-                                    const Icon(Icons.info_outline),
-                                    const SizedBox(width: 16),
-                                    const Expanded(
-                                      child: Text('You have unsaved changes'),
-                                    ),
-                                    TextButton(
-                                      onPressed: () {
-                                        _formKey.currentState?.reset();
-                                        setState(
-                                            () => _hasUnsavedChanges = false);
-                                      },
-                                      child: const Text('Discard'),
-                                    ),
-                                  ],
-                                ),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .primary
+                                    .withOpacity(0.2),
                               ),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.info_outline,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                                SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    'You have unsaved changes',
+                                    style: TextStyle(
+                                      color:
+                                          Theme.of(context).colorScheme.primary,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                                TextButton(
+                                  onPressed: () {
+                                    _formKey.currentState?.reset();
+                                    setState(() => _hasUnsavedChanges = false);
+                                  },
+                                  child: Text('DISCARD'),
+                                ),
+                              ],
                             ),
                           ),
                         Form(
@@ -817,99 +1003,100 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               _buildBasicInfoSection(),
-                              const Divider(height: 32),
+                              const Divider(height: 32, thickness: 1),
                               _buildPriceBreakdown(),
                               _buildPricingSection(),
-                              const Divider(height: 32),
+                              const Divider(height: 32, thickness: 1),
                               _buildAddonsSection(),
-                              const Divider(height: 32),
-                              _buildDiscountSection(),
-                              const Divider(height: 32),
+                              const Divider(height: 32, thickness: 1),
                               _buildAvailabilitySection(),
-                              // Add bottom padding to account for the bottom bar
-                              SizedBox(height: _hasUnsavedChanges ? 80 : 16),
+                              SizedBox(
+                                  height: 100), // Extra space for bottom bar
                             ],
                           ),
                         ),
                       ],
                     ),
                   ),
-          ),
-          bottomNavigationBar: Container(
-            padding: EdgeInsets.only(
-              left: 16,
-              right: 16,
-              bottom: MediaQuery.of(context).padding.bottom + 16,
-              top: 16,
-            ),
-            decoration: BoxDecoration(
-              color: Theme.of(context).scaffoldBackgroundColor,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 8,
-                  offset: const Offset(0, -2),
                 ),
-              ],
-            ),
-            child: Row(
-              children: [
-                if (_hasUnsavedChanges) ...[
-                  Expanded(
-                    child: Text(
-                      'You have unsaved changes',
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.primary,
+          bottomNavigationBar: Material(
+            elevation: 8,
+            child: Container(
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                bottom: MediaQuery.of(context).padding.bottom + 16,
+                top: 16,
+              ),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 8,
+                    offset: const Offset(0, -2),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  if (_hasUnsavedChanges) ...[
+                    Expanded(
+                      child: Text(
+                        'Save changes to publish this menu item',
+                        style: TextStyle(
+                          color: Colors.grey[700],
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                  ],
+                  SizedBox(
+                    width: _hasUnsavedChanges ? 150 : 200,
+                    height: 48,
+                    child: ElevatedButton(
+                      onPressed: _isSaving ? null : _saveChanges,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Theme.of(context).colorScheme.primary,
+                        foregroundColor: Colors.white,
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        textStyle: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
+                        ),
+                        elevation: 2,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          if (_isSaving)
+                            SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor:
+                                    AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
+                            )
+                          else
+                            Icon(Icons.save_outlined, size: 20),
+                          SizedBox(width: 8),
+                          Text(_isSaving ? 'SAVING...' : 'SAVE MENU'),
+                        ],
                       ),
                     ),
                   ),
-                  TextButton(
-                    onPressed: () {
-                      _formKey.currentState?.reset();
-                      setState(() => _hasUnsavedChanges = false);
-                    },
-                    child: const Text('Discard'),
-                  ),
-                  const SizedBox(width: 8),
                 ],
-                Expanded(
-                  flex: _hasUnsavedChanges ? 0 : 1,
-                  child: ElevatedButton(
-                    onPressed: _isSaving ? null : _saveChanges,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Theme.of(context).colorScheme.primary,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      minimumSize: const Size(double.infinity, 48),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (_isSaving)
-                          const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor:
-                                  AlwaysStoppedAnimation<Color>(Colors.white),
-                            ),
-                          )
-                        else
-                          const Icon(Icons.save),
-                        const SizedBox(width: 8),
-                        Text(_isSaving ? 'Saving...' : 'Save Changes'),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
-
-          // Remove the floating action button since we have a consistent bottom bar now
-          floatingActionButton: null,
         ),
       ),
     );
@@ -1232,6 +1419,7 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
     );
   }
 
+  // 4. Improve the basic info section UI
   Widget _buildBasicInfoSection() {
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -1242,18 +1430,27 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
             'Basic Information',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.primary,
                 ),
           ),
           const SizedBox(height: 16),
           TextFormField(
             initialValue: _currentMenu.foodName,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'Menu Name',
-              border: OutlineInputBorder(),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
               prefixIcon: Icon(Icons.restaurant_menu),
+              helperText: 'Enter a descriptive name for this menu item',
+              filled: true,
+              fillColor: Colors.grey[50],
             ),
             validator: (value) =>
                 value?.isEmpty ?? true ? 'Name is required' : null,
+            onChanged: (value) {
+              _updateMenu(_currentMenu.copyWith(foodName: value));
+            },
             onSaved: (value) {
               if (value != null) {
                 _currentMenu = _currentMenu.copyWith(foodName: value);
@@ -1263,13 +1460,21 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
           const SizedBox(height: 16),
           TextFormField(
             initialValue: _currentMenu.description,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'Description',
-              border: OutlineInputBorder(),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
               prefixIcon: Icon(Icons.description),
               alignLabelWithHint: true,
+              helperText: 'Describe the menu item (ingredients, taste, etc.)',
+              filled: true,
+              fillColor: Colors.grey[50],
             ),
             maxLines: 3,
+            onChanged: (value) {
+              _updateMenu(_currentMenu.copyWith(description: value));
+            },
             onSaved: (value) {
               if (value != null) {
                 _currentMenu = _currentMenu.copyWith(description: value);
@@ -1279,22 +1484,43 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
           const SizedBox(height: 16),
           DropdownButtonFormField<String>(
             value: _currentMenu.type,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'Menu Type',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.category),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              prefixIcon: Icon(_currentMenu.type == 'food'
+                  ? Icons.restaurant
+                  : Icons.local_drink),
+              filled: true,
+              fillColor: Colors.grey[50],
             ),
             items: ['food', 'drink']
                 .map((type) => DropdownMenuItem(
                       value: type,
-                      child: Text(type.toUpperCase()),
+                      child: Row(
+                        children: [
+                          Icon(
+                            type == 'food'
+                                ? Icons.restaurant
+                                : Icons.local_drink,
+                            size: 18,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                          SizedBox(width: 8),
+                          Text(type.toUpperCase()),
+                        ],
+                      ),
                     ))
                 .toList(),
             onChanged: (value) {
               if (value != null) {
-                setState(() {
-                  _currentMenu = _currentMenu.copyWith(type: value);
-                });
+                _updateMenu(_currentMenu.copyWith(type: value));
+              }
+            },
+            onSaved: (value) {
+              if (value != null) {
+                _currentMenu = _currentMenu.copyWith(type: value);
               }
             },
           ),
@@ -1303,6 +1529,7 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
     );
   }
 
+  // 5. Improve the pricing section UI
   Widget _buildPricingSection() {
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -1313,15 +1540,22 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
             'Pricing',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.primary,
                 ),
           ),
           const SizedBox(height: 16),
           TextFormField(
             initialValue: _currentMenu.price.toString(),
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'Price',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.attach_money),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              prefixIcon: Icon(Icons.payments),
+              prefixText: 'Rp ',
+              helperText: 'Enter the base price without add-ons',
+              filled: true,
+              fillColor: Colors.grey[50],
             ),
             keyboardType: TextInputType.number,
             validator: (value) {
@@ -1333,10 +1567,18 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
               }
               return null;
             },
+            onChanged: (value) {
+              final price = double.tryParse(value);
+              if (price != null) {
+                _updateMenu(_currentMenu.copyWith(price: price));
+                _calculatePrices();
+              }
+            },
             onSaved: (value) {
               if (value != null) {
-                _currentMenu =
-                    _currentMenu.copyWith(price: double.parse(value));
+                final price = double.tryParse(value) ?? _currentMenu.price;
+                _currentMenu = _currentMenu.copyWith(price: price);
+                _calculatePrices();
               }
             },
           ),
@@ -1345,6 +1587,7 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
     );
   }
 
+  // 2. Enhance the addons section
   Widget _buildAddonsSection() {
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -1358,21 +1601,42 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
                 'Add-ons',
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.bold,
+                      color: Theme.of(context).colorScheme.primary,
                     ),
               ),
-              TextButton.icon(
-                onPressed: () => _showAddonDialog(null), // Fixed
-                icon: const Icon(Icons.add),
-                label: const Text('Add'),
+              ElevatedButton.icon(
+                onPressed: () => _showAddonDialog(null),
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('Add Add-on'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  foregroundColor: Colors.white,
+                  textStyle: TextStyle(fontWeight: FontWeight.w500),
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                ),
               ),
             ],
           ),
           const SizedBox(height: 16),
           if (_addons.isEmpty)
             Center(
-              child: Text(
-                'No add-ons yet',
-                style: TextStyle(color: Colors.grey[600]),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.add_circle_outline,
+                      size: 48, color: Colors.grey[400]),
+                  const SizedBox(height: 8),
+                  Text(
+                    'No add-ons yet',
+                    style: TextStyle(color: Colors.grey[600]),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Add extras, toppings or customizations',
+                    style: TextStyle(color: Colors.grey[500], fontSize: 13),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
               ),
             )
           else
@@ -1383,8 +1647,10 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
               itemBuilder: (context, index) {
                 final addon = _addons[index];
                 return Card(
-                  elevation: 2,
+                  elevation: 1,
                   margin: const EdgeInsets.only(bottom: 8),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
                   child: ListTile(
                     title: Row(
                       children: [
@@ -1399,7 +1665,8 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
                                 horizontal: 8, vertical: 2),
                             decoration: BoxDecoration(
                               color: Theme.of(context)
-                                  .primaryColor
+                                  .colorScheme
+                                  .primary
                                   .withOpacity(0.1),
                               borderRadius: BorderRadius.circular(12),
                             ),
@@ -1407,7 +1674,7 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
                               'Required',
                               style: TextStyle(
                                 fontSize: 12,
-                                color: Theme.of(context).primaryColor,
+                                color: Theme.of(context).colorScheme.primary,
                               ),
                             ),
                           ),
@@ -1417,10 +1684,15 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Rp ${addon.price.toStringAsFixed(0)}',
-                          style: const TextStyle(
-                            fontSize: 16,
+                          NumberFormat.currency(
+                            locale: 'id_ID',
+                            symbol: 'Rp ',
+                            decimalDigits: 0,
+                          ).format(addon.price),
+                          style: TextStyle(
                             fontWeight: FontWeight.w500,
+                            fontSize: 14,
+                            color: Theme.of(context).colorScheme.primary,
                           ),
                         ),
                         if (addon.description?.isNotEmpty ?? false)
@@ -1438,13 +1710,15 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
                       children: [
                         IconButton(
                           icon: const Icon(Icons.edit),
-                          onPressed: () => _showAddonDialog(addon), // Fixed
-                          color: Theme.of(context).primaryColor,
+                          onPressed: () => _showAddonDialog(addon),
+                          color: Colors.blue,
+                          tooltip: 'Edit add-on',
                         ),
                         IconButton(
-                          icon: const Icon(Icons.delete),
+                          icon: const Icon(Icons.delete_outline),
                           onPressed: () => _deleteAddon(addon),
                           color: Colors.red,
+                          tooltip: 'Delete add-on',
                         ),
                       ],
                     ),
@@ -1763,6 +2037,7 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
     }
   }
 
+  // 3. Improve the availability section
   Widget _buildAvailabilitySection() {
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -1773,17 +2048,44 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
             'Availability',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.primary,
                 ),
           ),
           const SizedBox(height: 16),
-          SwitchListTile(
-            title: const Text('Available'),
-            value: _currentMenu.isAvailable ?? true,
-            onChanged: (value) {
-              setState(() {
-                _currentMenu = _currentMenu.copyWith(isAvailable: value);
-              });
-            },
+          Card(
+            elevation: 1,
+            margin: EdgeInsets.zero,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: SwitchListTile(
+                title: Text(
+                  'Available for Order',
+                  style: TextStyle(fontWeight: FontWeight.w500),
+                ),
+                subtitle: Text(
+                  _currentMenu.isAvailable ?? true
+                      ? 'This item will be shown to customers'
+                      : 'This item will be hidden from customers',
+                  style: TextStyle(fontSize: 13),
+                ),
+                secondary: Icon(
+                  _currentMenu.isAvailable ?? true
+                      ? Icons.visibility
+                      : Icons.visibility_off,
+                  color: _currentMenu.isAvailable ?? true
+                      ? Theme.of(context).colorScheme.primary
+                      : Colors.grey,
+                ),
+                value: _currentMenu.isAvailable ?? true,
+                activeColor: Theme.of(context).colorScheme.primary,
+                onChanged: (value) {
+                  _updateMenu(_currentMenu.copyWith(isAvailable: value));
+                },
+              ),
+            ),
           ),
         ],
       ),
@@ -1898,10 +2200,12 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
     }
   }
 
-  // Add this widget to show price breakdown
+  // 1. First, let's improve the price breakdown section
   Widget _buildPriceBreakdown() {
     return Card(
-      margin: const EdgeInsets.all(16),
+      elevation: 1,
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -1911,24 +2215,20 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
               'Price Breakdown',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.primary,
                   ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             _buildPriceRow('Base Price', _basePrice),
             if (_addonTotal > 0)
               _buildPriceRow('Required Add-ons', _addonTotal),
             if (_discountAmount > 0)
               _buildPriceRow('Discount', -_discountAmount,
-                  style: TextStyle(color: Colors.red)),
+                  style: TextStyle(
+                      color: Colors.green, fontWeight: FontWeight.bold)),
             const Divider(height: 24),
-            _buildPriceRow(
-              'Final Price',
-              _finalPrice,
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 18,
-              ),
-            ),
+            _buildPriceRow('Final Price', _finalPrice,
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
           ],
         ),
       ),
@@ -1936,6 +2236,12 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
   }
 
   Widget _buildPriceRow(String label, double amount, {TextStyle? style}) {
+    final formattedAmount = NumberFormat.currency(
+      locale: 'id_ID',
+      symbol: 'Rp ',
+      decimalDigits: 0,
+    ).format(amount.abs());
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -1943,8 +2249,8 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
         children: [
           Text(label),
           Text(
-            'Rp ${amount.toStringAsFixed(0)}',
-            style: style,
+            amount < 0 ? "- $formattedAmount" : formattedAmount,
+            style: style ?? TextStyle(fontWeight: FontWeight.w500),
           ),
         ],
       ),
@@ -1966,5 +2272,16 @@ class _MenuDetailsScreenState extends State<MenuDetailsScreen> {
       _addons = List.from(widget.addons);
       _addonsSubject.add(_addons);
     }
+  }
+
+  // Add this method to update menu and trigger sync
+  void _updateMenu(Menu updatedMenu) {
+    setState(() {
+      _currentMenu = updatedMenu;
+      _hasUnsavedChanges = true;
+    });
+
+    // Add to subject to trigger sync
+    _menuSubject.add(_currentMenu);
   }
 }

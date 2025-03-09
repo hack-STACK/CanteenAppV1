@@ -611,7 +611,7 @@ class StanService {
       // Update with actual values from database
       for (final record in response) {
         final String day = record['day_of_week'];
-        if (day != null && scheduleByDay.containsKey(day)) {
+        if (scheduleByDay.containsKey(day)) {
           scheduleByDay[day] = {
             'id': record['id'],
             'is_open': record['is_open'] ?? false,
@@ -950,8 +950,6 @@ class StanService {
           .gte('end_date', formattedToday)
           .lte('start_date', formattedToday)
           .order('created_at', ascending: false);
-
-      if (response == null) return [];
 
       // Convert the response to List<Discount>
       return (response as List)

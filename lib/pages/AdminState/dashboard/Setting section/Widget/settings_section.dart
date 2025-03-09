@@ -8,6 +8,8 @@ import 'package:kantin/pages/AdminState/dashboard/Setting%20section/Page/Yoursto
 import 'package:kantin/pages/AdminState/dashboard/Setting%20section/Page/profile_screen/profile_screen.dart';
 import 'package:kantin/pages/AdminState/dashboard/Setting%20section/Widget/settings_tile.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
+// Add this import for the student management page
+import 'package:kantin/pages/AdminState/dashboard/Setting%20section/Page/Student_management/StudentManagement.dart';
 
 class SettingsSection extends StatefulWidget {
   final int? standId;
@@ -50,6 +52,16 @@ class _SettingsSectionState extends State<SettingsSection> {
         const SnackBar(content: Text('Store ID not available')),
       );
     }
+  }
+
+  void _navigateToStudentManagement(BuildContext context) {
+    debugPrint('Navigating to Student Management');
+    Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (context) => const StudentManagement(),
+      ),
+    );
   }
 
   @override
@@ -283,9 +295,9 @@ class _SettingsSectionState extends State<SettingsSection> {
       const SizedBox(height: 20),
       SettingsTile(
         icon: Icons.discount,
-        title: 'Discount',
+        title: 'Student Management',
         onTap: () {
-          // Handle discount action
+          _navigateToStudentManagement(context);
         },
       ),
       const SizedBox(height: 20),

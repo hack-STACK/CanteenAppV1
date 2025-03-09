@@ -10,6 +10,7 @@ import 'package:kantin/pages/AdminState/AdminPage.dart';
 import 'package:kantin/pages/StudentState/StudentPage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 
 class PersonalInfoScreen extends StatelessWidget {
   final String role;
@@ -20,11 +21,11 @@ class PersonalInfoScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFEFEFEF),
+      backgroundColor: const Color(0xFFF9F9F9),
       body: SafeArea(
         child: SingleChildScrollView(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 60),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 480),
               child: Column(
@@ -59,23 +60,118 @@ class AdaptiveRegistrationForm extends StatefulWidget {
       _AdaptiveRegistrationFormState();
 }
 
-class _AdaptiveRegistrationFormState extends State<AdaptiveRegistrationForm> {
+class _AdaptiveRegistrationFormState extends State<AdaptiveRegistrationForm>
+    with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _addressController = TextEditingController();
   final _phoneController = TextEditingController();
   final _canteenNameController = TextEditingController();
   final _descriptionController = TextEditingController();
+
+  final _nameFocusNode = FocusNode();
+  final _addressFocusNode = FocusNode();
+  final _phoneFocusNode = FocusNode();
+  final _canteenNameFocusNode = FocusNode();
+  final _descriptionFocusNode = FocusNode();
+
   bool _isLoading = false;
   final _supabase = Supabase.instance.client;
   final _stanService = StanService();
   bool _hasError = false;
   String _errorMessage = '';
+  int _activeFieldCount = 0;
+  int _completedFieldCount = 0;
+
+  late AnimationController _animationController;
+
+  // Define focus colors
+  Color _nameHintColor = Colors.grey;
+  Color _addressHintColor = Colors.grey;
+  Color _phoneHintColor = Colors.grey;
+  Color _canteenNameHintColor = Colors.grey;
+  Color _descriptionHintColor = Colors.grey;
 
   @override
   void initState() {
     super.initState();
     _loadSavedData();
+
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+
+    // Setup focus listeners to change icon colors
+    _nameFocusNode.addListener(() {
+      setState(() {
+        _nameHintColor = _nameFocusNode.hasFocus
+            ? Theme.of(context).colorScheme.primary
+            : Colors.grey;
+      });
+    });
+
+    _addressFocusNode.addListener(() {
+      setState(() {
+        _addressHintColor = _addressFocusNode.hasFocus
+            ? Theme.of(context).colorScheme.primary
+            : Colors.grey;
+      });
+    });
+
+    _phoneFocusNode.addListener(() {
+      setState(() {
+        _phoneHintColor = _phoneFocusNode.hasFocus
+            ? Theme.of(context).colorScheme.primary
+            : Colors.grey;
+      });
+    });
+
+    _canteenNameFocusNode.addListener(() {
+      setState(() {
+        _canteenNameHintColor = _canteenNameFocusNode.hasFocus
+            ? Theme.of(context).colorScheme.primary
+            : Colors.grey;
+      });
+    });
+
+    _descriptionFocusNode.addListener(() {
+      setState(() {
+        _descriptionHintColor = _descriptionFocusNode.hasFocus
+            ? Theme.of(context).colorScheme.primary
+            : Colors.grey;
+      });
+    });
+
+    // Set up field change listeners to update progress
+    _nameController.addListener(_updateProgress);
+    _phoneController.addListener(_updateProgress);
+    _addressController.addListener(_updateProgress);
+    _canteenNameController.addListener(_updateProgress);
+    _descriptionController.addListener(_updateProgress);
+
+    // Initialize required fields count
+    _activeFieldCount = widget.userType == 'student'
+        ? 3
+        : 3; // Name, Phone + Address for students OR Name, Phone, Canteen Name for admins
+  }
+
+  void _updateProgress() {
+    int completed = 0;
+    if (_nameController.text.isNotEmpty) completed++;
+    if (_phoneController.text.isNotEmpty) completed++;
+
+    if (widget.userType == 'student') {
+      if (_addressController.text.isNotEmpty) completed++;
+    } else {
+      if (_canteenNameController.text.isNotEmpty) completed++;
+    }
+
+    if (mounted) {
+      setState(() {
+        _completedFieldCount = completed;
+      });
+    }
   }
 
   @override
@@ -85,6 +181,14 @@ class _AdaptiveRegistrationFormState extends State<AdaptiveRegistrationForm> {
     _phoneController.dispose();
     _canteenNameController.dispose();
     _descriptionController.dispose();
+
+    _nameFocusNode.dispose();
+    _addressFocusNode.dispose();
+    _phoneFocusNode.dispose();
+    _canteenNameFocusNode.dispose();
+    _descriptionFocusNode.dispose();
+
+    _animationController.dispose();
     super.dispose();
   }
 
@@ -103,6 +207,9 @@ class _AdaptiveRegistrationFormState extends State<AdaptiveRegistrationForm> {
             prefs.getString('admin_description') ?? '';
       }
     });
+
+    // Update progress after loading data
+    _updateProgress();
   }
 
   Future<void> _saveAndSubmit() async {
@@ -143,9 +250,9 @@ class _AdaptiveRegistrationFormState extends State<AdaptiveRegistrationForm> {
 
       // Handle role-specific logic
       if (widget.userType == 'student') {
-        // Create student using StudentModel
+        // Create student using StudentModel - remove explicit id
         final studentData = StudentModel(
-          id: 0, // This will be auto-generated
+          // Remove the id: 0 line completely to let the database assign an ID
           studentName: _nameController.text.trim(),
           studentAddress: _addressController.text.trim(),
           studentPhoneNumber: _phoneController.text.trim(),
@@ -165,10 +272,19 @@ class _AdaptiveRegistrationFormState extends State<AdaptiveRegistrationForm> {
         if (mounted) {
           // Show success message
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Student account created successfully!'),
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.check_circle, color: Colors.white),
+                  const SizedBox(width: 8),
+                  const Text('Student account created successfully!'),
+                ],
+              ),
               backgroundColor: Colors.green,
               behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
           );
 
@@ -201,10 +317,19 @@ class _AdaptiveRegistrationFormState extends State<AdaptiveRegistrationForm> {
         if (mounted) {
           // Show success message
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Admin account created successfully!'),
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.check_circle, color: Colors.white),
+                  const SizedBox(width: 8),
+                  const Text('Admin account created successfully!'),
+                ],
+              ),
               backgroundColor: Colors.green,
               behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
           );
 
@@ -224,12 +349,33 @@ class _AdaptiveRegistrationFormState extends State<AdaptiveRegistrationForm> {
           _errorMessage = e.toString();
         });
 
+        // Animate error message
+        _animationController
+            .forward()
+            .then((_) => _animationController.reverse());
+
         // Show error message
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(_errorMessage),
+            content: Row(
+              children: [
+                const Icon(Icons.error_outline, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(child: Text(_errorMessage)),
+              ],
+            ),
             backgroundColor: Colors.red,
             behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            action: SnackBarAction(
+              label: 'DISMISS',
+              textColor: Colors.white,
+              onPressed: () {
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+              },
+            ),
           ),
         );
       }
@@ -245,242 +391,454 @@ class _AdaptiveRegistrationFormState extends State<AdaptiveRegistrationForm> {
   @override
   Widget build(BuildContext context) {
     final isStudent = widget.userType == 'student';
+    final theme = Theme.of(context);
 
-    return Form(
-      key: _formKey,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            isStudent ? 'Student Information' : 'Canteen Information',
-            style: const TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF2D3142),
-            ),
-          ),
-          const SizedBox(height: 32),
-
-          // Name Field
-          TextFormField(
-            controller: _nameController,
-            decoration: InputDecoration(
-              labelText: isStudent ? 'Full Name' : 'Owner Name',
-              hintText: isStudent ? 'Enter your full name' : 'Enter owner name',
-              prefixIcon: const Icon(Icons.person_outline),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.grey.shade300),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.grey.shade300),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide:
-                    const BorderSide(color: Color(0xFFFF542D), width: 2),
-              ),
-              filled: true,
-              fillColor: Colors.grey.shade50,
-            ),
-            validator: (value) {
-              if (value?.isEmpty ?? true) {
-                return 'Please enter the name';
-              }
-              return null;
-            },
-          ),
-          const SizedBox(height: 24),
-
-          // Conditional fields based on user type
-          if (isStudent)
-            TextFormField(
-              controller: _addressController,
-              decoration: InputDecoration(
-                labelText: 'Address',
-                hintText: 'Enter your address',
-                prefixIcon: const Icon(Icons.home_outlined),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.grey.shade300),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.grey.shade300),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide:
-                      const BorderSide(color: Color(0xFFFF542D), width: 2),
-                ),
-                filled: true,
-                fillColor: Colors.grey.shade50,
-              ),
-              validator: (value) {
-                if (value?.isEmpty ?? true) {
-                  return 'Please enter your address';
-                }
-                return null;
-              },
-            )
-          else ...[
-            TextFormField(
-              controller: _canteenNameController,
-              decoration: InputDecoration(
-                labelText: 'Canteen Name',
-                hintText: 'Enter canteen name',
-                prefixIcon: const Icon(Icons.store_outlined),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.grey.shade300),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.grey.shade300),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide:
-                      const BorderSide(color: Color(0xFFFF542D), width: 2),
-                ),
-                filled: true,
-                fillColor: Colors.grey.shade50,
-              ),
-              validator: (value) {
-                if (value?.isEmpty ?? true) {
-                  return 'Please enter canteen name';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 24),
-            TextFormField(
-              controller: _descriptionController,
-              maxLines: 3,
-              decoration: InputDecoration(
-                labelText: 'Description (Optional)',
-                hintText: 'Enter canteen description',
-                prefixIcon: const Icon(Icons.description_outlined),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.grey.shade300),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.grey.shade300),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide:
-                      const BorderSide(color: Color(0xFFFF542D), width: 2),
-                ),
-                filled: true,
-                fillColor: Colors.grey.shade50,
-              ),
-            ),
-          ],
-
-          const SizedBox(height: 24),
-          TextFormField(
-            controller: _phoneController,
-            keyboardType: TextInputType.phone,
-            decoration: InputDecoration(
-              labelText: 'Phone Number',
-              hintText: 'Enter phone number',
-              prefixIcon: const Icon(Icons.phone_outlined),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.grey.shade300),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.grey.shade300),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide:
-                    const BorderSide(color: Color(0xFFFF542D), width: 2),
-              ),
-              filled: true,
-              fillColor: Colors.grey.shade50,
-            ),
-            validator: (value) {
-              if (value?.isEmpty ?? true) {
-                return 'Please enter phone number';
-              }
-              return null;
-            },
-          ),
-
-          const SizedBox(height: 40),
-          ElevatedButton(
-            onPressed: _isLoading
-                ? null
-                : () async {
-                    if (_formKey.currentState!.validate()) {
-                      setState(() {
-                        _isLoading = true;
-                      });
-
-                      try {
-                        await _saveAndSubmit();
-
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Information saved successfully'),
-                              backgroundColor: Color(0xFFFF542D),
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
-                        }
-                      } catch (e) {
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Failed to save information'),
-                              backgroundColor: Colors.red,
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
-                        }
-                      } finally {
-                        if (mounted) {
-                          setState(() {
-                            _isLoading = false;
-                          });
-                        }
-                      }
-                    }
-                  },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFFF542D),
-              foregroundColor: Colors.white,
-              minimumSize: const Size(double.infinity, 56),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              elevation: 0,
-            ),
-            child: _isLoading
-                ? const SizedBox(
-                    height: 20,
-                    width: 20,
-                    child: CircularProgressIndicator(
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                      strokeWidth: 2,
-                    ),
-                  )
-                : const Text(
-                    'Save',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
           ),
         ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header section with animation
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        isStudent
+                            ? 'Student Information'
+                            : 'Canteen Information',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: theme.colorScheme.primary,
+                        ),
+                      ).animate().fadeIn(duration: Duration(milliseconds: 500)),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Please complete your profile',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                  CircleAvatar(
+                    radius: 26,
+                    backgroundColor: theme.colorScheme.primary.withOpacity(0.1),
+                    child: Icon(
+                      isStudent ? Icons.school : Icons.restaurant,
+                      color: theme.colorScheme.primary,
+                      size: 28,
+                    ),
+                  ).animate().scale(
+                        duration: const Duration(milliseconds: 600),
+                        curve: Curves.elasticOut,
+                      ),
+                ],
+              ),
+
+              const SizedBox(height: 20),
+
+              // Progress indicator
+              LinearProgressIndicator(
+                value: _completedFieldCount / _activeFieldCount,
+                backgroundColor: Colors.grey[200],
+                color: theme.colorScheme.primary,
+                minHeight: 6,
+                borderRadius: BorderRadius.circular(6),
+              ).animate().fadeIn().slideX(),
+
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8.0),
+                child: Text(
+                  '${_completedFieldCount}/${_activeFieldCount} fields completed',
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // Error message with animation
+              if (_hasError)
+                AnimatedBuilder(
+                  animation: _animationController,
+                  builder: (context, child) {
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 20),
+                      padding: const EdgeInsets.all(16),
+                      transform: Matrix4.translationValues(
+                        5 * _animationController.value,
+                        0,
+                        0,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.red[50],
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Colors.red.withOpacity(0.3),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.error_outline,
+                              color: Colors.red[700], size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _errorMessage,
+                              style: TextStyle(color: Colors.red[700]),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+
+              // Fields Section Title
+              Text(
+                'Personal Details',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: theme.colorScheme.secondary,
+                ),
+              ).animate().fadeIn(delay: Duration(milliseconds: 100)),
+
+              const SizedBox(height: 6),
+              const Divider(),
+              const SizedBox(height: 16),
+
+              // Name Field
+              TextFormField(
+                controller: _nameController,
+                focusNode: _nameFocusNode,
+                decoration: InputDecoration(
+                  labelText: isStudent ? 'Full Name' : 'Owner Name',
+                  hintText:
+                      isStudent ? 'Enter your full name' : 'Enter owner name',
+                  prefixIcon: Icon(Icons.person_outline, color: _nameHintColor),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.grey[300]!),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(
+                      color: theme.colorScheme.primary,
+                      width: 2,
+                    ),
+                  ),
+                  filled: true,
+                  fillColor: Colors.grey[50],
+                  contentPadding: EdgeInsets.symmetric(vertical: 16),
+                ),
+                validator: (value) {
+                  if (value?.isEmpty ?? true) {
+                    return 'Please enter the name';
+                  }
+                  return null;
+                },
+                textInputAction: TextInputAction.next,
+              ).animate().fadeIn(delay: Duration(milliseconds: 100)),
+
+              const SizedBox(height: 20),
+
+              // Conditional fields based on user type
+              if (isStudent) ...[
+                TextFormField(
+                  controller: _addressController,
+                  focusNode: _addressFocusNode,
+                  decoration: InputDecoration(
+                    labelText: 'Address',
+                    hintText: 'Enter your address',
+                    prefixIcon:
+                        Icon(Icons.home_outlined, color: _addressHintColor),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey[300]!),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.primary,
+                        width: 2,
+                      ),
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey[50],
+                    contentPadding: EdgeInsets.symmetric(vertical: 16),
+                  ),
+                  validator: (value) {
+                    if (value?.isEmpty ?? true) {
+                      return 'Please enter your address';
+                    }
+                    return null;
+                  },
+                  textInputAction: TextInputAction.next,
+                ).animate().fadeIn(delay: Duration(milliseconds: 200))
+              ] else ...[
+                // Business section title
+                const SizedBox(height: 8),
+                Text(
+                  'Business Details',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: theme.colorScheme.secondary,
+                  ),
+                ).animate().fadeIn(delay: Duration(milliseconds: 150)),
+                const SizedBox(height: 6),
+                const Divider(),
+                const SizedBox(height: 16),
+
+                TextFormField(
+                  controller: _canteenNameController,
+                  focusNode: _canteenNameFocusNode,
+                  decoration: InputDecoration(
+                    labelText: 'Canteen Name',
+                    hintText: 'Enter canteen name',
+                    prefixIcon: Icon(Icons.store_outlined,
+                        color: _canteenNameHintColor),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey[300]!),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.primary,
+                        width: 2,
+                      ),
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey[50],
+                    contentPadding: EdgeInsets.symmetric(vertical: 16),
+                  ),
+                  validator: (value) {
+                    if (value?.isEmpty ?? true) {
+                      return 'Please enter canteen name';
+                    }
+                    return null;
+                  },
+                  textInputAction: TextInputAction.next,
+                ).animate().fadeIn(delay: Duration(milliseconds: 200)),
+                const SizedBox(height: 20),
+                TextFormField(
+                  controller: _descriptionController,
+                  focusNode: _descriptionFocusNode,
+                  maxLines: 3,
+                  decoration: InputDecoration(
+                    labelText: 'Description (Optional)',
+                    hintText: 'Enter canteen description',
+                    prefixIcon: Icon(Icons.description_outlined,
+                        color: _descriptionHintColor),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey[300]!),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.primary,
+                        width: 2,
+                      ),
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey[50],
+                    alignLabelWithHint: true,
+                  ),
+                  textInputAction: TextInputAction.next,
+                ).animate().fadeIn(delay: Duration(milliseconds: 300)),
+              ],
+
+              const SizedBox(height: 20),
+
+              // Contact section title - for both user types
+              if (!isStudent) const SizedBox(height: 8),
+              Text(
+                'Contact Details',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: theme.colorScheme.secondary,
+                ),
+              )
+                  .animate()
+                  .fadeIn(delay: Duration(milliseconds: isStudent ? 250 : 350)),
+              const SizedBox(height: 6),
+              const Divider(),
+              const SizedBox(height: 16),
+
+              TextFormField(
+                controller: _phoneController,
+                focusNode: _phoneFocusNode,
+                keyboardType: TextInputType.phone,
+                decoration: InputDecoration(
+                  labelText: 'Phone Number',
+                  hintText: 'Enter phone number',
+                  prefixIcon:
+                      Icon(Icons.phone_outlined, color: _phoneHintColor),
+                  suffixIcon: Icon(
+                    Icons.check_circle,
+                    color: _phoneController.text.isNotEmpty
+                        ? Colors.green
+                        : Colors.transparent,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.grey[300]!),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(
+                      color: theme.colorScheme.primary,
+                      width: 2,
+                    ),
+                  ),
+                  filled: true,
+                  fillColor: Colors.grey[50],
+                  contentPadding: EdgeInsets.symmetric(vertical: 16),
+                ),
+                validator: (value) {
+                  if (value?.isEmpty ?? true) {
+                    return 'Please enter phone number';
+                  }
+                  return null;
+                },
+                textInputAction: TextInputAction.done,
+              )
+                  .animate()
+                  .fadeIn(delay: Duration(milliseconds: isStudent ? 300 : 400)),
+
+              const SizedBox(height: 40),
+
+              SizedBox(
+                width: double.infinity,
+                height: 55,
+                child: ElevatedButton(
+                  onPressed: _isLoading ? null : _saveAndSubmit,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: theme.colorScheme.primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 2,
+                  ),
+                  child: _isLoading
+                      ? Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: const [
+                            SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 3,
+                              ),
+                            ),
+                            SizedBox(width: 12),
+                            Text(
+                              "Saving...",
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        )
+                      : Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.check_circle_outline, size: 20),
+                            SizedBox(width: 8),
+                            Text(
+                              "Complete Profile",
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                ),
+              )
+                  .animate()
+                  .fadeIn(delay: Duration(milliseconds: isStudent ? 400 : 500))
+                  .slideY(
+                    begin: 0.5,
+                    end: 0,
+                    duration: Duration(milliseconds: 500),
+                    curve: Curves.easeOutQuad,
+                  ),
+
+              if (!_isLoading)
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 20.0),
+                    child: Text.rich(
+                      TextSpan(
+                        children: [
+                          TextSpan(
+                            text: 'You can update your information ',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                          TextSpan(
+                            text: 'later',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: theme.colorScheme.primary,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ).animate().fadeIn(
+                    delay: Duration(milliseconds: isStudent ? 500 : 600)),
+            ],
+          ),
+        ),
       ),
     );
   }

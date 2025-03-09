@@ -73,15 +73,6 @@ class _ImprovedOrdersCardState extends State<ImprovedOrdersCard>
     if (_isFetching) return;
     _isFetching = true;
 
-    if (widget.stallId == null) {
-      setState(() {
-        _errorMessage = 'Invalid stall ID';
-        _isLoading = false;
-        _isFetching = false;
-      });
-      return;
-    }
-
     // Use cached data if available with cache timeout of 5 minutes
     final cacheKey = '${widget.stallId}_$_selectedTimeframe';
     final now = DateTime.now();
@@ -440,7 +431,7 @@ class _ImprovedOrdersCardState extends State<ImprovedOrdersCard>
 
   Widget _buildChart(ColorScheme colorScheme) {
     if (_ordersData.chartData.isEmpty) {
-      return Container(
+      return SizedBox(
         height: 160, // Reduced fixed height to prevent overflow
         child: Center(child: Text('No data available for this period')),
       );
@@ -462,7 +453,7 @@ class _ImprovedOrdersCardState extends State<ImprovedOrdersCard>
     // Calculate a safe horizontal interval that's never zero
     final double safeHorizontalInterval = maxY / 4 > 0 ? maxY / 4 : 2.5;
 
-    return Container(
+    return SizedBox(
       height: 160, // Fixed height to prevent overflow issues
       child: RepaintBoundary(
         // Improves performance by limiting repaints
@@ -479,7 +470,7 @@ class _ImprovedOrdersCardState extends State<ImprovedOrdersCard>
                 horizontalInterval: safeHorizontalInterval, // Use safe interval
                 getDrawingHorizontalLine: (value) {
                   return FlLine(
-                    color: colorScheme.surfaceVariant,
+                    color: colorScheme.surfaceContainerHighest,
                     strokeWidth: 0.5,
                   );
                 },
@@ -670,7 +661,7 @@ class _MetricCard extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         margin: const EdgeInsets.symmetric(horizontal: 4),
         decoration: BoxDecoration(
-          color: colorScheme.surfaceVariant.withOpacity(0.3),
+          color: colorScheme.surfaceContainerHighest.withOpacity(0.3),
           borderRadius: BorderRadius.circular(16),
         ),
         child: Column(

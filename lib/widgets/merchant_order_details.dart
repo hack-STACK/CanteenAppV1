@@ -78,17 +78,17 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
 
         // Extract addon information
         final addonsList = detail.addons.map((addon) {
-              _logger.debug('Processing addon: $addon');
-              return OrderAddonDetail(
-                id: addon.id.toString(),
-                addonId: (addon.addonId as num).toInt(),
-                addonName: addon.addonName ?? 'Unknown Addon',
-                price: addon.price ?? 0,
-                quantity: addon.quantity ?? 1,
-                unitPrice: addon.unitPrice ?? 0,
-                subtotal: addon.subtotal ?? 0,
-              );
-            }).toList();
+          _logger.debug('Processing addon: $addon');
+          return OrderAddonDetail(
+            id: addon.id.toString(),
+            addonId: (addon.addonId as num).toInt(),
+            addonName: addon.addonName ?? 'Unknown Addon',
+            price: addon.price ?? 0,
+            quantity: addon.quantity ?? 1,
+            unitPrice: addon.unitPrice ?? 0,
+            subtotal: addon.subtotal ?? 0,
+          );
+        }).toList();
 
         _logger.debug('Processed ${addonsList.length} addons');
 
@@ -435,7 +435,7 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
     final originalPrice = item.originalUnitPrice;
     final effectivePrice = item.unitPrice;
     final hasDiscount = item.hasDiscount;
-    
+
     // Calculate totals
     final mainCourseTotal = effectivePrice * item.quantity;
     final addonsTotal = item.addons?.fold<double>(
@@ -557,10 +557,10 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
     final originalPrice = item.originalUnitPrice;
     final effectivePrice = item.unitPrice;
     final hasDiscount = item.hasDiscount;
-    final discount = hasDiscount 
-        ? ((originalPrice - effectivePrice) / originalPrice * 100).round() 
+    final discount = hasDiscount
+        ? ((originalPrice - effectivePrice) / originalPrice * 100).round()
         : 0;
-    
+
     final quantity = item.quantity;
     final mainCourseTotal = effectivePrice * quantity;
 
@@ -650,7 +650,9 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
                   decimalDigits: 0,
                 ).format(effectivePrice)}',
                 style: TextStyle(
-                  color: hasDiscount ? Theme.of(context).primaryColor : Colors.grey[600],
+                  color: hasDiscount
+                      ? Theme.of(context).primaryColor
+                      : Colors.grey[600],
                   fontSize: 14,
                   fontWeight: hasDiscount ? FontWeight.bold : FontWeight.normal,
                 ),
@@ -809,7 +811,8 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
   }
 
   Widget _buildDeliveryInfo(BuildContext context) {
-    final deliveryAddress = widget.student?.studentAddress ?? widget.order.deliveryAddress;
+    final deliveryAddress =
+        widget.student?.studentAddress ?? widget.order.deliveryAddress;
 
     if (deliveryAddress == null || deliveryAddress.isEmpty) {
       return const SizedBox.shrink();
@@ -914,7 +917,7 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
               ],
             ),
           ),
-          
+
           // Price Breakdown
           Padding(
             padding: const EdgeInsets.all(16),
@@ -929,7 +932,7 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                
+
                 // Fix the list spread operator here
                 if (hasDiscount) ...[
                   _buildPriceRow(
@@ -938,50 +941,49 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
                     showDivider: true,
                     isStrikeThrough: true,
                   ),
-                  
                   _buildPriceRow(
                     'Discounted Price',
                     discountedTotal,
                     showDivider: true,
                     isDiscounted: true,
                   ),
-
                   _buildPriceRow(
                     'Discount Savings',
                     -totalSavings, // Negative to show as a reduction
                     showDivider: true,
                     isDiscount: true,
                   ),
-                ] else ...[  // Note the ... spread operator here
+                ] else ...[
+                  // Note the ... spread operator here
                   _buildPriceRow(
                     'Main Course Total',
                     discountedTotal,
                     showDivider: true,
                   ),
                 ],
-                  
+
                 _buildPriceRow(
                   'Add-ons Total',
                   addonsTotal,
                   showDivider: true,
                 ),
-                
+
                 _buildPriceRow(
                   'Subtotal',
                   subtotal,
                   showDivider: true,
                   isSubtotal: true,
                 ),
-                
+
                 if (widget.order.orderType == OrderType.delivery)
                   _buildPriceRow(
                     'Delivery Fee',
                     deliveryFee,
                     showDivider: true,
                   ),
-                  
+
                 const SizedBox(height: 8),
-                
+
                 _buildPriceRow(
                   'Total Amount',
                   total,
@@ -990,7 +992,7 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
               ],
             ),
           ),
-          
+
           // Payment Method
           Container(
             padding: const EdgeInsets.all(16),
@@ -1052,7 +1054,8 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
                 : TextStyle(
                     fontSize: 14,
                     color: Colors.grey[600],
-                    decoration: isStrikeThrough ? TextDecoration.lineThrough : null,
+                    decoration:
+                        isStrikeThrough ? TextDecoration.lineThrough : null,
                   );
 
     return Column(
@@ -1068,7 +1071,8 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
                   locale: 'id',
                   symbol: 'Rp ',
                   decimalDigits: 0,
-                ).format(isDiscount ? -amount : amount), // Negative for discounts
+                ).format(
+                    isDiscount ? -amount : amount), // Negative for discounts
                 style: isTotal
                     ? textStyle.copyWith(
                         color: Theme.of(context).primaryColor,
@@ -1237,7 +1241,7 @@ class _MerchantOrderDetailsState extends State<MerchantOrderDetails> {
                   tag: 'customer_${widget.student?.id ?? "unknown"}',
                   child: widget.student != null
                       ? UserAvatar(
-                          studentId: widget.student!.id,
+                          studentId: widget.student!.id!,
                           size: 70,
                           showBorder: true,
                         )

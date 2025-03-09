@@ -15,9 +15,10 @@ class StudentService {
       }
 
       // Insert student and get the created student data back
+      // Note: We don't send the ID field for new students
       final response = await _supabaseClient
           .from('students')
-          .insert(newStudent.toMap())
+          .insert(newStudent.toMap()) // toMap now excludes null ID
           .select()
           .maybeSingle();
 
@@ -26,7 +27,7 @@ class StudentService {
         throw Exception('Failed to create student: No response received');
       }
 
-      // Return the created student model
+      // Return the created student model with the DB-generated ID
       return StudentModel.fromMap(response);
     } catch (e) {
       print('Error creating student: $e');
@@ -113,7 +114,7 @@ class StudentService {
       final response = await _supabaseClient
           .from('students')
           .update(updatedStudent.toMap())
-          .eq('id', updatedStudent.id) // Use 'id' instead of 'userId'
+          .eq('id', updatedStudent.id!) // Use 'id' instead of 'userId'
           .select()
           .single();
 
@@ -126,12 +127,12 @@ class StudentService {
 
   Future<void> deleteStudent(int id) async {
     try {
-      final result =
-          await _supabaseClient.from('students').delete().eq('id', id);
+      // Fix: Simply execute the delete operation without checking for a null result
+      // Supabase returns an empty array on successful delete, not null
+      await _supabaseClient.from('students').delete().eq('id', id);
 
-      if (result == null) {
-        throw Exception('Student not found');
-      }
+      // If we reach here, the operation was successful or deleted 0 records
+      print('Debug: Delete operation completed for student ID: $id');
     } catch (e) {
       print('Error deleting student: $e');
       throw Exception('Failed to delete student: $e');

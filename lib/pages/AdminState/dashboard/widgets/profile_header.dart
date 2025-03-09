@@ -131,7 +131,7 @@ class _ProfileHeaderWidgetState extends State<ProfileHeaderWidget> {
                     ),
                   ),
                   Text(
-                    _isLoading ? '' : '@${_ownerName}',
+                    _isLoading ? '' : '@$_ownerName',
                     style: TextStyle(
                       fontSize: 12,
                       fontFamily: 'Inter',

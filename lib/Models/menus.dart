@@ -148,28 +148,20 @@ class Menu {
   }
 
   Map<String, dynamic> toMap() {
-    return {
+    final result = <String, dynamic>{
       'id': id,
       'food_name': foodName,
       'price': price,
-      'type': type,
-      'photo': photo,
       'description': description,
+      'photo': photo,
       'stall_id': stallId,
       'is_available': isAvailable,
-      'category': category,
-      'rating': rating,
-      'total_ratings': totalRatings,
-      'is_popular': isPopular,
-      'is_recommended': isRecommended,
-      'review_count': reviewCount,
-      'is_vegetarian': isVegetarian,
-      'is_spicy': isSpicy,
-      'tags': tags,
-      'preparation_time': preparationTime,
-      'original_price': originalPrice,
-      'discounted_price': discountedPrice, // Add this line
+      'type': type,
+      // Do NOT include isPopular in the map sent to database
+      // 'is_popular': isPopular,
     };
+
+    return result;
   }
 
   // Add toJson method
@@ -520,6 +512,13 @@ class Menu {
     print('Has discount: $hasDiscount');
     print('Discount percentage: $discountPercentage%');
     print('Discounted price: $discountedPrice');
+  }
+
+  // Add this method to your Menu class to create a database-safe version:
+  Menu toDbSafe() {
+    return copyWith(
+      isPopular: null, // Exclude problematic fields
+    );
   }
 
   @override

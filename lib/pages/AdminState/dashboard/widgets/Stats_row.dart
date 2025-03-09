@@ -209,8 +209,9 @@ class _StatsRowState extends State<StatsRow> {
             } else {
               // Generate a trend based on how close the item is to the highest count
               calculatedTrend = (count / highestCount * 100) - 90;
-              if (calculatedTrend < -10)
+              if (calculatedTrend < -10) {
                 calculatedTrend = -10; // Limit negative values
+              }
             }
 
             return MenuStat(

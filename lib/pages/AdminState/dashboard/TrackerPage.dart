@@ -3,7 +3,6 @@ import 'package:kantin/pages/AdminState/dashboard/widgets/Balance_card.dart';
 import 'package:kantin/pages/AdminState/dashboard/widgets/Order_card.dart';
 import 'package:kantin/pages/AdminState/dashboard/widgets/Stats_row.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:intl/intl.dart';
 
 class TrackerScreen extends StatefulWidget {
   final int? stanId;
